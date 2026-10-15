@@ -39,7 +39,7 @@ Nella cartella dei file `.sql` vengono creati:
 | `fk_candidate.sql` | gli `ALTER TABLE ... ADD FOREIGN KEY` proposti |
 | `schema_collegamenti.html` | schema interattivo: frecce verdi = affidabilità alta, arancioni tratteggiate = media, tabelle grigie = isolate |
 
-> ⚠️ Le chiavi esterne trovate sono **proposte** basate sui nomi: vanno controllate prima di eseguire gli `ALTER TABLE`. Se il database contiene già dati, verifica prima che non ci siano valori orfani:
+>  Le chiavi esterne trovate sono **proposte** basate sui nomi: vanno controllate prima di eseguire gli `ALTER TABLE`. Se il database contiene già dati, verifica prima che non ci siano valori orfani:
 >
 > ```sql
 > SELECT COUNT(*) FROM tabella_figlia f
