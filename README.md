@@ -12,6 +12,7 @@ Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e 
 4. Propone le **chiavi esterne candidate** con un livello di affidabilità:
    - **alta**: la colonna ha lo stesso nome della chiave primaria di un'altra tabella
    - **media**: il nome della colonna rimanda al nome di una tabella (`id_articolo` → `articoli`)
+   - **alta (PK composta)**: la tabella contiene tutte le colonne della chiave primaria su più colonne di un'altra tabella (`id_ordine` + `num_riga` → `ordini_righe`)
 5. Controlla che i tipi coincidano ed elenca le **tabelle isolate**.
 6. Salva i risultati e disegna uno **schema interattivo** dei collegamenti.
 
