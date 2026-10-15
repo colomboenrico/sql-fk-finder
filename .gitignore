@@ -1,0 +1,15 @@
+# File SQL del tuo database: NON pubblicarli (solo gli esempi sono inclusi)
+*.sql
+!esempi/*.sql
+
+# Risultati generati dal notebook
+possibili_collegamenti.xlsx
+fk_candidate.sql
+schema_collegamenti.html
+*.xlsx
+
+# Python / Jupyter
+.ipynb_checkpoints/
+__pycache__/
+.venv/
+venv/
