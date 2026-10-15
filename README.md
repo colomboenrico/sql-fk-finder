@@ -21,6 +21,10 @@ Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e 
 pip install -r requirements.txt
 ```
 
+oppure esegui la cella **0. Installazione** all'inizio del notebook.
+
+> Se eseguendo una cella compare *"Nessuna connessione selezionata"*, il notebook è aperto con il kernel SQL: scegli il kernel **Python 3** in alto a destra.
+
 ## Uso
 
 1. Apri `collegamenti_tabelle_sql.ipynb` in Jupyter.
