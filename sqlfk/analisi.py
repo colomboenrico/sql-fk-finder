@@ -18,6 +18,8 @@ from types import SimpleNamespace
 import pandas as pd
 from scipy.cluster.hierarchy import fcluster, linkage
 
+from .regole import REGOLA_DI
+
 try:
     import sqlglot
     from sqlglot import exp
@@ -1148,7 +1150,8 @@ def diagnostica(R, errori_lettura=(), originali=None, dialetto="mysql"):
     risultati = []
 
     def segnala(codice, tabella, colonna, messaggio, suggerimento="", posizione=None):
-        gravita, regola = CODICI[codice]
+        gravita = CODICI[codice][0]
+        regola = f"{REGOLA_DI[codice]['id']} {REGOLA_DI[codice]['titolo']}" if codice in REGOLA_DI else CODICI[codice][1]
         prima = (colonna or "").split(",")[0].strip()
         file, riga = posizione or pos_colonna.get((tabella, prima)) or pos_tabella.get(tabella, ("", None))
         risultati.append({"gravità": gravita, "codice": codice, "file": file, "riga": riga,
@@ -1295,7 +1298,7 @@ def riassunto_diagnostica(df):
     return ", ".join([parola("errore", "errore", "errori"), parola("avviso", "avviso", "avvisi"), f"{n['info']} info"])
 
 
-def testo_diagnostica(df, con_info=True):
+def testo_diagnostica(df, con_info=True, con_regole=False):
     """Report come l'output di un compilatore: file:riga: gravità codice: messaggio."""
     righe = []
     for r in df.to_dict("records"):
@@ -1305,6 +1308,8 @@ def testo_diagnostica(df, con_info=True):
         righe.append(f"{dove}: {r['gravità']} {r['codice']}: {r['messaggio']}")
         if r["suggerimento"]:
             righe.append(f"    suggerimento: {r['suggerimento']}")
+        if con_regole and r["regola"]:
+            righe.append(f"    regola: {r['regola']}")
     n = conteggi_diagnostica(df)
     righe.append("")
     righe.append(riassunto_diagnostica(df))

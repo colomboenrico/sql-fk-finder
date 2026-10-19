@@ -15,12 +15,15 @@ import sys
 from pathlib import Path
 
 from . import analisi as A
+from .regole import spiega
 
 
 def main():
     parser = argparse.ArgumentParser(prog="python -m sqlfk.verifica",
                                      description="Controlla uno schema SQL come un compilatore.")
-    parser.add_argument("percorsi", nargs="+", help="cartelle o file .sql")
+    parser.add_argument("percorsi", nargs="*", help="cartelle o file .sql")
+    parser.add_argument("--spiega", metavar="CODICE", help="spiega la regola di un codice, es. E010, e termina")
+    parser.add_argument("--regole", action="store_true", help="sotto ogni problema mostra la regola violata")
     parser.add_argument("--dialetto", default="mysql", help="mysql, tsql, oracle, postgres... (predefinito: mysql)")
     parser.add_argument("--senza-info", action="store_true", help="non mostra i messaggi di tipo info")
     parser.add_argument("--werror", action="store_true", help="gli avvisi contano come errori")
@@ -30,6 +33,11 @@ def main():
     parser.add_argument("--on-delete", default="RESTRICT", help="regola ON DELETE delle chiavi esterne proposte")
     parser.add_argument("--on-update", default="CASCADE", help="regola ON UPDATE delle chiavi esterne proposte")
     args = parser.parse_args()
+    if args.spiega:
+        print(spiega(args.spiega))
+        return 0
+    if not args.percorsi:
+        parser.error("indicare almeno una cartella o un file .sql (oppure --spiega CODICE)")
 
     file_sql = []
     for percorso in map(Path, args.percorsi):
@@ -57,7 +65,7 @@ def main():
     R = A.analizza(df, pk, rimosse, fk_dichiarate=fk, gruppi=gruppi, imp=imp,
                    errori=errori, originali=A.create_originali(file_sql, imp.dialetto))
 
-    print(A.testo_diagnostica(R.diagnostica, con_info=not args.senza_info), end="")
+    print(A.testo_diagnostica(R.diagnostica, con_info=not args.senza_info, con_regole=args.regole), end="")
     n = A.conteggi_diagnostica(R.diagnostica)
     return 1 if n["errore"] or (args.werror and n["avviso"]) else 0
 

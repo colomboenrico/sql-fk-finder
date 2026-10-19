@@ -122,6 +122,12 @@ const DiagrammaER = (() => {
     const collegamenti = dati.collegamenti.filter(l => perNome[l.da] && perNome[l.a]);
     const riquadro = contenitore.getBoundingClientRect();
     disponi(tabelle, collegamenti, riquadro.width > 0 && riquadro.height > 0 ? riquadro.width / riquadro.height : 1.6);
+    // posizioni salvate (tabelle spostate a mano, anche da un progetto): hanno la precedenza sulla disposizione automatica
+    const salvate = opzioni.posizioni || {};
+    tabelle.forEach(t => {
+      const p = salvate[t.nome];
+      if (Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1])) { t.x = p[0]; t.y = p[1]; }
+    });
 
     // ---------------------------------------------------------- struttura SVG
     const svg = svgEl("svg", { class: "er-svg", width: "100%", height: "100%" });
@@ -255,7 +261,12 @@ const DiagrammaER = (() => {
         applica();
       }
     });
-    const fine = () => { trascina = null; };
+    const fine = () => {
+      if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
+        opzioni.onSposta(trascina.t.nome, Math.round(trascina.t.x), Math.round(trascina.t.y));
+      }
+      trascina = null;
+    };
     svg.addEventListener("pointerup", fine);
     svg.addEventListener("pointerleave", () => { fine(); evidenzia(null); });
     svg.addEventListener("wheel", e => {
@@ -316,8 +327,31 @@ const DiagrammaER = (() => {
       return new XMLSerializer().serializeToString(copia);
     }
 
+    /** PNG di tutto il diagramma (Blob); scala 2 = doppia risoluzione, ridotta se l'immagine sarebbe troppo grande. */
+    async function png(scala = 2) {
+      const b = limiti();
+      const w = b.x1 - b.x0 + 40, h = b.y1 - b.y0 + 40;
+      const s = Math.min(scala, 16000 / Math.max(w, h), Math.sqrt(2.4e8 / (w * h)));
+      const url = URL.createObjectURL(new Blob([esporta()], { type: "image/svg+xml" }));
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const tela = document.createElement("canvas");
+        tela.width = Math.round(w * s);
+        tela.height = Math.round(h * s);
+        const ctx = tela.getContext("2d");
+        ctx.fillStyle = "#f7f8fa";
+        ctx.fillRect(0, 0, tela.width, tela.height);
+        ctx.drawImage(img, 0, 0, tela.width, tela.height);
+        return await new Promise(r => tela.toBlob(r, "image/png"));
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
     requestAnimationFrame(() => adatta());
-    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, esporta,
+    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, esporta, png,
              numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length } };
   }
 

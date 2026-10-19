@@ -24,6 +24,9 @@ import pandas as pd
 
 from . import analisi as A
 from . import grafici as G
+from . import modello as MR
+from . import ontologia as O
+from .regole import REGOLE
 
 WEB = Path(__file__).parent / "web"
 TIPI_FILE = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -154,48 +157,30 @@ class Sessione:
         return {"file": nome, "riga": riga, "righe": [[n, righe[n - 1]] for n in range(inizio, fine + 1)]}
 
     def diagramma(self, tipo="collegamenti", medie=False):
-        """Tabelle con le colonne e collegamenti tra colonne, per il diagramma ER dell'interfaccia."""
+        """Tabelle con le colonne e collegamenti tra colonne, per il diagramma e il modello relazionale."""
         self.richiedi_dati()
-        S, R = self.R.S, self.R
-        fk_colonne = {}
-        collegamenti = []
+        return MR.struttura(self.R, self.gruppo_di, tipo, medie)
 
-        def aggiungi(r, tipo_link):
-            da = [c.strip() for c in r["colonna"].split(",")]
-            a = [c.strip() for c in r["→ colonna"].split(",")]
-            if r["tabella"] not in S.col_per_tab or r["→ tabella"] not in S.col_per_tab:
-                return
-            relazione, obbligatoria = A.tipo_relazione(S, r["tabella"], [S.colonne_norm[r["tabella"]].get(A.normalizza(c), c) for c in da])
-            collegamenti.append({"da": r["tabella"], "colonne_da": da, "a": r["→ tabella"], "colonne_a": a,
-                                 "tipo": tipo_link, "relazione": relazione, "obbligatoria": obbligatoria})
-            for c in da:
-                fk_colonne.setdefault(r["tabella"], set()).add(A.normalizza(c))
+    def ontologia(self, base="", lingua="auto"):
+        """(ontologia OWL, mapping R2RML, riepilogo, base usata)"""
+        self.richiedi_dati()
+        nome = Path(self.origine).name if self.origine else "database"
+        base = base.strip() or O.base_predefinita(nome.replace("cartella ", ""))
+        inglese = None if lingua == "auto" else lingua == "inglese"
+        owl, M = O.genera_owl(self.R, base, nome, inglese)
+        return owl, O.genera_r2rml(self.R, base, M), O.riepilogo(M), base
 
-        for r in R.fk_dichiarate.to_dict("records"):
-            aggiungi(r, "dichiarata")
-        if tipo == "collegamenti":
-            scelte = set()
-            candidate = R.fk[~R.fk["già dichiarata"] & (R.fk["→ colonna"] != "?")].to_dict("records")
-            candidate.sort(key=lambda r: (r["affidabilità"] != "alta", not r["tipi ok"]))
-            for r in candidate:
-                if r["affidabilità"] == "media" and not medie:
-                    continue
-                if (r["tabella"], r["colonna"]) in scelte:
-                    continue                      # una sola candidata per colonna, la migliore
-                scelte.add((r["tabella"], r["colonna"]))
-                aggiungi(r, r["affidabilità"])
-
-        tabelle = []
-        for t, colonne in sorted(S.col_per_tab.items()):
-            chiave = {A.normalizza(c) for c in S.pk.get(t, [])}
-            tabelle.append({
-                "nome": t, "gruppo": self.gruppo_di.get(t, t), "pk_indovinata": t in S.pk_indovinata,
-                "colonne": [{"nome": c, "tipo": S.tipi.get((t, c)) or "",
-                             "pk": A.normalizza(c) in chiave,
-                             "fk": A.normalizza(c) in fk_colonne.get(t, set()),
-                             "unique": (t, c) in S.unique, "not_null": (t, c) in S.not_null}
-                            for c in colonne]})
-        return {"tabelle": tabelle, "collegamenti": collegamenti}
+    def regole(self):
+        """Le regole di progettazione con quanti errori, avvisi e info le violano."""
+        d = self.R.diagnostica if self.df_schema is not None else None
+        elenco = []
+        for r in REGOLE:
+            conta = {"errore": 0, "avviso": 0, "info": 0}
+            if d is not None:
+                for g in d[d["codice"].isin(r["codici"])]["gravità"]:
+                    conta[g] += 1
+            elenco.append({**r, "conteggi": conta})
+        return {"regole": elenco}
 
     def qualita(self):
         self.richiedi_dati()
@@ -218,7 +203,7 @@ class Sessione:
         self.ricalcola()
         return {"rimesse": len(scelte)}
 
-    def imposta(self, dati):
+    def imposta(self, dati, ricarica=True):
         imp = self.imp
         if "dialetto" in dati:
             imp.dialetto = str(dati["dialetto"])
@@ -239,8 +224,33 @@ class Sessione:
         for chiave in ("generiche", "parole_non_entita"):
             if chiave in dati:
                 setattr(imp, chiave, {p.strip().lower() for p in dati[chiave] if p.strip()})
-        if self.file_sql:
+        if ricarica and self.file_sql:
             self.carica(self.file_sql, self.origine)       # rifà tutto con le nuove impostazioni
+        return self.stato()
+
+    # ------------------------------------------------------------ file di progetto
+    FORMATO_PROGETTO = "sqlfk-progetto"
+
+    def progetto(self):
+        """Tutto quello che serve per riaprire il lavoro: file .sql, impostazioni, tabelle tolte.
+        (La disposizione del diagramma la aggiunge l'interfaccia.)"""
+        self.richiedi_dati()
+        return {"formato": self.FORMATO_PROGETTO, "versione": 1, "origine": self.origine,
+                "impostazioni": self.stato()["impostazioni"], "rimosse": sorted(self.rimosse),
+                "file": [{"nome": n, "testo": t} for n, t in self.file_sql]}
+
+    def apri_progetto(self, p):
+        if not isinstance(p, dict) or p.get("formato") != self.FORMATO_PROGETTO:
+            raise Errore("Questo non è un file di progetto di SQL FK Finder.")
+        if int(p.get("versione", 1)) > 1:
+            raise Errore("Il progetto è stato salvato da una versione più recente dell'app.")
+        file_sql = [(str(f["nome"]), str(f["testo"])) for f in p.get("file", [])]
+        if not file_sql:
+            raise Errore("Il progetto non contiene file .sql.")
+        self.imp = A.Impostazioni()
+        self.imposta(p.get("impostazioni") or {}, ricarica=False)
+        self.rimosse = {str(t) for t in p.get("rimosse", [])}
+        self.carica(file_sql, str(p.get("origine") or "progetto"))
         return self.stato()
 
 
@@ -302,6 +312,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/altri": s.altri,
             "/api/qualita": s.qualita,
             "/api/diagnostica": s.diagnostica,
+            "/api/regole": s.regole,
+            "/api/progetto": s.progetto,
             "/api/scarica/report": self.scarica_report,
             "/api/schema_iniziale": lambda: self.schema("iniziale"),
             "/api/schema_collegamenti": lambda: self.schema("collegamenti"),
@@ -311,9 +323,36 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in rotte:
             return self.esegui(rotte[percorso])
+        if percorso == "/api/modello":
+            q = parse_qs(url.query)
+            formato = q.get("formato", ["json"])[0]
+            if formato not in MR.FORMATI:
+                return self.json({"errore": f"Formato sconosciuto: {formato}"}, 400)
+
+            def risposta():
+                M = s.diagramma(q.get("tipo", ["collegamenti"])[0], q.get("medie", ["0"])[0] == "1")
+                testo = MR.esporta(M, formato)
+                if q.get("anteprima", ["0"])[0] == "1":
+                    return {"testo": testo, "tabelle": len(M["tabelle"]), "collegamenti": len(M["collegamenti"])}
+                nome = f"modello_relazionale.{MR.FORMATI[formato]}"
+                return (testo.encode("utf-8"), "text/plain; charset=utf-8",
+                        {"Content-Disposition": f'attachment; filename="{nome}"'})
+            return self.esegui(risposta)
         if percorso == "/api/diagramma":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.diagramma(q.get("tipo", ["collegamenti"])[0], q.get("medie", ["0"])[0] == "1"))
+        if percorso in ("/api/ontologia", "/api/scarica/ontologia", "/api/scarica/r2rml"):
+            q = parse_qs(url.query)
+            base, lingua = q.get("base", [""])[0], q.get("lingua", ["auto"])[0]
+
+            def risposta():
+                owl, r2rml, riepilogo, base_usata = s.ontologia(base, lingua)
+                if percorso == "/api/ontologia":
+                    return {**riepilogo, "base": base_usata, "anteprima": "\n".join(owl.splitlines()[:250])}
+                testo, nome = (owl, "ontologia.ttl") if percorso.endswith("ontologia") else (r2rml, "mapping_r2rml.ttl")
+                return (testo.encode("utf-8"), "text/turtle; charset=utf-8",
+                        {"Content-Disposition": f'attachment; filename="{nome}"'})
+            return self.esegui(risposta)
         if percorso == "/api/sorgente":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.sorgente(q.get("file", [""])[0], int(q.get("riga", ["1"])[0] or 1)))
@@ -346,7 +385,7 @@ class Gestore(BaseHTTPRequestHandler):
 
     def scarica_report(self):
         SESSIONE.richiedi_dati()
-        return (A.testo_diagnostica(SESSIONE.R.diagnostica).encode("utf-8"), "text/plain; charset=utf-8",
+        return (A.testo_diagnostica(SESSIONE.R.diagnostica, con_regole=True).encode("utf-8"), "text/plain; charset=utf-8",
                 {"Content-Disposition": 'attachment; filename="diagnostica.txt"'})
 
     def scarica_create(self):
@@ -395,8 +434,13 @@ class Gestore(BaseHTTPRequestHandler):
             if not cartella.is_dir():
                 raise Errore(f"La cartella non esiste: {cartella}")
             file = list(A.salva(s.R, cartella, s.create, s.imp.dialetto))
+            owl, r2rml, _, _ = s.ontologia()
+            file.append(cartella / "ontologia.ttl")
+            file[-1].write_text(owl, encoding="utf-8")
+            file.append(cartella / "mapping_r2rml.ttl")
+            file[-1].write_text(r2rml, encoding="utf-8")
             file.append(cartella / "diagnostica.txt")
-            file[-1].write_text(A.testo_diagnostica(s.R.diagnostica), encoding="utf-8")
+            file[-1].write_text(A.testo_diagnostica(s.R.diagnostica, con_regole=True), encoding="utf-8")
             file.append(cartella / "schema_iniziale.html")
             s.schema_iniziale(file[-1])
             file.append(cartella / "schema_collegamenti.html")
@@ -411,6 +455,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/rimetti": lambda: s.rimetti(dati.get("tabelle"), bool(dati.get("tutte"))),
             "/api/impostazioni": lambda: s.imposta(dati),
             "/api/salva_cartella": salva_cartella,
+            "/api/progetto": lambda: s.apri_progetto(dati),
         }
         if percorso not in rotte:
             return self.json({"errore": "Indirizzo sconosciuto."}, 404)

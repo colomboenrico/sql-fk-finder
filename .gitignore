@@ -7,6 +7,8 @@ possibili_collegamenti.xlsx
 fk_candidate.sql
 create_table_con_fk.sql
 diagnostica.txt
+ontologia.ttl
+mapping_r2rml.ttl
 schema_collegamenti.html
 schema_iniziale.html
 *.xlsx
@@ -19,3 +21,7 @@ venv/
 
 # macOS
 .DS_Store
+modello_relazionale.*
+
+# progetti dell'app: contengono i file .sql
+*.sqlfk

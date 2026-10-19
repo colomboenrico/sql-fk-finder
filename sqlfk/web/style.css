@@ -123,6 +123,17 @@ td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
 .sorgente .numero { display: inline-block; width: 44px; color: var(--tenue); user-select: none; }
 .sorgente .evidenziata { background: rgba(194, 94, 0, .18); }
 .sorgente .evidenziata.e { background: rgba(180, 35, 24, .18); }
+.regola h3 { margin-top: 0; }
+.regola .esempi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.regola .esempi pre { margin: 4px 0 0; }
+.regola .etichetta { font-size: 12px; font-weight: 600; }
+@media (max-width: 800px) { .regola .esempi { grid-template-columns: 1fr; } }
+.schema-logico { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.7; }
+.schema-logico div { padding: 2px 0; border-bottom: 1px solid var(--bordo); }
+.schema-logico .nome-tabella { font-weight: 700; color: var(--primario); }
+.schema-logico .pk { text-decoration: underline; font-weight: 600; }
+.schema-logico .fk { font-style: italic; }
+.schema-logico .verso { color: var(--tenue); font-size: 12px; }
 .paginazione { display: flex; gap: 8px; align-items: center; padding: 8px 10px; }
 
 /* ---------------------------------------------------------------- elenchi da spuntare */

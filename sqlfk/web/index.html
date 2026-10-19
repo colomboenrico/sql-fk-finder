@@ -21,6 +21,10 @@
       <label class="pulsante">Carica file .sql
         <input type="file" id="in-file" accept=".sql" multiple hidden>
       </label>
+      <label class="pulsante" title="Riapre un lavoro salvato (.sqlfk)">Apri progetto
+        <input type="file" id="in-progetto" accept=".sqlfk,.json" hidden>
+      </label>
+      <button class="pulsante" id="salva-progetto" type="button" title="Salva file, impostazioni, tabelle tolte e disposizione del diagramma" disabled>Salva progetto</button>
       <form id="form-percorso" class="percorso">
         <input id="percorso" type="text" placeholder="oppure il percorso di una cartella" aria-label="Percorso della cartella">
         <button class="pulsante" type="submit">Apri</button>
@@ -36,14 +40,17 @@
       <button data-vista="problemi" data-serve-dati id="voce-problemi">Problemi</button>
       <button data-vista="gruppi" data-serve-dati>Gruppi</button>
       <button data-vista="schemi" data-serve-dati>Schemi grafici</button>
+      <button data-vista="modello" data-serve-dati>Modello relazionale</button>
       <button data-vista="togli" data-serve-dati>Togli entità</button>
       <div class="separatore">Analisi</div>
       <button data-vista="tabelle" data-serve-dati>Tabelle</button>
       <button data-vista="pk" data-serve-dati>PK composte</button>
       <button data-vista="fk" data-serve-dati>FK candidate</button>
       <button data-vista="qualita" data-serve-dati>Qualità schema</button>
+      <button data-vista="regole">Regole di progettazione</button>
       <button data-vista="altri" data-serve-dati>Altri risultati</button>
       <div class="separatore">File</div>
+      <button data-vista="ontologia" data-serve-dati>Ontologia</button>
       <button data-vista="salva" data-serve-dati>Salva risultati</button>
       <button data-vista="impostazioni">Impostazioni</button>
     </nav>

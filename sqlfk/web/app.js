@@ -5,6 +5,34 @@
 const $ = (selettore, dentro = document) => dentro.querySelector(selettore);
 const vista = $("#vista");
 let stato = { caricato: false };
+let filtroRegola = "";
+// disposizione del diagramma: tabella -> [x, y], per le due viste; si salva nel file di progetto
+let layoutER = { iniziale: {}, collegamenti: {} };
+let regoleCache = null;
+
+async function regole() {
+  if (!regoleCache || stato.caricato) regoleCache = (await api("/api/regole")).regole;
+  return regoleCache;
+}
+
+/** Riquadro con una regola di progettazione: cosa dice, perché, come correggere, esempi. */
+function schedaRegola(r, conPulsante) {
+  const c = r.conteggi || { errore: 0, avviso: 0, info: 0 };
+  const totale = c.errore + c.avviso + c.info;
+  return el("div", { class: "pannello regola" },
+    el("h3", {}, `${r.id}. ${r.titolo}`),
+    el("p", { class: "tenue" }, `Codici: ${r.codici.join(", ")}`,
+      stato.caricato ? [" · ", el("span", { class: c.errore ? "errore" : null }, `${c.errore} errori`), ", ",
+        el("span", { class: c.avviso ? "avviso-g" : null }, `${c.avviso} avvisi`), `, ${c.info} info`] : null),
+    el("p", {}, el("b", {}, "Regola. "), r.regola),
+    el("p", {}, el("b", {}, "Perché. "), r.perche),
+    el("p", {}, el("b", {}, "Come correggere. "), r.correzione),
+    el("div", { class: "esempi" },
+      el("div", {}, el("span", { class: "etichetta errore" }, "Sbagliato"), el("pre", {}, r.sbagliato)),
+      el("div", {}, el("span", { class: "etichetta" }, "Corretto"), el("pre", {}, r.corretto))),
+    conPulsante && stato.caricato && totale ? el("button", { onclick: () => { filtroRegola = r.id; mostra("problemi"); } },
+      `Vedi i ${totale} problemi di questa regola`) : null);
+}
 let vistaAttuale = "panoramica";
 
 /** Crea un elemento: el("button", {class: "x", onclick: f}, "testo", altroElemento) */
@@ -17,7 +45,7 @@ function el(tag, attributi = {}, ...figli) {
     else if (v === true) nodo.setAttribute(k, "");
     else nodo.setAttribute(k, v);
   }
-  for (const f of figli.flat()) {
+  for (const f of figli.flat(Infinity)) {
     if (f === null || f === undefined || f === false) continue;
     nodo.append(f instanceof Node ? f : document.createTextNode(String(f)));
   }
@@ -59,6 +87,24 @@ function pulsantiSchemi() {
     el("span", { class: "tenue" }, "Vedi il risultato:"),
     el("button", { onclick: () => mostraSchema("iniziale") }, "Schema iniziale"),
     el("button", { onclick: () => mostraSchema("collegamenti") }, "Collegamenti trovati"));
+}
+
+function scaricaBlob(blob, nome) {
+  const url = URL.createObjectURL(blob);
+  el("a", { href: url, download: nome }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+/** Disegna il diagramma fuori dallo schermo e lo salva in PNG (senza dover aprire la pagina degli schemi). */
+async function diagrammaInPng(dati, nome, posizioni) {
+  const scatola = el("div", { style: "position: fixed; left: -20000px; top: 0; width: 1600px; height: 1000px" });
+  document.body.append(scatola);
+  try {
+    const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni });
+    scaricaBlob(await d.png(), nome);
+  } finally {
+    scatola.remove();
+  }
 }
 
 function formatta(valore) {
@@ -155,6 +201,7 @@ async function leggiFile(lista, origine) {
   await conAttesa(async () => {
     const contenuti = await Promise.all(file.map(async f => ({ nome: f.name, testo: await f.text() })));
     stato = await api("/api/carica_file", { file: contenuti, origine });
+    layoutER = { iniziale: {}, collegamenti: {} };
     avviso(`Caricati ${file.length} file .sql.`);
     aggiornaTutto("panoramica");
   });
@@ -172,12 +219,41 @@ $("#in-file").addEventListener("change", e => {
   e.target.value = "";
 });
 
+function nomeProgetto() {
+  const base = String(stato.origine || "progetto").split(/[\\/]/).pop().replace(/^cartella /, "");
+  return (base.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "progetto") + ".sqlfk";
+}
+
+$("#salva-progetto").addEventListener("click", () => conAttesa(async () => {
+  const progetto = await api("/api/progetto");
+  progetto.layout = layoutER;
+  scaricaBlob(new Blob([JSON.stringify(progetto, null, 1)], { type: "application/json" }), nomeProgetto());
+  avviso("Progetto salvato: riaprilo con Apri progetto per continuare il lavoro.");
+}));
+
+$("#in-progetto").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  await conAttesa(async () => {
+    let progetto;
+    try { progetto = JSON.parse(await file.text()); } catch { throw new Error("Il file non è un progetto valido."); }
+    stato = await api("/api/progetto", progetto);
+    const l = progetto.layout || {};
+    layoutER = { iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
+    regoleCache = null;
+    avviso(`Progetto ${file.name} aperto: ${stato.tabelle_totali} tabelle, ${stato.rimosse.length} tolte.`);
+    aggiornaTutto("panoramica");
+  });
+});
+
 $("#form-percorso").addEventListener("submit", async e => {
   e.preventDefault();
   const cartella = $("#percorso").value.trim();
   if (!cartella) return;
   await conAttesa(async () => {
     stato = await api("/api/carica_cartella", { cartella });
+    layoutER = { iniziale: {}, collegamenti: {} };
     avviso("Cartella caricata.");
     aggiornaTutto("panoramica");
   });
@@ -188,6 +264,7 @@ $("#form-percorso").addEventListener("submit", async e => {
 document.querySelectorAll("#menu button").forEach(b => b.addEventListener("click", () => mostra(b.dataset.vista)));
 
 function aggiornaMenu() {
+  $("#salva-progetto").disabled = !stato.caricato;
   document.querySelectorAll("#menu button").forEach(b => {
     b.classList.toggle("attiva", b.dataset.vista === vistaAttuale);
     b.disabled = b.hasAttribute("data-serve-dati") && !stato.caricato;
@@ -244,6 +321,16 @@ async function mostra(nome) {
 // ======================================================================= viste
 
 const VISTE = {
+  async regole() {
+    const elenco = await regole();
+    return [
+      el("h2", {}, "Regole di progettazione"),
+      el("p", { class: "tenue" }, "Le regole per costruire bene un database relazionale, dalla teoria della progettazione: integrità dell'entità e referenziale, cardinalità delle relazioni, normalizzazione. Ogni errore o avviso della pagina Problemi indica la regola che viola." +
+        (stato.caricato ? "" : " Carica i file .sql per vedere quante volte ogni regola è violata.")),
+      elenco.map(r => schedaRegola(r, true)),
+    ];
+  },
+
   async problemi() {
     const dati = await api("/api/diagnostica");
     const col = n => dati.problemi.colonne.indexOf(n);
@@ -256,6 +343,10 @@ const VISTE = {
     };
     const tiles = el("div", { class: "riquadri" },
       riquadro("errore", "errori", "errore-r"), riquadro("avviso", "avvisi", "avviso-r"), riquadro("info", "info", "info-r"));
+    const elencoRegole = await regole();
+    const regolaDi = Object.fromEntries(elencoRegole.flatMap(r => r.codici.map(c => [c, r])));
+    const sceltaRegola = el("select", { "aria-label": "Regola" }, el("option", { value: "" }, "tutte le regole"),
+      elencoRegole.map(r => el("option", { value: r.id, selected: r.id === filtroRegola }, `${r.id} ${r.titolo}`)));
     const codici = [...new Set(dati.problemi.righe.map(r => r[col("codice")]))].sort();
     const codice = el("select", { "aria-label": "Codice" }, el("option", { value: "" }, "tutti i codici"),
       codici.map(c => el("option", { value: c }, `${c} - ${dati.problemi.righe.find(r => r[col("codice")] === c)[col("regola")]}`)));
@@ -274,22 +365,29 @@ const VISTE = {
         el("p", {}, el("b", { class: classiStandard("gravità", riga["gravità"]) }, `${riga["gravità"]} ${riga.codice}`), `: ${riga.messaggio}`),
         riga.suggerimento ? el("p", { class: "tenue" }, `Suggerimento: ${riga.suggerimento}`) : null,
         el("div", { class: "sorgente" }, s.righe.map(([n, testo]) =>
-          el("div", { class: n === s.riga ? classe : null }, el("span", { class: "numero" }, n), testo))));
+          el("div", { class: n === s.riga ? classe : null }, el("span", { class: "numero" }, n), testo))),
+        regolaDi[riga.codice] ? schedaRegola(regolaDi[riga.codice], false) : null);
     }
 
     function disegna() {
-      const righe = dati.problemi.righe.filter(r => spunte[r[col("gravità")]].checked && (!codice.value || r[col("codice")] === codice.value));
+      const codiciRegola = sceltaRegola.value ? new Set(elencoRegole.find(r => r.id === sceltaRegola.value).codici) : null;
+      filtroRegola = sceltaRegola.value;
+      const righe = dati.problemi.righe.filter(r => spunte[r[col("gravità")]].checked
+        && (!codice.value || r[col("codice")] === codice.value)
+        && (!codiciRegola || codiciRegola.has(r[col("codice")])));
       elenco.replaceChildren(griglia({ colonne: dati.problemi.colonne, righe },
         { classiCella: classiStandard, alClic: mostraSorgente, nascondi: ["regola", "suggerimento"] }));
     }
     Object.values(spunte).forEach(s => s.addEventListener("change", disegna));
     codice.addEventListener("change", disegna);
+    sceltaRegola.addEventListener("change", disegna);
+    if (filtroRegola) Object.values(spunte).forEach(s => { s.checked = true; });
     disegna();
     return [
       el("h2", {}, "Problemi dello schema"),
       el("p", { class: "tenue" }, "Come un compilatore: gli errori sono cose sbagliate da correggere (per esempio una tabella senza chiave primaria o una chiave esterna verso una tabella che non esiste); gli avvisi sono probabili difetti di progettazione (chiavi esterne mancanti, normalizzazione, relazioni ridondanti); le info sono osservazioni. Ricavati dalla sola struttura: gli avvisi vanno verificati."),
       tiles,
-      el("div", { class: "riga-comandi" }, codice,
+      el("div", { class: "riga-comandi" }, sceltaRegola, codice,
         el("a", { class: "pulsante", href: "/api/scarica/report", download: "diagnostica.txt" }, "Scarica il report (.txt)")),
       sorgente,
       elenco,
@@ -536,6 +634,117 @@ const VISTE = {
     ];
   },
 
+  async modello() {
+    let tipo = "collegamenti";
+    const medie = el("input", { type: "checkbox" });
+    const filtro = el("input", { type: "text", placeholder: "filtra le tabelle", "aria-label": "Filtra le tabelle" });
+    const formato = el("select", { "aria-label": "Formato dell'anteprima" },
+      [["testo", "Testo (.txt)"], ["md", "Markdown (.md)"], ["mermaid", "Mermaid (.mmd)"], ["plantuml", "PlantUML (.puml)"],
+       ["dot", "Graphviz (.dot)"], ["dbml", "DBML (.dbml)"], ["json", "JSON"]].map(([v, t]) => el("option", { value: v }, t)));
+    const schema = el("div", { class: "pannello schema-logico" });
+    const anteprima = el("pre", { style: "max-height: 360px" });
+    const info = el("span", { class: "tenue" });
+    const schede = el("span", { class: "riga-comandi", style: "margin: 0" });
+    let dati = null;
+    const parametri = () => `tipo=${tipo}&medie=${medie.checked ? 1 : 0}`;
+
+    function disegnaSchema() {
+      const f = filtro.value.trim().toLowerCase();
+      const tabelle = dati.tabelle.filter(t => !f || t.nome.toLowerCase().includes(f));
+      schema.replaceChildren(...tabelle.map(t => el("div", {},
+        el("span", { class: "nome-tabella" }, t.nome), " (",
+        t.colonne.map((c, i) => [i ? ", " : "",
+          el("span", { class: [c.pk ? "pk" : "", c.fk ? "fk" : ""].join(" ").trim() || null, title: c.tipo }, c.nome),
+          c.fk ? el("span", { class: "verso" }, ` → ${c.verso.join(", ")}`) : null]),
+        ")", t.pk_indovinata ? el("span", { class: "verso" }, "  chiave primaria non dichiarata") : null)));
+      info.textContent = `${tabelle.length} tabelle, ${dati.collegamenti.length} collegamenti`;
+    }
+    async function carica() {
+      dati = await api(`/api/diagramma?${parametri()}`);
+      schede.replaceChildren(
+        el("button", { class: tipo === "iniziale" ? "primario" : null, onclick: () => { tipo = "iniziale"; conAttesa(carica); } }, "Solo FK dichiarate"),
+        el("button", { class: tipo === "collegamenti" ? "primario" : null, onclick: () => { tipo = "collegamenti"; conAttesa(carica); } }, "FK dichiarate e trovate"));
+      medie.disabled = tipo !== "collegamenti";
+      disegnaSchema();
+      await aggiornaAnteprima();
+    }
+    async function aggiornaAnteprima() {
+      const r = await api(`/api/modello?${parametri()}&formato=${formato.value}&anteprima=1`);
+      anteprima.textContent = r.testo;
+    }
+    filtro.addEventListener("input", disegnaSchema);
+    medie.addEventListener("change", () => conAttesa(carica));
+    formato.addEventListener("change", () => conAttesa(aggiornaAnteprima));
+    setTimeout(() => conAttesa(carica), 0);
+
+    const scaricaFormato = (f, est) => el("button", { onclick: () =>
+      el("a", { href: `/api/modello?${parametri()}&formato=${f}`, download: `modello_relazionale.${est}` }).click() }, est.toUpperCase());
+    return [
+      el("h2", {}, "Modello relazionale"),
+      el("p", { class: "tenue" }, "Lo schema logico del database: una riga per tabella con i suoi attributi; la chiave primaria è sottolineata, le chiavi esterne sono in corsivo con la tabella a cui puntano (passa il mouse su un attributo per vederne il tipo). Si può esportare come immagine o in formati da usare con altri strumenti."),
+      el("div", { class: "riga-comandi" }, schede, el("label", {}, medie, "anche affidabilità media"), filtro, info),
+      el("div", { class: "pannello" },
+        el("h3", {}, "Esporta"),
+        el("div", { class: "riga-comandi" },
+          el("span", { class: "tenue" }, "Immagine del diagramma:"),
+          el("button", { class: "primario", onclick: () => conAttesa(() => diagrammaInPng(dati, "modello_relazionale.png", layoutER[tipo])) }, "PNG"),
+          el("button", { onclick: () => {
+            const scatola = el("div", { style: "position: fixed; left: -20000px; top: 0; width: 1600px; height: 1000px" });
+            document.body.append(scatola);
+            try {
+              const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni: layoutER[tipo] });
+              scaricaBlob(new Blob([d.esporta()], { type: "image/svg+xml" }), "modello_relazionale.svg");
+            } finally { scatola.remove(); }
+          } }, "SVG")),
+        el("div", { class: "riga-comandi" },
+          el("span", { class: "tenue" }, "Testo e altri strumenti:"),
+          [["testo", "txt"], ["md", "md"], ["mermaid", "mmd"], ["plantuml", "puml"], ["dot", "dot"], ["dbml", "dbml"], ["json", "json"]]
+            .map(([f, est]) => scaricaFormato(f, est))),
+        el("p", { class: "tenue" }, "Mermaid: lo disegnano GitHub, Notion e mermaid.live. PlantUML: plantuml.com. Graphviz: dot -Tpng modello_relazionale.dot -o modello.png. DBML: dbdiagram.io.")),
+      schema,
+      el("div", { class: "riga-comandi" }, el("b", {}, "Anteprima"), formato),
+      anteprima,
+    ];
+  },
+
+  async ontologia() {
+    const base = el("input", { type: "text", style: "width: 340px", "aria-label": "IRI di base" });
+    const lingua = el("select", { "aria-label": "Lingua dei nomi" },
+      [["auto", "lingua: automatica"], ["italiano", "nomi in italiano (ha...)"], ["inglese", "nomi in inglese (has...)"]]
+        .map(([v, t]) => el("option", { value: v }, t)));
+    const risultato = el("div");
+    const parametri = () => `base=${encodeURIComponent(base.value)}&lingua=${lingua.value}`;
+    async function genera() {
+      const d = await api(`/api/ontologia?${parametri()}`);
+      if (!base.value) base.value = d.base;
+      const riquadri = [["classi", "classi (una per tabella)"], ["proprieta_dato", "proprietà di dato (colonne)"],
+        ["proprieta_oggetto", "proprietà d'oggetto (chiavi esterne)"], ["proposte", "collegamenti proposti, da verificare"],
+        ["relazioni_nm", "relazioni N:M"]];
+      risultato.replaceChildren(
+        el("div", { class: "riquadri" }, riquadri.map(([k, t]) =>
+          el("div", { class: "riquadro" }, el("div", { class: "valore" }, d[k]), el("div", { class: "voce" }, t)))),
+        el("p", { class: "tenue" }, `Nomi in ${d.lingua}.`),
+        el("div", { class: "riga-comandi" },
+          el("a", { class: "pulsante primario", href: `/api/scarica/ontologia?${parametri()}`, download: "ontologia.ttl" }, "Scarica ontologia (.ttl)"),
+          el("a", { class: "pulsante", href: `/api/scarica/r2rml?${parametri()}`, download: "mapping_r2rml.ttl" }, "Scarica mapping R2RML (.ttl)")),
+        griglia({ colonne: ["tabella", "classe"], righe: d.tabelle.map(x => [x.tabella, x.classe]) }, { titolo: "Tabelle e classi" }),
+        d.ponti.length ? griglia({ colonne: ["tabella ponte", "proprietà N:M"], righe: d.ponti.map(x => [x.tabella, x.proprieta]) },
+          { titolo: "Tabelle ponte diventate relazioni N:M" }) : null,
+        el("h3", {}, "Anteprima dell'ontologia"),
+        el("pre", { style: "max-height: 420px" }, d.anteprima));
+    }
+    lingua.addEventListener("change", () => conAttesa(genera));
+    setTimeout(() => conAttesa(genera), 0);
+    return [
+      el("h2", {}, "Ontologia"),
+      el("p", { class: "tenue" }, "Genera un'ontologia OWL (formato Turtle, apribile in Protégé) dalla struttura del database: ogni tabella diventa una classe, ogni colonna una proprietà di dato, ogni chiave esterna una proprietà d'oggetto; la chiave primaria diventa owl:hasKey, NOT NULL una cardinalità minima, le tabelle ponte senza attributi una relazione N:M. Il mapping R2RML dice come trasformare i dati del database in RDF (con Ontop, RMLMapper e simili). Usa le chiavi esterne dichiarate e quelle trovate ad affidabilità alta, che nell'ontologia sono annotate come da verificare; le relazioni ridondanti e le tabelle tolte sono escluse."),
+      el("div", { class: "riga-comandi" },
+        el("label", {}, "IRI di base ", base), lingua,
+        el("button", { onclick: () => conAttesa(genera) }, "Aggiorna")),
+      risultato,
+    ];
+  },
+
   async salva() {
     const cartella = el("input", { type: "text", placeholder: "percorso di una cartella", style: "width: 360px" });
     const esito = el("div");
@@ -559,7 +768,7 @@ const VISTE = {
         anteprima),
       el("div", { class: "pannello" },
         el("h3", {}, "Salva tutto in una cartella"),
-        el("p", { class: "tenue" }, "Crea nella cartella il file Excel, i due file .sql (ALTER TABLE e CREATE TABLE con FK) e i due schemi grafici."),
+        el("p", { class: "tenue" }, "Crea nella cartella il file Excel, i due file .sql (ALTER TABLE e CREATE TABLE con FK), l'ontologia e il mapping R2RML, il report della diagnostica e i due schemi grafici."),
         el("div", { class: "riga-comandi" }, cartella, el("button", { onclick: async () => {
           await conAttesa(async () => {
             const r = await api("/api/salva_cartella", { cartella: cartella.value });
@@ -661,7 +870,11 @@ async function contenutoER(quale) {
       diagramma = null;
       return;
     }
-    diagramma = DiagrammaER.crea(cornice, { tabelle, collegamenti }, { tipi: conTipi.checked });
+    diagramma = DiagrammaER.crea(cornice, { tabelle, collegamenti }, {
+      tipi: conTipi.checked,
+      posizioni: layoutER[quale],
+      onSposta: (nome, x, y) => { layoutER[quale][nome] = [x, y]; },
+    });
     info.textContent = `${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti`;
   }
 
@@ -695,7 +908,9 @@ async function contenutoER(quale) {
       el("button", { onclick: () => diagramma && diagramma.zoom(1.25), title: "Ingrandisci" }, "+"),
       el("button", { onclick: () => diagramma && diagramma.zoom(0.8), title: "Rimpicciolisci" }, "-"),
       el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
+      el("button", { title: "Dimentica gli spostamenti fatti a mano", onclick: () => { layoutER[quale] = {}; disegna(); } }, "Disposizione automatica"),
       el("button", { onclick: scarica }, "Scarica SVG"),
+      el("button", { onclick: () => diagramma && conAttesa(async () => scaricaBlob(await diagramma.png(), `diagramma_${quale}.png`)) }, "Scarica PNG"),
       info),
     el("div", { class: "legenda" },
       el("span", {}, el("b", {}, "PK"), " chiave primaria · ", el("b", {}, "FK"), " chiave esterna · ", el("b", {}, "UQ"), " unique"),

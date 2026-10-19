@@ -53,6 +53,53 @@ python -m sqlfk.verifica dump.sql --werror --togli piatto
 
 Nell'app c'è la pagina **Problemi**: cliccando un problema si vede il punto del file con la riga evidenziata. Il report si scarica come `diagnostica.txt` ed è anche nel primo foglio dell'Excel.
 
+## Regole di progettazione
+
+Ogni errore e avviso appartiene a una regola per costruire bene un database relazionale, con spiegazione, correzione ed esempi (pagina **Regole di progettazione** dell'app, `sqlfk/regole.py`):
+
+| Regola | Codici |
+|---|---|
+| R0 Codice SQL corretto e senza doppioni | E001-E003 |
+| R1 Integrità dell'entità: ogni tabella ha una chiave primaria | E010-E011 |
+| R2 Integrità referenziale: ogni chiave esterna punta a una riga che esiste | E020-E025, W026-W027 |
+| R3 Ogni collegamento è una chiave esterna dichiarata | W030-W031, I032, W033 |
+| R4 Niente relazioni ridondanti | W034 |
+| R5 Relazioni e cardinalità (1:1, 1:N, N:M, obbligatorietà) | I035, I036, I038 |
+| R6 Prima forma normale: valori atomici | W101-W103 |
+| R7 Seconda forma normale: dipendere da tutta la chiave | W201 |
+| R8 Terza forma normale: niente dipendenze transitive | W301 |
+
+```bash
+python -m sqlfk.verifica esempi --regole      # sotto ogni problema la regola violata
+python -m sqlfk.verifica --spiega W301        # spiegazione della regola, con esempio sbagliato e corretto
+```
+
+## Ontologia
+
+Dallo schema si genera un'ontologia **OWL** (`ontologia.ttl`, per Protégé) e un mapping **R2RML** (`mapping_r2rml.ttl`, per trasformare i dati in RDF con Ontop o RMLMapper): tabelle → classi al singolare, colonne → proprietà di dato, chiavi esterne → proprietà d'oggetto, chiavi primarie → `owl:hasKey`, `NOT NULL` → cardinalità minima, tabelle ponte → relazioni N:M. Pagina **Ontologia** dell'app, oppure:
+
+```bash
+python -m sqlfk.ontologia esempi --base http://example.org/negozio/
+```
+
+## Modello relazionale ed esportazioni
+
+Lo schema logico del database (`Fatture (numero (pk), data, id_cliente (fk → clienti), importo)`), nella pagina **Modello relazionale** dell'app, si esporta come:
+
+| Formato | Per cosa |
+|---|---|
+| **PNG**, **SVG** | immagine del diagramma delle tabelle |
+| `.txt`, `.md` | schema logico in testo o Markdown |
+| Mermaid `.mmd` | diagramma disegnato da GitHub, Notion, mermaid.live |
+| PlantUML `.puml` | plantuml.com e plugin degli editor |
+| Graphviz `.dot` | `dot -Tpng modello_relazionale.dot -o modello.png` |
+| DBML `.dbml` | dbdiagram.io |
+| JSON | struttura completa, per altri programmi |
+
+```bash
+python -m sqlfk.modello esempi --formato mermaid > modello.mmd
+```
+
 ## App desktop (gestionale)
 
 Oltre al notebook c'è un'app con interfaccia grafica che fa le stesse cose: carichi i file `.sql` (una cartella intera o singoli file) e navighi tra panoramica, gruppi, schemi grafici, PK composte, FK candidate, entità da togliere e salvataggio dei risultati.
@@ -83,6 +130,10 @@ python -m sqlfk.server --apri
 
 e si apre `http://127.0.0.1:8765`. Con `--cartella percorso/dei/file` carica subito una cartella.
 
+### File di progetto (.sqlfk)
+
+Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `.sql` caricati (dentro il progetto, quindi si riapre anche se la cartella originale non c'è più), le impostazioni (dialetto, soglie, colonne generiche, sinonimi, regole ON DELETE/ON UPDATE), le tabelle tolte e la disposizione del diagramma (le tabelle spostate a mano tornano dove le avevi lasciate). Con **Apri progetto** si riprende da lì. È un file JSON; non va messo su GitHub se contiene dati riservati (è già nel `.gitignore`).
+
 ### Struttura del progetto
 
 | Percorso | Contenuto |
@@ -92,6 +143,9 @@ e si apre `http://127.0.0.1:8765`. Con `--cartella percorso/dei/file` carica sub
 | `sqlfk/grafici.py` | gli schemi grafici interattivi |
 | `sqlfk/server.py` | il server locale con le API usate dall'interfaccia |
 | `sqlfk/verifica.py` | il controllo da terminale, come un compilatore |
+| `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
+| `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
+| `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |
 | `sqlfk/web/` | l'interfaccia (HTML, CSS, JavaScript) |
 | `sqlfk/web/diagramma.js` | il diagramma delle tabelle; la disposizione usa dagre (licenza MIT, in `sqlfk/web/vendor/`) |
 | `app/` | l'app Electron, che avvia il server e mostra l'interfaccia |
