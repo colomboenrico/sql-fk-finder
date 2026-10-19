@@ -1,0 +1,16 @@
+{
+  "name": "sql-fk-finder",
+  "productName": "SQL FK Finder",
+  "version": "1.0.0",
+  "description": "Gestionale desktop per trovare i collegamenti mancanti tra tabelle SQL",
+  "main": "main.js",
+  "author": "Enrico Colombo",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}

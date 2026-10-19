@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQL FK Finder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="testata">
+    <div class="marchio">
+      <h1>SQL FK Finder</h1>
+      <span id="origine" class="origine"></span>
+    </div>
+    <div class="caricamento">
+      <label class="pulsante primario">Carica cartella
+        <input type="file" id="in-cartella" webkitdirectory multiple hidden>
+      </label>
+      <label class="pulsante">Carica file .sql
+        <input type="file" id="in-file" accept=".sql" multiple hidden>
+      </label>
+      <form id="form-percorso" class="percorso">
+        <input id="percorso" type="text" placeholder="oppure il percorso di una cartella" aria-label="Percorso della cartella">
+        <button class="pulsante" type="submit">Apri</button>
+      </form>
+    </div>
+  </header>
+
+  <div id="riepilogo" class="riepilogo">Nessun file caricato.</div>
+
+  <div class="corpo">
+    <nav id="menu" class="menu" aria-label="Sezioni">
+      <button data-vista="panoramica">Panoramica</button>
+      <button data-vista="problemi" data-serve-dati id="voce-problemi">Problemi</button>
+      <button data-vista="gruppi" data-serve-dati>Gruppi</button>
+      <button data-vista="schemi" data-serve-dati>Schemi grafici</button>
+      <button data-vista="togli" data-serve-dati>Togli entità</button>
+      <div class="separatore">Analisi</div>
+      <button data-vista="tabelle" data-serve-dati>Tabelle</button>
+      <button data-vista="pk" data-serve-dati>PK composte</button>
+      <button data-vista="fk" data-serve-dati>FK candidate</button>
+      <button data-vista="qualita" data-serve-dati>Qualità schema</button>
+      <button data-vista="altri" data-serve-dati>Altri risultati</button>
+      <div class="separatore">File</div>
+      <button data-vista="salva" data-serve-dati>Salva risultati</button>
+      <button data-vista="impostazioni">Impostazioni</button>
+    </nav>
+    <main id="vista" class="vista"></main>
+  </div>
+
+  <div id="attesa" class="attesa" hidden><div class="riquadro-attesa">Analisi in corso...</div></div>
+  <div id="avvisi" class="avvisi" aria-live="polite"></div>
+
+  <script src="vendor/dagre.min.js"></script>
+  <script src="diagramma.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

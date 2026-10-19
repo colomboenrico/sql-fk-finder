@@ -5,7 +5,10 @@
 # Risultati generati dal notebook
 possibili_collegamenti.xlsx
 fk_candidate.sql
+create_table_con_fk.sql
+diagnostica.txt
 schema_collegamenti.html
+schema_iniziale.html
 *.xlsx
 
 # Python / Jupyter
@@ -13,3 +16,6 @@ schema_collegamenti.html
 __pycache__/
 .venv/
 venv/
+
+# macOS
+.DS_Store

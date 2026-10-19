@@ -1,0 +1,165 @@
+:root {
+  --sfondo: #f5f6f8;
+  --pannello: #ffffff;
+  --testo: #1d2330;
+  --tenue: #5f6b7a;
+  --bordo: #dde1e7;
+  --primario: #1f4e79;
+  --primario-chiaro: #e7eef6;
+  --pericolo: #b42318;
+  --ok: #2e7d32;
+  --medio: #c25e00;
+  --riga-alt: #f9fafb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  color: var(--testo);
+  background: var(--sfondo);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sfondo: #16191f;
+    --pannello: #1f232b;
+    --testo: #e6e8eb;
+    --tenue: #9aa3ae;
+    --bordo: #333945;
+    --primario: #6ea8de;
+    --primario-chiaro: #24364a;
+    --pericolo: #f0766b;
+    --ok: #79c37d;
+    --medio: #f0a35e;
+    --riga-alt: #23272f;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--sfondo); color: var(--testo); height: 100vh; display: flex; flex-direction: column; }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 15px; margin: 20px 0 8px; }
+p { margin: 0 0 10px; line-height: 1.45; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius: 6px; padding: 10px 12px; overflow: auto; white-space: pre-wrap; }
+
+/* ---------------------------------------------------------------- testata */
+.testata { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 12px 20px; background: var(--pannello); border-bottom: 1px solid var(--bordo); }
+.marchio { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.origine { color: var(--tenue); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.caricamento { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.percorso { display: flex; gap: 6px; }
+.percorso input { width: 280px; }
+
+.riepilogo { padding: 8px 20px; font-size: 13px; color: var(--tenue); background: var(--pannello); border-bottom: 1px solid var(--bordo); }
+.riepilogo b { color: var(--testo); }
+
+/* ---------------------------------------------------------------- comandi */
+.pulsante, button { font: inherit; border: 1px solid var(--bordo); background: var(--pannello); color: var(--testo);
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.pulsante:hover, button:hover { border-color: var(--primario); }
+.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
+.primario:hover { filter: brightness(1.1); }
+.pericolo { color: var(--pericolo); border-color: var(--pericolo); }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], input[type=number], select, textarea { font: inherit; color: var(--testo); background: var(--pannello);
+  border: 1px solid var(--bordo); border-radius: 6px; padding: 6px 8px; }
+textarea { width: 100%; min-height: 70px; }
+label.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--tenue); }
+.riga-comandi { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+.riga-comandi label { display: inline-flex; gap: 6px; align-items: center; }
+
+/* ---------------------------------------------------------------- struttura */
+.corpo { flex: 1; display: flex; min-height: 0; }
+.menu { width: 190px; flex-shrink: 0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--pannello); border-right: 1px solid var(--bordo); overflow-y: auto; }
+.menu button { border: none; background: none; text-align: left; justify-content: flex-start; padding: 8px 12px; width: 100%; }
+.menu button:hover { background: var(--primario-chiaro); }
+.menu button.attiva { background: var(--primario-chiaro); color: var(--primario); font-weight: 600; }
+.menu .separatore { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--tenue); padding: 14px 12px 4px; }
+.vista { flex: 1; overflow: auto; padding: 20px 24px; min-width: 0; }
+
+.pannello { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.tenue { color: var(--tenue); }
+.messaggio { padding: 10px 12px; border-radius: 6px; background: var(--primario-chiaro); margin-bottom: 12px; }
+
+/* ---------------------------------------------------------------- riquadri numerici */
+.riquadri { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.riquadro { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 8px; padding: 12px 14px; }
+.riquadro .valore { font-size: 22px; font-weight: 600; }
+.riquadro .voce { font-size: 12.5px; color: var(--tenue); margin-top: 2px; }
+
+/* ---------------------------------------------------------------- tabelle dati */
+.griglia { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+.griglia-testa { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--bordo); flex-wrap: wrap; }
+.griglia-testa input { flex: 0 1 260px; }
+.griglia-testa .conteggio { color: var(--tenue); font-size: 13px; margin-left: auto; }
+.griglia-scorri { overflow: auto; max-height: 60vh; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--bordo); vertical-align: top; }
+th { position: sticky; top: 0; background: var(--pannello); cursor: pointer; user-select: none; white-space: nowrap; font-weight: 600; }
+th .verso { color: var(--tenue); font-weight: normal; }
+tbody tr:nth-child(even) { background: var(--riga-alt); }
+tbody tr.cliccabile { cursor: pointer; }
+tbody tr.cliccabile:hover, tbody tr.scelta { background: var(--primario-chiaro); }
+td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+.si { color: var(--ok); }
+.no { color: var(--pericolo); }
+.alta { color: var(--ok); font-weight: 600; }
+.media { color: var(--medio); font-weight: 600; }
+.bassa { color: var(--tenue); font-weight: 600; }
+.errore { color: var(--pericolo); font-weight: 600; }
+.avviso-g { color: var(--medio); font-weight: 600; }
+.info-g { color: var(--tenue); font-weight: 600; }
+.riquadro.errore-r { border-left: 4px solid var(--pericolo); }
+.riquadro.avviso-r { border-left: 4px solid var(--medio); }
+.riquadro.info-r { border-left: 4px solid var(--bordo); }
+.contatore { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px;
+  font-size: 11px; line-height: 18px; text-align: center; color: #fff; background: var(--pericolo); }
+.contatore.giallo { background: var(--medio); }
+.sorgente { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px;
+  border: 1px solid var(--bordo); border-radius: 6px; overflow: auto; background: var(--riga-alt); }
+.sorgente div { white-space: pre; padding: 0 10px; }
+.sorgente .numero { display: inline-block; width: 44px; color: var(--tenue); user-select: none; }
+.sorgente .evidenziata { background: rgba(194, 94, 0, .18); }
+.sorgente .evidenziata.e { background: rgba(180, 35, 24, .18); }
+.paginazione { display: flex; gap: 8px; align-items: center; padding: 8px 10px; }
+
+/* ---------------------------------------------------------------- elenchi da spuntare */
+.elenco-spunte { max-height: 320px; overflow: auto; border: 1px solid var(--bordo); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; background: var(--pannello); }
+.elenco-spunte label { display: flex; gap: 8px; padding: 3px 0; align-items: center; }
+
+/* ---------------------------------------------------------------- schemi grafici */
+.cornice-schema { width: 100%; height: calc(100vh - 230px); min-height: 400px; border: 1px solid var(--bordo); border-radius: 8px; background: #fff; }
+
+/* ---------------------------------------------------------------- diagramma ER */
+.er-cornice { width: 100%; height: calc(100vh - 300px); min-height: 420px; border: 1px solid var(--bordo);
+  border-radius: 8px; background: #f7f8fa; overflow: hidden; touch-action: none; }
+.er-svg { display: block; cursor: grab; user-select: none; }
+.er-svg:active { cursor: grabbing; }
+.er-tabella { cursor: move; }
+.er-svg.er-focus .er-tabella:not(.er-attiva) { opacity: .25; }
+.er-svg.er-focus .er-linea:not(.er-attiva), .er-svg.er-focus circle:not(.er-attiva),
+.er-svg.er-focus text:not(.er-attiva):not(.er-tabella text) { opacity: .12; }
+.er-svg .er-linea.er-attiva { stroke-width: 2.6; }
+.legenda { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--tenue); margin: 0 0 8px; align-items: center; }
+.legenda .campione { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+.legenda .campione.tratteggio { border-top-style: dashed; }
+.legenda b { color: var(--testo); }
+
+/* ---------------------------------------------------------------- attesa e avvisi */
+.attesa { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; z-index: 10; }
+.attesa[hidden] { display: none; }
+.riquadro-attesa { background: var(--pannello); padding: 18px 26px; border-radius: 8px; border: 1px solid var(--bordo); font-weight: 600; }
+.avvisi { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 11; }
+.avviso { background: var(--pannello); border: 1px solid var(--bordo); border-left: 4px solid var(--primario); border-radius: 6px;
+  padding: 10px 14px; max-width: 420px; box-shadow: 0 4px 12px rgba(0, 0, 0, .12); }
+.avviso.errore { border-left-color: var(--pericolo); }
+
+@media (max-width: 800px) {
+  .corpo { flex-direction: column; }
+  .menu { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--bordo); }
+  .menu button { width: auto; }
+  .menu .separatore { display: none; }
+  .percorso input { width: 100%; }
+  .vista { padding: 16px; }
+}

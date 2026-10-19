@@ -3,3 +3,5 @@ openpyxl
 sqlglot
 pyvis
 ipython
+scipy
+ipywidgets>=8
