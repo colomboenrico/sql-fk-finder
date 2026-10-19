@@ -1,3 +1,5 @@
+<p align="center"><img src="sqlfk/web/logo.png" alt="SQL FK Finder" width="160"></p>
+
 # sql-fk-finder
 
 Notebook Jupyter per **trovare i collegamenti mancanti tra tabelle** di un database a partire dai file `.sql` con i `CREATE TABLE`.

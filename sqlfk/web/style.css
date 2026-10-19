@@ -44,7 +44,8 @@ pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius
 /* ---------------------------------------------------------------- testata */
 .testata { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
   padding: 12px 20px; background: var(--pannello); border-bottom: 1px solid var(--bordo); }
-.marchio { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.marchio { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.marchio .logo { width: 40px; height: 40px; flex-shrink: 0; }
 .origine { color: var(--tenue); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 .caricamento { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .percorso { display: flex; gap: 6px; }

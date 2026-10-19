@@ -27,7 +27,7 @@ from . import grafici as G
 
 WEB = Path(__file__).parent / "web"
 TIPI_FILE = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-             ".css": "text/css; charset=utf-8"}
+             ".css": "text/css; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml"}
 
 
 def tabella(df):

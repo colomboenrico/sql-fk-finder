@@ -299,6 +299,7 @@ const VISTE = {
   async panoramica() {
     if (!stato.caricato) {
       return el("div", { class: "pannello" },
+        el("img", { src: "logo.png", alt: "", width: 120, height: 120, style: "float: right; margin: 0 0 8px 16px" }),
         el("h2", {}, "Benvenuto"),
         el("p", {}, "Questa app legge i file .sql con i CREATE TABLE di un database e cerca i collegamenti tra le tabelle (le chiavi esterne mancanti)."),
         el("p", {}, "Per iniziare usa in alto ", el("b", {}, "Carica cartella"), " (tutti i file .sql di una cartella), ",

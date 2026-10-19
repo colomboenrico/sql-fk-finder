@@ -5,6 +5,7 @@ const path = require("path");
 const os = require("os");
 
 const RADICE = path.join(__dirname, "..");          // cartella del progetto, contiene sqlfk/
+const ICONA = path.join(__dirname, "icona.png");
 let server = null;
 let indirizzo = null;
 
@@ -44,6 +45,7 @@ function creaFinestra() {
     minWidth: 900,
     minHeight: 600,
     title: "SQL FK Finder",
+    icon: ICONA,
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
@@ -51,7 +53,7 @@ function creaFinestra() {
   // "Apri in una finestra a parte" per gli schemi: nuova finestra dell'app; i link esterni nel browser
   finestra.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(indirizzo)) {
-      return { action: "allow", overrideBrowserWindowOptions: { width: 1300, height: 900, autoHideMenuBar: true } };
+      return { action: "allow", overrideBrowserWindowOptions: { width: 1300, height: 900, autoHideMenuBar: true, icon: ICONA } };
     }
     shell.openExternal(url);
     return { action: "deny" };
@@ -60,6 +62,7 @@ function creaFinestra() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin" && app.dock) app.dock.setIcon(ICONA);   // icona nel Dock del Mac
   const python = trovaPython();
   if (!python) {
     dialog.showErrorBox("Python non trovato",
