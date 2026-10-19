@@ -33,6 +33,7 @@
 }
 
 * { box-sizing: border-box; }
+a { color: var(--primario); }
 body { margin: 0; background: var(--sfondo); color: var(--testo); height: 100vh; display: flex; flex-direction: column; }
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 18px; margin: 0 0 12px; }
@@ -204,3 +205,16 @@ td.cat { display: table-cell; border-radius: 0; }
 .cat-storico { background: #efebe9; color: #4e342e; }
 .cat-dipendente { background: #fce4ec; color: #880e4f; }
 .cat-isolata { background: #eeeeee; color: #555; }
+
+/* query sui dati */
+.query-griglia { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 12px; align-items: start; }
+.query-laterale { max-height: 640px; overflow: auto; padding: 12px; }
+.query-laterale input { width: 100%; }
+.query-tabelle details { padding: 2px 0; }
+.query-tabelle summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.query-colonne { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 2px 0 6px 16px; font-size: 12px; }
+textarea.editor-query { min-height: 180px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; tab-size: 2; }
+.query-istruzione { margin: 12px 0 4px; max-height: 90px; }
+.conferma { border-color: var(--pericolo); }
+@media (max-width: 900px) { .query-griglia { grid-template-columns: 1fr; } .query-laterale { max-height: 260px; } }
+a.pulsante { text-decoration: none; display: inline-flex; align-items: center; }

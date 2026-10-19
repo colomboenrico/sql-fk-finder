@@ -26,6 +26,7 @@ from . import analisi as A
 from . import grafici as G
 from . import modello as MR
 from . import ontologia as O
+from . import query as QY
 from .regole import REGOLE
 
 WEB = Path(__file__).parent / "web"
@@ -55,6 +56,8 @@ class Sessione:
         self.origine = ""
         self.rimosse = set()
         self.df_schema = None
+        self.db = None                    # database SQLite per le query, costruito alla prima richiesta
+        self.lock_db = threading.Lock()
 
     # ------------------------------------------------------------ caricamento e analisi
     def carica(self, file_sql, origine):
@@ -65,6 +68,7 @@ class Sessione:
         if df.empty:
             raise Errore("Nei file non c'è nessun CREATE TABLE.")
         self.file_sql, self.origine = file_sql, origine
+        self.db = None
         self.df_schema, self.pk, self.fk, self.errori = df, pk, fk, errori
         self.create = A.create_originali(file_sql, self.imp.dialetto)
         self.rimosse &= set(df["tabella"])
@@ -131,6 +135,29 @@ class Sessione:
         return {"aree": tabella(X.aree), "sottogruppi": tabella(X.sottogruppi), "tabelle": tabella(X.tabelle),
                 "collegamenti": tabella(X.collegamenti), "collegamenti_aree": tabella(X.collegamenti_aree),
                 "categorie": A.CATEGORIE, "centrali": X.centrali}
+
+    # ------------------------------------------------------------ query sui dati
+    def database(self, ricostruisci=False):
+        self.richiedi_dati()
+        with self.lock_db:
+            if self.db is None or ricostruisci:
+                self.db = QY.Database(self.file_sql, self.df_schema, self.pk, self.imp.dialetto)
+            return self.db
+
+    def query_tabelle(self, ricostruisci=False):
+        """Tabelle del database delle query con righe e colonne, e istruzioni di dati non caricate."""
+        db = self.database(ricostruisci)
+        with self.lock_db:
+            conteggi = db.conteggi()
+            for c in conteggi:
+                c["colonne"] = [r[1] for r in db.conn.execute(f"PRAGMA table_info({QY.q(c['tabella'])})")]
+        return {"tabelle": conteggi, "problemi": db.problemi, "secondi": round(db.secondi, 2),
+                "dialetto": self.imp.dialetto, "max_righe": QY.MAX_RIGHE}
+
+    def query(self, testo, conferma=False):
+        db = self.database()
+        with self.lock_db:
+            return db.esegui(str(testo or ""), bool(conferma))
 
     def pk_composte(self):
         self.richiedi_dati()
@@ -328,6 +355,11 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/schema_iniziale": lambda: self.schema("iniziale"),
             "/api/schema_collegamenti": lambda: self.schema("collegamenti"),
             "/api/scarica/excel": self.scarica_excel,
+            "/api/query/tabelle": s.query_tabelle,
+            "/api/scarica/database_sqlite": lambda: (s.database().file_sqlite(), "application/vnd.sqlite3",
+                                                     {"Content-Disposition": 'attachment; filename="database.sqlite"'}),
+            "/api/scarica/database_sql": lambda: (s.database().dump().encode("utf-8"), "application/sql; charset=utf-8",
+                                                  {"Content-Disposition": 'attachment; filename="database_sqlite.sql"'}),
             "/api/scarica/sql": self.scarica_sql,
             "/api/scarica/create": self.scarica_create,
         }
@@ -466,6 +498,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/impostazioni": lambda: s.imposta(dati),
             "/api/salva_cartella": salva_cartella,
             "/api/progetto": lambda: s.apri_progetto(dati),
+            "/api/query": lambda: s.query(dati.get("sql"), dati.get("conferma")),
+            "/api/query/ricostruisci": lambda: s.query_tabelle(True),
         }
         if percorso not in rotte:
             return self.json({"errore": "Indirizzo sconosciuto."}, 404)

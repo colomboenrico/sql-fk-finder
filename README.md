@@ -101,6 +101,26 @@ Lo schema logico del database (`Fatture (numero (pk), data, id_cliente (fk → c
 python -m sqlfk.modello esempi --formato mermaid > modello.mmd
 ```
 
+## Query sui dati
+
+Dai file `.sql` si costruisce un database SQLite in memoria: le tabelle dei `CREATE TABLE` (più le colonne di `ALTER TABLE ... ADD COLUMN`) e i dati degli `INSERT INTO` e dei blocchi `COPY ... FROM stdin` dei dump di PostgreSQL. Nell'app c'è la pagina **Query sui dati**:
+
+- elenco delle tabelle con il numero di righe e le colonne (clic sul nome: prime 100 righe; clic su una colonna: la inserisce nella query);
+- editor delle query (Ctrl+Invio o Cmd+Invio per eseguire; se selezioni una parte viene eseguita solo quella), più istruzioni separate da `;`, query recenti;
+- le query si scrivono in SQLite o nel dialetto dei file: se serve vengono tradotte con sqlglot (`ILIKE`, `::int`, `TOP 10`...); i nomi con lo schema (`public.clienti`) funzionano;
+- INSERT, UPDATE, DELETE, DROP... chiedono conferma e cambiano **solo la copia in memoria**, non i file; "Ricarica i dati dai file" le annulla;
+- risultati in tabella (fino a 1000 righe mostrate), scaricabili in CSV; il database si scarica come file `.sqlite` (apribile con DBeaver) o come script SQL.
+
+Da terminale:
+
+```
+python -m sqlfk.query esempi                                   # tabelle e numero di righe
+python -m sqlfk.query esempi "SELECT * FROM comuni"
+python -m sqlfk.query esempi --modifiche "DELETE FROM comuni WHERE id_comune = 1"
+```
+
+`esempi/dati_esempio.sql` contiene qualche riga di prova (solo INSERT, l'analisi non cambia).
+
 ## App desktop (gestionale)
 
 Oltre al notebook c'è un'app con interfaccia grafica che fa le stesse cose: carichi i file `.sql` (una cartella intera o singoli file) e navighi tra panoramica, gruppi, schemi grafici, PK composte, FK candidate, entità da togliere e salvataggio dei risultati.
@@ -157,6 +177,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/verifica.py` | il controllo da terminale, come un compilatore |
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
+| `sqlfk/query.py` | il database SQLite in memoria costruito dai file e l'esecuzione delle query |
 | `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |
 | `sqlfk/web/` | l'interfaccia (HTML, CSS, JavaScript) |
 | `sqlfk/web/editor.js` | l'editor del database: entità, relazioni, schema logico e SQL |

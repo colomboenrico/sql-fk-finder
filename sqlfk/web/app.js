@@ -12,6 +12,8 @@ let selezioneEditor = null;
 let vistaEditor = null;
 // disposizione del diagramma: tabella -> [x, y], per le due viste; si salva nel file di progetto
 let layoutER = { iniziale: {}, collegamenti: {} };
+let testoQuery = "";             // il testo dell'editor delle query resta quando si cambia pagina
+let ultimiRisultati = null;
 let regoleCache = null;
 
 async function regole() {
@@ -327,7 +329,163 @@ async function mostra(nome) {
 
 // ======================================================================= viste
 
+/** Risultati di una query come CSV (separatore ; per Excel in italiano). */
+function csvRisultato(r) {
+  const campo = v => {
+    const t = v === null || v === undefined ? "" : String(v);
+    return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  return "\ufeff" + [r.colonne, ...r.righe].map(riga => riga.map(campo).join(";")).join("\r\n");
+}
+
+function storicoQuery() {
+  try { return JSON.parse(localStorage.getItem("sqlfk-storico-query") || "[]"); } catch { return []; }
+}
+
+function ricordaQuery(testo) {
+  try {
+    const elenco = [testo, ...storicoQuery().filter(t => t !== testo)].slice(0, 30);
+    localStorage.setItem("sqlfk-storico-query", JSON.stringify(elenco));
+  } catch { /* storico non disponibile: non importa */ }
+}
+
 const VISTE = {
+  async query() {
+    const info = await api("/api/query/tabelle");
+    const editor = el("textarea", { class: "editor-query", spellcheck: "false", "aria-label": "Query SQL",
+      placeholder: "SELECT * FROM tabella LIMIT 100;\n\nCtrl+Invio (Cmd+Invio sul Mac) per eseguire. Se selezioni una parte, viene eseguita solo quella." });
+    editor.value = testoQuery;
+    editor.addEventListener("input", () => { testoQuery = editor.value; });
+    const risultati = el("div");
+    const filtroTabelle = el("input", { type: "text", placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
+    const elenco = el("div", { class: "query-tabelle" });
+    const storico = el("select", { "aria-label": "Query recenti" });
+
+    function aggiornaStorico() {
+      storico.replaceChildren(el("option", { value: "" }, "query recenti..."),
+        storicoQuery().map(t => el("option", { value: t }, t.replace(/\s+/g, " ").slice(0, 90))));
+    }
+    storico.addEventListener("change", () => {
+      if (storico.value) { editor.value = testoQuery = storico.value; editor.focus(); }
+      storico.value = "";
+    });
+
+    function disegnaTabelle() {
+      const f = filtroTabelle.value.toLowerCase();
+      elenco.replaceChildren(...info.tabelle.filter(t => t.tabella.toLowerCase().includes(f)).map(t =>
+        el("details", {},
+          el("summary", { title: "Clicca il nome per vedere le prime righe" },
+            el("a", { href: "#", onclick: e => {
+              e.preventDefault();
+              editor.value = testoQuery = `SELECT * FROM "${t.tabella.replace(/"/g, '""')}" LIMIT 100;`;
+              esegui();
+            } }, t.tabella),
+            el("span", { class: "tenue" }, ` ${t.righe}`)),
+          el("div", { class: "query-colonne" }, t.colonne.map(c => el("a", { href: "#", title: "Inserisci nella query", onclick: e => {
+            e.preventDefault();
+            const inizio = editor.selectionStart, fine = editor.selectionEnd;
+            editor.setRangeText(/^[A-Za-z_][A-Za-z0-9_]*$/.test(c) ? c : `"${c}"`, inizio, fine, "end");
+            testoQuery = editor.value;
+            editor.focus();
+          } }, c))))));
+    }
+    filtroTabelle.addEventListener("input", disegnaTabelle);
+
+    function mostraRisultati(esito, testo) {
+      if (esito.serve_conferma) {
+        risultati.replaceChildren(el("div", { class: "pannello conferma" },
+          el("h3", {}, "Queste istruzioni modificano i dati"),
+          el("p", {}, "Cambiano solo la copia in memoria, non i file .sql. Si annullano con \"Ricarica i dati dai file\"."),
+          esito.modifiche.map(m => el("pre", {}, m)),
+          el("div", { class: "riga-comandi" },
+            el("button", { class: "pericolo", onclick: () => esegui(testo, true) }, "Esegui comunque"),
+            el("button", { onclick: () => risultati.replaceChildren() }, "Annulla"))));
+        return;
+      }
+      ultimiRisultati = esito;
+      risultati.replaceChildren(...esito.risultati.map((r, i) => {
+        const titolo = esito.risultati.length > 1 ? el("pre", { class: "query-istruzione" }, r.istruzione) : null;
+        const tradotta = r.tradotta ? el("p", { class: "tenue" }, "Eseguita come (SQLite): ", el("code", {}, r.tradotta)) : null;
+        if (r.errore) return el("div", { class: "pannello" }, titolo, tradotta, el("div", { class: "errore" }, `Errore: ${r.errore}`));
+        if (!r.colonne.length) {
+          return el("div", { class: "pannello" }, titolo, tradotta,
+            el("div", { class: "messaggio" }, `Eseguita: ${r.modificate} righe modificate (${r.secondi} s).`));
+        }
+        const nome = `risultato_${i + 1}.csv`;
+        return el("div", {}, titolo, tradotta,
+          el("div", { class: "riga-comandi" },
+            el("span", { class: "tenue" }, `${r.totale} righe` + (r.totale > r.righe.length ? `, mostrate le prime ${r.righe.length}` : "") + ` · ${r.secondi} s`),
+            el("button", { onclick: () => scaricaBlob(new Blob([csvRisultato(r)], { type: "text/csv;charset=utf-8" }), nome) }, "Scarica CSV")),
+          griglia({ colonne: r.colonne, righe: r.righe }, { titolo: "Risultato" }));
+      }));
+      if (esito.risultati.some(r => r.modificate !== null && !r.errore)) aggiornaConteggi();
+    }
+
+    async function aggiornaConteggi() {
+      const nuove = await api("/api/query/tabelle");
+      info.tabelle = nuove.tabelle;
+      disegnaTabelle();
+    }
+
+    async function esegui(testo, conferma = false) {
+      if (typeof testo !== "string") {
+        const scelto = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+        testo = scelto.trim() ? scelto : editor.value;
+      }
+      if (!testo.trim()) return;
+      ricordaQuery(testo.trim());
+      aggiornaStorico();
+      const esito = await conAttesa(() => api("/api/query", { sql: testo, conferma }));
+      if (esito) mostraRisultati(esito, testo);
+    }
+
+    editor.addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); esegui(); }
+      if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end"); }
+    });
+
+    async function ricostruisci() {
+      if (!confirm("Ricaricare i dati dai file .sql? Le modifiche fatte con le query vanno perse.")) return;
+      const nuove = await conAttesa(() => api("/api/query/ricostruisci", {}));
+      if (!nuove) return;
+      info.tabelle = nuove.tabelle; info.problemi = nuove.problemi;
+      disegnaTabelle();
+      risultati.replaceChildren();
+      avviso("Dati ricaricati dai file.");
+    }
+
+    aggiornaStorico();
+    disegnaTabelle();
+    if (ultimiRisultati) mostraRisultati(ultimiRisultati, "");
+    const totaleRighe = info.tabelle.reduce((a, t) => a + t.righe, 0);
+    const conDati = info.tabelle.filter(t => t.righe > 0).length;
+    return [
+      el("h2", {}, "Query sui dati"),
+      el("p", { class: "tenue" },
+        `Database SQLite in memoria costruito dai file: ${info.tabelle.length} tabelle, ${conDati} con dati, ${totaleRighe} righe ` +
+        `(dagli INSERT e dai COPY dei file). Scrivi le query in SQLite o in ${info.dialetto}: se serve vengono tradotte. ` +
+        "INSERT, UPDATE, DELETE e DROP chiedono conferma e cambiano solo questa copia, non i file."),
+      totaleRighe === 0 ? el("div", { class: "messaggio" },
+        "I file non contengono dati (INSERT o COPY): le tabelle sono vuote. Puoi comunque inserire righe con INSERT INTO ... VALUES ...") : null,
+      info.problemi.length ? griglia({ colonne: ["file", "riga", "problema", "istruzione"],
+        righe: info.problemi.map(p => [p.file, p.riga, p.problema, p.istruzione]) },
+        { titolo: `Istruzioni di dati non caricate (${info.problemi.length})` }) : null,
+      el("div", { class: "query-griglia" },
+        el("div", { class: "pannello query-laterale" }, el("h3", {}, "Tabelle"), filtroTabelle,
+          el("p", { class: "tenue" }, "Nome: prime 100 righe. Freccia: colonne (clic per inserirle)."), elenco),
+        el("div", {},
+          editor,
+          el("div", { class: "riga-comandi" },
+            el("button", { class: "primario", onclick: () => esegui() }, "Esegui"),
+            el("button", { onclick: () => { editor.value = testoQuery = ""; editor.focus(); } }, "Svuota"),
+            storico,
+            el("button", { onclick: ricostruisci, title: "Annulla le modifiche fatte con le query" }, "Ricarica i dati dai file"),
+            el("a", { class: "pulsante", href: "/api/scarica/database_sqlite", title: "Apribile con DBeaver o DB Browser for SQLite" }, "Scarica .sqlite"),
+            el("a", { class: "pulsante", href: "/api/scarica/database_sql" }, "Scarica script SQL")),
+          risultati)),
+    ];
+  },
+
   async editor() {
     const M = () => modelloEditor;
     const cornice = el("div", { class: "er-cornice" });
@@ -859,7 +1017,7 @@ const VISTE = {
 
   async modello() {
     let tipo = "collegamenti";
-    const medie = el("input", { type: "checkbox" });
+    const medie = el("input", { type: "checkbox", title: "Aggiunge le FK trovate ad affidabilità media (passa a FK dichiarate e trovate)" });
     const filtro = el("input", { type: "text", placeholder: "filtra le tabelle", "aria-label": "Filtra le tabelle" });
     const formato = el("select", { "aria-label": "Formato dell'anteprima" },
       [["testo", "Testo (.txt)"], ["md", "Markdown (.md)"], ["mermaid", "Mermaid (.mmd)"], ["plantuml", "PlantUML (.puml)"],
@@ -885,9 +1043,8 @@ const VISTE = {
     async function carica() {
       dati = await api(`/api/diagramma?${parametri()}`);
       schede.replaceChildren(
-        el("button", { class: tipo === "iniziale" ? "primario" : null, onclick: () => { tipo = "iniziale"; conAttesa(carica); } }, "Solo FK dichiarate"),
+        el("button", { class: tipo === "iniziale" ? "primario" : null, onclick: () => { tipo = "iniziale"; medie.checked = false; conAttesa(carica); } }, "Solo FK dichiarate"),
         el("button", { class: tipo === "collegamenti" ? "primario" : null, onclick: () => { tipo = "collegamenti"; conAttesa(carica); } }, "FK dichiarate e trovate"));
-      medie.disabled = tipo !== "collegamenti";
       disegnaSchema();
       await aggiornaAnteprima();
     }
@@ -896,7 +1053,10 @@ const VISTE = {
       anteprima.textContent = r.testo;
     }
     filtro.addEventListener("input", disegnaSchema);
-    medie.addEventListener("change", () => conAttesa(carica));
+    medie.addEventListener("change", () => {
+      if (medie.checked) tipo = "collegamenti";       // le FK medie ci sono solo tra quelle trovate
+      conAttesa(carica);
+    });
     formato.addEventListener("change", () => conAttesa(aggiornaAnteprima));
     setTimeout(() => conAttesa(carica), 0);
 
@@ -1112,7 +1272,7 @@ async function contenutoER(quale) {
   sceltaColore.value = coloraER;
   const ricerca = el("input", { type: "text", placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
   const conTipi = el("input", { type: "checkbox", checked: true });
-  const medie = el("input", { type: "checkbox", checked: erMedie, disabled: quale !== "collegamenti" });
+  const medie = el("input", { type: "checkbox", checked: erMedie && quale === "collegamenti", title: "Aggiunge le FK trovate ad affidabilità media (passa a FK dichiarate e trovate)" });
   let diagramma = null;
 
   function disegna() {
@@ -1143,7 +1303,7 @@ async function contenutoER(quale) {
   sceltaGruppo.addEventListener("change", () => { filtroER = sceltaGruppo.value; disegna(); });
   sceltaColore.addEventListener("change", () => { coloraER = sceltaColore.value; disegna(); });
   conTipi.addEventListener("change", disegna);
-  medie.addEventListener("change", () => { erMedie = medie.checked; mostraSchema(quale, "er"); });
+  medie.addEventListener("change", () => { erMedie = medie.checked; mostraSchema(medie.checked ? "collegamenti" : quale, "er"); });
   ricerca.addEventListener("keydown", e => {
     if (e.key === "Enter" && diagramma) {
       const n = diagramma.cerca(ricerca.value);
