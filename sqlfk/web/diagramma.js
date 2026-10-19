@@ -137,20 +137,22 @@ const DiagrammaER = (() => {
     svg.append(mondo);
     contenitore.replaceChildren(svg);
 
-    let vista = { x: 0, y: 0, s: 1 };
+    let vista = opzioni.vista ? { ...opzioni.vista } : { x: 0, y: 0, s: 1 };
     const applica = () => mondo.setAttribute("transform", `translate(${vista.x} ${vista.y}) scale(${vista.s})`);
 
     // ---------------------------------------------------------- tabelle
     for (const t of tabelle) {
-      const colore = coloreGruppo(t.gruppo);
+      const colore = coloreGruppo(t[opzioni.coloraPer || "gruppo"] || t.gruppo);
       const g = svgEl("g", { class: "er-tabella", "data-nome": t.nome });
+      const scelta = opzioni.selezionata === t.nome;
       g.append(svgEl("rect", { x: 0, y: 0, width: t.larghezza, height: t.altezza, rx: 5, fill: "#ffffff",
-                               stroke: "#b8c0cc", "stroke-width": 1 }));
+                               stroke: scelta ? "#ef6c00" : "#b8c0cc", "stroke-width": scelta ? 3 : 1 }));
       g.append(svgEl("path", { d: `M0 5 Q0 0 5 0 H${t.larghezza - 5} Q${t.larghezza} 0 ${t.larghezza} 5 V${TESTA} H0 Z`, fill: colore }));
       const titolo = svgEl("text", { x: 10, y: 18, fill: "#ffffff", "font-size": 13, "font-weight": 700,
                                      "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
       titolo.textContent = t.nome + (t.pk_indovinata ? " (PK non dichiarata)" : "");
-      const tooltip = svgEl("title"); tooltip.textContent = `${t.nome}\ngruppo: ${t.gruppo}\n${t.colonne.length} colonne`;
+      const tooltip = svgEl("title"); tooltip.textContent = `${t.nome}\ngruppo: ${t.gruppo}` +
+        (t.area ? `\narea: ${t.area}\ncategoria: ${t.categoria}` : "") + `\n${t.colonne.length} colonne`;
       g.append(titolo, tooltip);
       t.colonne.forEach((c, i) => {
         const y = TESTA + i * RIGA;
@@ -238,10 +240,10 @@ const DiagrammaER = (() => {
       if (nodo) {
         const t = perNome[nodo.dataset.nome];
         const p = puntoMondo(e);
-        trascina = { tipo: "tabella", t, dx: p.x - t.x, dy: p.y - t.y };
+        trascina = { tipo: "tabella", t, dx: p.x - t.x, dy: p.y - t.y, x0: e.clientX, y0: e.clientY };
         strTabelle.append(nodo);                       // in primo piano
       } else {
-        trascina = { tipo: "vista", x: e.clientX - vista.x, y: e.clientY - vista.y };
+        trascina = { tipo: "vista", x: e.clientX - vista.x, y: e.clientY - vista.y, x0: e.clientX, y0: e.clientY };
       }
       svg.setPointerCapture(e.pointerId);
     });
@@ -261,18 +263,23 @@ const DiagrammaER = (() => {
         applica();
       }
     });
-    const fine = () => {
-      if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
+    const fine = e => {
+      const fermo = trascina && e && Math.hypot(e.clientX - trascina.x0, e.clientY - trascina.y0) < 4;
+      if (trascina && fermo && opzioni.onClic) {
+        opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null);   // clic senza trascinare
+      } else if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
         opzioni.onSposta(trascina.t.nome, Math.round(trascina.t.x), Math.round(trascina.t.y));
       }
+      if (trascina && trascina.tipo === "vista" && opzioni.onVista) opzioni.onVista({ ...vista });
       trascina = null;
     };
     svg.addEventListener("pointerup", fine);
-    svg.addEventListener("pointerleave", () => { fine(); evidenzia(null); });
+    svg.addEventListener("pointerleave", () => { fine(null); evidenzia(null); });
     svg.addEventListener("wheel", e => {
       e.preventDefault();
       const r = svg.getBoundingClientRect();
       zoomIn(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+      if (opzioni.onVista) opzioni.onVista({ ...vista });
     }, { passive: false });
 
     function zoomIn(fattore, cx, cy) {
@@ -350,8 +357,10 @@ const DiagrammaER = (() => {
       }
     }
 
-    requestAnimationFrame(() => adatta());
-    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, esporta, png,
+    if (opzioni.vista) applica(); else requestAnimationFrame(() => adatta());
+    /** Posizioni attuali di tutte le tabelle: nome -> [x, y]. */
+    const posizioni = () => Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y)]]));
+    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, esporta, png, posizioni, vista: () => ({ ...vista }),
              numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length } };
   }
 

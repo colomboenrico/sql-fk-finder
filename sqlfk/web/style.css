@@ -134,6 +134,18 @@ td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
 .schema-logico .pk { text-decoration: underline; font-weight: 600; }
 .schema-logico .fk { font-style: italic; }
 .schema-logico .verso { color: var(--tenue); font-size: 12px; }
+.editor-griglia { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; align-items: start; }
+.editor-griglia .er-cornice { height: calc(100vh - 260px); }
+.editor-pannello { max-height: calc(100vh - 260px); overflow: auto; margin: 0; }
+.editor-pannello h3 { margin-top: 4px; }
+.editor-pannello table { font-size: 12.5px; }
+.editor-pannello td { padding: 3px 4px; vertical-align: middle; }
+.editor-pannello td input[type=text] { width: 100%; padding: 4px 6px; }
+.editor-pannello .stretto { width: 34px; text-align: center; }
+.editor-pannello label.campo { margin-bottom: 8px; }
+.editor-pannello select, .editor-pannello input[type=text].largo { width: 100%; }
+.editor-avvisi { color: var(--medio); font-size: 13px; margin: 8px 0; }
+@media (max-width: 1000px) { .editor-griglia { grid-template-columns: 1fr; } .editor-pannello { max-height: none; } }
 .paginazione { display: flex; gap: 8px; align-items: center; padding: 8px 10px; }
 
 /* ---------------------------------------------------------------- elenchi da spuntare */
@@ -175,3 +187,20 @@ td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
   .percorso input { width: 100%; }
   .vista { padding: 16px; }
 }
+
+/* aree, sottogruppi e categorie */
+details.area { border-top: 1px solid var(--bordo, #dde2ea); padding: 6px 0; }
+details.area summary { cursor: pointer; padding: 4px 0; }
+details.area .riga-comandi { margin: 4px 0 4px 18px; }
+.sottogruppo { margin: 3px 0 3px 18px; line-height: 1.7; }
+.cat { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; line-height: 17px;
+       background: #e8ecf2; color: #333; white-space: nowrap; }
+td.cat { display: table-cell; border-radius: 0; }
+.cat-codifica { background: #e3f2fd; color: #0d47a1; }
+.cat-anagrafica { background: #e8f5e9; color: #1b5e20; }
+.cat-movimento { background: #fff3e0; color: #8a4500; }
+.cat-dettaglio { background: #f3e5f5; color: #5e1f73; }
+.cat-ponte { background: #e0f7fa; color: #00585f; }
+.cat-storico { background: #efebe9; color: #4e342e; }
+.cat-dipendente { background: #fce4ec; color: #880e4f; }
+.cat-isolata { background: #eeeeee; color: #555; }

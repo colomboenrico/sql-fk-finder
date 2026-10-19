@@ -101,6 +101,7 @@ class Sessione:
             "tabelle_analizzate": len(R.S.col_per_tab),
             "colonne": len(R.S.col),
             "gruppi": int((self.gruppi["n_tabelle"] > 1).sum()),
+            "aree": int((R.aree.aree["area"] != "senza collegamenti").sum()),
             "pk_composte": len(R.S.pk_composta),
             "fk_dichiarate": len(self.fk),
             "fk_candidate": len(R.fk),
@@ -122,6 +123,14 @@ class Sessione:
         df = self.gruppi.copy()
         df["tolte"] = df["tabelle"].map(lambda s: sum(t in self.rimosse for t in s.split(", ")))
         return {"gruppi": tabella(df)}
+
+    def aree(self):
+        """Aree (sottogruppi collegati dalle FK), sottogruppi, collegamenti tra loro e categorie delle tabelle."""
+        self.richiedi_dati()
+        X = self.R.aree
+        return {"aree": tabella(X.aree), "sottogruppi": tabella(X.sottogruppi), "tabelle": tabella(X.tabelle),
+                "collegamenti": tabella(X.collegamenti), "collegamenti_aree": tabella(X.collegamenti_aree),
+                "categorie": A.CATEGORIE, "centrali": X.centrali}
 
     def pk_composte(self):
         self.richiedi_dati()
@@ -306,6 +315,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/stato": s.stato,
             "/api/panoramica": s.panoramica,
             "/api/gruppi": s.gruppi_tabelle,
+            "/api/aree": s.aree,
             "/api/tabelle": lambda: (s.richiedi_dati(), {"tabelle": tabella(s.R.S.riepilogo)})[1],
             "/api/pk_composte": s.pk_composte,
             "/api/fk": lambda: (s.richiedi_dati(), {"fk": tabella(s.R.fk)})[1],

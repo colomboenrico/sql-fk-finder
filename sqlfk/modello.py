@@ -59,11 +59,14 @@ def struttura(R, gruppo_di=None, tipo="collegamenti", medie=False):
             scelte.add((r["tabella"], r["colonna"]))
             aggiungi(r, r["affidabilità"])
 
+    aree = getattr(R, "aree", None)
     tabelle = []
     for t, colonne in sorted(S.col_per_tab.items()):
         chiave = {A.normalizza(c) for c in S.pk.get(t, [])}
         tabelle.append({
             "nome": t, "gruppo": gruppo_di.get(t, t), "pk_indovinata": t in S.pk_indovinata,
+            "area": aree.area_di_tabella.get(t, "") if aree else "",
+            "categoria": aree.categoria_di.get(t, "") if aree else "",
             "colonne": [{"nome": c, "tipo": S.tipi.get((t, c)) or "",
                          "pk": A.normalizza(c) in chiave,
                          "fk": (t, A.normalizza(c)) in fk_colonne,

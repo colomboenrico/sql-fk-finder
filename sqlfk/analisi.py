@@ -1318,6 +1318,218 @@ def testo_diagnostica(df, con_info=True, con_regole=False):
 
 # ====================================================================== tabelle isolate e analisi completa
 
+# ====================================================================== aree, sottogruppi e categorie
+
+PAROLE_STORICO = {"log", "logs", "storico", "storici", "history", "hist", "audit", "archivio", "archive",
+                  "tracking", "eventi", "events", "versioni", "versions", "revisioni", "revisions"}
+PAROLE_DETTAGLIO = {"righe", "riga", "dettaglio", "dettagli", "det", "details", "detail", "items", "item",
+                    "lines", "line", "voci", "voce", "rows", "row", "positions"}
+TIPI_DATA = {"DATE", "DATETIME", "TIMESTAMP", "TIMESTAMPTZ", "TIME", "SMALLDATETIME", "DATETIME2"}
+CATEGORIE = {
+    "codifica": "tabella di codifica (lookup): pochi campi, viene solo puntata dalle altre",
+    "anagrafica": "entità principale: viene puntata dalle altre tabelle",
+    "movimento": "fatto o evento con data, punta alle anagrafiche",
+    "dettaglio": "righe che dipendono da un'altra tabella (la sua chiave contiene la chiave del padre)",
+    "ponte": "tabella ponte di una relazione N:M",
+    "storico": "storico, log o archivio",
+    "dipendente": "punta ad altre tabelle ma nessuna punta a lei",
+    "isolata": "nessun collegamento con altre tabelle",
+}
+
+
+def aree_e_categorie(R, gruppo_di):
+    """Due livelli di raggruppamento e il ruolo di ogni tabella.
+
+    - sottogruppi: i gruppi per somiglianza dei nomi (raggruppa_tabelle);
+    - aree: sottogruppi molto collegati tra loro dalle chiavi esterne (dichiarate e trovate ad alta
+      affidabilità), trovati con la modularità (rilevamento di comunità). Le tabelle puntate da moltissime
+      altre (centrali, per esempio una tabella collection) collegherebbero tutto in un unico blocco:
+      i loro collegamenti contano poco nella divisione, e la tabella va nell'area a cui è più legata;
+    - collegamenti tra sottogruppi e tra aree, con il numero di chiavi esterne e il tipo di relazione;
+    - categoria di ogni tabella (codifica, anagrafica, movimento, dettaglio, ponte, storico, dipendente, isolata).
+    """
+    import networkx as nx
+
+    S = R.S
+    tabelle = sorted(S.col_per_tab)
+    gruppo = {t: gruppo_di.get(t, t) for t in tabelle}
+    archi = [(t, c, d) for t, c, d in fk_accettate(S, R.fk, R.fk_dichiarate) if t != d]
+    ponti = {r["tabella ponte"]: r for r in R.qualita.ponti.to_dict("records")}
+
+    uscenti, entranti = Counter(), Counter()
+    puntata_da = {}
+    for t, _, d in archi:
+        uscenti[t] += 1
+        entranti[d] += 1
+        puntata_da.setdefault(d, set()).add(t)
+
+    # tabelle centrali: puntate da molte tabelle di sottogruppi diversi
+    collegate = {t for t, _, d in archi} | {d for _, _, d in archi}
+    minimo = max(4, round(0.1 * len(collegate)))
+    centrali = {d for d, da in puntata_da.items()
+                if len(da) >= minimo and len({gruppo[t] for t in da} - {gruppo[d]}) >= 3}
+
+    # ---- aree: comunità nel grafo dei sottogruppi
+    gruppi = sorted(set(gruppo.values()))
+    G = nx.Graph()
+    G.add_nodes_from(gruppi)
+    for t, _, d in archi:
+        a, b = gruppo[t], gruppo[d]
+        if a == b:
+            continue
+        peso = 0.1 if (t in centrali or d in centrali) else 1.0
+        G.add_edge(a, b, weight=G[a][b]["weight"] + peso if G.has_edge(a, b) else peso)
+    con_link = [g for g in gruppi if G.degree(g) > 0]
+    comunita = list(nx.community.greedy_modularity_communities(G.subgraph(con_link), weight="weight")) if con_link else []
+    area_di = {}
+    gruppi_centrali = {gruppo[t] for t in centrali}
+    n_fk = Counter()                       # chiavi esterne che toccano ogni sottogruppo: dà il nome all'area
+    for t, _, d in archi:
+        n_fk[gruppo[t]] += 1
+        n_fk[gruppo[d]] += 1
+    for membri in comunita:
+        # il nome viene dal sottogruppo più collegato, ma non da uno di tabelle centrali (sono di tutti)
+        capo = max(membri, key=lambda g: (g not in gruppi_centrali, n_fk[g], sum(gruppo[t] == g for t in tabelle), g))
+        for g in membri:
+            area_di[g] = capo
+    # i sottogruppi centrali vanno nell'area con cui hanno più collegamenti non centrali, se ce n'è una
+    for g in con_link:
+        vicini = Counter()
+        for v in G[g]:
+            vicini[area_di[v]] += G[g][v]["weight"]
+        if vicini and area_di[g] == g and len([x for x in area_di.values() if x == g]) == 1:
+            area_di[g] = vicini.most_common(1)[0][0]
+    interni = {gruppo[t] for t, _, d in archi if gruppo[t] == gruppo[d]}
+    for g in gruppi:
+        if g not in area_di:
+            # nessun collegamento con altri sottogruppi: area a sé se ha più tabelle o FK interne
+            n = sum(gruppo[t] == g for t in tabelle)
+            area_di[g] = g if (n > 1 or g in interni) else "senza collegamenti"
+
+    # ---- categorie delle tabelle
+    def date(t):
+        # le colonne generiche (data_ins, created_at...) ci sono ovunque e non fanno di una tabella un movimento
+        return any(tipo_base(S.tipi.get((t, c))) in TIPI_DATA and normalizza(c) not in S.generiche_norm
+                   for c in S.col_per_tab[t])
+
+    def codifica(t):
+        # pochi campi, oltre alla chiave solo testi (sigla, descrizione)
+        altre = [c for c in S.col_per_tab[t] if c not in S.pk.get(t, [])]
+        return len(S.col_per_tab[t]) <= 3 and all(
+            tipo_base(S.tipi.get((t, c))) in {"VARCHAR", "CHAR", "TEXT", "NVARCHAR", "NCHAR", "STRING", ""} for c in altre)
+
+    pk_norm = {t: {normalizza(c) for c in S.pk.get(t, [])} for t in tabelle}
+    padre_in_chiave = set()
+    for t, colonne, d in archi:
+        # la chiave contiene quella del padre (non conta una tabella centrale presente in tutte le chiavi)
+        if d not in centrali and len(pk_norm[t]) > 1 and {normalizza(c) for c in colonne} < pk_norm[t]:
+            padre_in_chiave.add(t)
+
+    # un movimento ha una data e punta ad almeno un'entità vera (non solo a codifiche: un dipendente con
+    # data di assunzione che punta al reparto resta un'anagrafica)
+    codifiche = {t for t in tabelle if entranti[t] and not uscenti[t] and codifica(t)}
+    punta_entita = {t for t, _, d in archi if d not in codifiche}
+
+    righe_t = []
+    for t in tabelle:
+        parole = set(parti_nome(senza_accenti(t)))
+        if parole & PAROLE_STORICO and t not in ponti:
+            cat = "storico"
+        elif not uscenti[t] and not entranti[t]:
+            cat = "isolata"
+        elif t in ponti:
+            cat = "ponte"
+        elif uscenti[t] and (t in padre_in_chiave or parole & PAROLE_DETTAGLIO):
+            cat = "dettaglio"
+        elif t in punta_entita and date(t) and t not in centrali:
+            cat = "movimento"
+        elif t in codifiche:
+            cat = "codifica"
+        elif entranti[t]:
+            cat = "anagrafica"
+        else:
+            cat = "dipendente"
+        righe_t.append({"tabella": t, "categoria": cat, "centrale": t in centrali,
+                        "sottogruppo": gruppo[t], "area": area_di[gruppo[t]],
+                        "FK uscenti": uscenti[t], "FK entranti": entranti[t],
+                        "puntata da": len(puntata_da.get(t, ())), "perché": CATEGORIE[cat]})
+    df_t = pd.DataFrame(righe_t, columns=["tabella", "categoria", "centrale", "sottogruppo", "area", "FK uscenti",
+                                          "FK entranti", "puntata da", "perché"])
+    cat_di = dict(zip(df_t["tabella"], df_t["categoria"]))
+
+    # ---- collegamenti tra sottogruppi
+    tra = {}
+    for t, colonne, d in archi:
+        a, b = gruppo[t], gruppo[d]
+        if a == b:
+            continue
+        rel = tipo_relazione(S, t, colonne)[0]
+        v = tra.setdefault((a, b), {"n": 0, "rel": Counter(), "fk": []})
+        v["n"] += 1
+        v["rel"][rel] += 1
+        v["fk"].append(f"{t}.{', '.join(colonne)} → {d}")
+    for p, r in ponti.items():
+        dest = r["collega"].split(" N:M ")
+        for x, y in combinations(dest, 2):
+            if x in gruppo and y in gruppo and gruppo[x] != gruppo[y]:
+                a, b = sorted((gruppo[x], gruppo[y]))
+                v = tra.setdefault((a, b, "N:M"), {"n": 0, "rel": Counter(), "fk": []})
+                v["n"] += 1
+                v["rel"]["N:M"] += 1
+                v["fk"].append(f"{x} N:M {y} tramite {p}")
+    righe_c = []
+    for chiave, v in tra.items():
+        a, b = chiave[0], chiave[1]
+        righe_c.append({"da sottogruppo": a, "a sottogruppo": b, "da area": area_di[a], "a area": area_di[b],
+                        "stessa area": area_di[a] == area_di[b], "n collegamenti": v["n"],
+                        "relazione": ", ".join(f"{k}" + (f" ×{n}" if n > 1 else "") for k, n in sorted(v["rel"].items())),
+                        "dettaglio": "; ".join(v["fk"])})
+    df_c = pd.DataFrame(righe_c, columns=["da sottogruppo", "a sottogruppo", "da area", "a area", "stessa area",
+                                          "n collegamenti", "relazione", "dettaglio"])
+    df_c = df_c.sort_values(["stessa area", "n collegamenti", "da sottogruppo"],
+                            ascending=[True, False, True]).reset_index(drop=True)
+
+    # ---- collegamenti tra aree
+    righe_a = {}
+    for r in df_c[~df_c["stessa area"]].to_dict("records"):
+        a, b = sorted((r["da area"], r["a area"]))
+        v = righe_a.setdefault((a, b), {"area 1": a, "area 2": b, "n collegamenti": 0, "tramite": []})
+        v["n collegamenti"] += r["n collegamenti"]
+        v["tramite"].append(f"{r['da sottogruppo']} → {r['a sottogruppo']}")
+    df_ca = pd.DataFrame([{**v, "tramite": ", ".join(v["tramite"])} for v in righe_a.values()],
+                         columns=["area 1", "area 2", "n collegamenti", "tramite"])
+    df_ca = df_ca.sort_values("n collegamenti", ascending=False).reset_index(drop=True)
+
+    # ---- sottogruppi e aree
+    righe_g = []
+    for g in gruppi:
+        membri = [t for t in tabelle if gruppo[t] == g]
+        cats = Counter(cat_di[t] for t in membri)
+        righe_g.append({"area": area_di[g], "sottogruppo": g, "n_tabelle": len(membri),
+                        "categorie": ", ".join(f"{k} {n}" for k, n in cats.most_common()),
+                        "tabelle": ", ".join(membri)})
+    df_g = pd.DataFrame(righe_g, columns=["area", "sottogruppo", "n_tabelle", "categorie", "tabelle"])
+    righe_ar = []
+    for a, parte in df_g.groupby("area"):
+        vicine = sorted({x for k in righe_a for x in k if a in k} - {a})
+        membri = [t for t in tabelle if area_di[gruppo[t]] == a]
+        righe_ar.append({"area": a, "n_sottogruppi": len(parte), "n_tabelle": int(parte["n_tabelle"].sum()),
+                         "sottogruppi": ", ".join(parte.sort_values("n_tabelle", ascending=False)["sottogruppo"]),
+                         "tabelle centrali": ", ".join(t for t in membri if t in centrali) or "-",
+                         "collegata a": ", ".join(vicine) or "-"})
+    df_ar = pd.DataFrame(righe_ar, columns=["area", "n_sottogruppi", "n_tabelle", "sottogruppi",
+                                            "tabelle centrali", "collegata a"])
+    ultima = df_ar["area"] == "senza collegamenti"
+    df_ar = (pd.concat([df_ar[~ultima].sort_values(["n_tabelle", "area"], ascending=[False, True]), df_ar[ultima]])
+               .reset_index(drop=True))
+    ordine = {a: i for i, a in enumerate(df_ar["area"])}
+    df_g = df_g.sort_values(["area", "n_tabelle", "sottogruppo"], key=lambda s: s.map(ordine) if s.name == "area" else s,
+                            ascending=[True, False, True]).reset_index(drop=True)
+    return SimpleNamespace(aree=df_ar, sottogruppi=df_g, tabelle=df_t, collegamenti=df_c, collegamenti_aree=df_ca,
+                           area_di_tabella={t: area_di[gruppo[t]] for t in tabelle}, categoria_di=cat_di,
+                           centrali=sorted(centrali))
+
+
 def trova_isolate(S, stesso_nome, df_simili, df_fk, df_pk_composte):
     collegate = set(df_fk["tabella"]) | set(df_fk["→ tabella"])
     for tabelle in stesso_nome["tabelle"]:
@@ -1355,6 +1567,9 @@ def analizza(df_schema, pk_dichiarate, rimosse=(), simili_tutti=None, fk_dichiar
                         pk_composte=composte,
                         isolate=trova_isolate(S, stesso, simili, fk, composte),
                         rimosse=sorted(rimosse), fk_dichiarate=fk_dichiarate, gruppi=gruppi)
+    if gruppi is not None:
+        gruppo_di = {t: r["gruppo"] for r in gruppi.to_dict("records") for t in r["tabelle"].split(", ")}
+        R.aree = aree_e_categorie(R, gruppo_di)
     errori_validi = [e for e in (errori or []) if e.get("tabella") not in rimosse]
     R.diagnostica = diagnostica(R, errori_validi, originali, imp.dialetto)
     return R
@@ -1371,6 +1586,12 @@ def scrivi_excel(R, destinazione):
         R.S.df_schema.to_excel(xls, sheet_name="Colonne", index=False)
         if R.gruppi is not None:
             R.gruppi.to_excel(xls, sheet_name="Gruppi", index=False)
+        if getattr(R, "aree", None) is not None:
+            R.aree.aree.to_excel(xls, sheet_name="Aree", index=False)
+            R.aree.sottogruppi.to_excel(xls, sheet_name="Sottogruppi", index=False)
+            R.aree.collegamenti.to_excel(xls, sheet_name="Collegamenti sottogruppi", index=False)
+            R.aree.collegamenti_aree.to_excel(xls, sheet_name="Collegamenti aree", index=False)
+            R.aree.tabelle.to_excel(xls, sheet_name="Categorie tabelle", index=False)
         R.fk_dichiarate.to_excel(xls, sheet_name="FK dichiarate", index=False)
         R.stesso_nome.to_excel(xls, sheet_name="Stesso nome", index=False)
         R.simili.to_excel(xls, sheet_name="Nomi simili", index=False)

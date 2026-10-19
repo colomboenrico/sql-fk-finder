@@ -11,6 +11,7 @@ Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e 
 1. Legge tutti i file `.sql` di una cartella ed estrae tabelle, colonne, tipi, chiavi primarie e chiavi esterne già dichiarate (anche quelle aggiunte con `ALTER TABLE`, come nei dump di PostgreSQL; le tabelle di schemi diversi da `public`/`dbo` restano distinte) (anche dai `CREATE TABLE` con `ENGINE=`, `COMMENT`, `PARTITION BY` e altra sintassi che `sqlglot` non riesce a leggere).
 2. Mostra lo **schema iniziale**: com'è collegato il database prima dell'analisi, con un riepilogo e uno schema grafico (`schema_iniziale.html`).
 3. Divide le tabelle in **gruppi di entità** con nomi simili (clustering gerarchico: `ordini`, `ordini_righe`, `tbl_ordini`...).
+   Sopra i gruppi c'è un secondo livello, le **aree**: sottogruppi molto collegati tra loro dalle chiavi esterne (dichiarate e trovate ad affidabilità alta), trovati con un rilevamento di comunità. Le tabelle **centrali**, puntate da moltissime altre di sottogruppi diversi, pesano poco nella divisione, così non uniscono tutto in un'unica area. Per ogni area e sottogruppo si vedono i **collegamenti tra sottogruppi e tra aree** (numero di FK, 1:N / 1:1 / N:M, colonne), e ogni tabella riceve una **categoria** ricavata dalla struttura: codifica, anagrafica, movimento, dettaglio, ponte, storico, dipendente, isolata. Funziona su qualsiasi database: non usa nomi di tabelle precisi.
 4. Trova le **colonne con lo stesso nome** in più tabelle.
 5. Trova le **colonne con nomi simili** (`CODART` / `Cod_Articolo`).
 6. Propone le **chiavi esterne candidate** con un livello di affidabilità:
@@ -130,9 +131,20 @@ python -m sqlfk.server --apri
 
 e si apre `http://127.0.0.1:8765`. Con `--cartella percorso/dei/file` carica subito una cartella.
 
+### Editor del database
+
+Nella pagina **Editor del database** si disegna un database da zero, oppure si importa quello caricato per correggerlo:
+
+- **entità** con i loro attributi (nome, tipo, chiave primaria, NOT NULL, UNIQUE);
+- **relazioni** tra entità, trasformate secondo le regole del passaggio dal modello E-R a quello logico: **1:N** aggiunge la chiave esterna nell'entità dal lato N, **1:1** la rende anche UNIQUE, **N:M** crea la tabella ponte con le due chiavi come chiave primaria (e gli attributi della relazione); *obbligatoria* rende la chiave esterna NOT NULL;
+- il codice **SQL** (CREATE TABLE con chiavi e regole ON DELETE/ON UPDATE) si aggiorna mentre si disegna e si scarica; c'è anche il **PNG** del disegno;
+- con **Analizza questo schema** tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato.
+
+Il disegno si salva nel file di progetto.
+
 ### File di progetto (.sqlfk)
 
-Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `.sql` caricati (dentro il progetto, quindi si riapre anche se la cartella originale non c'è più), le impostazioni (dialetto, soglie, colonne generiche, sinonimi, regole ON DELETE/ON UPDATE), le tabelle tolte e la disposizione del diagramma (le tabelle spostate a mano tornano dove le avevi lasciate). Con **Apri progetto** si riprende da lì. È un file JSON; non va messo su GitHub se contiene dati riservati (è già nel `.gitignore`).
+Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `.sql` caricati (dentro il progetto, quindi si riapre anche se la cartella originale non c'è più), le impostazioni (dialetto, soglie, colonne generiche, sinonimi, regole ON DELETE/ON UPDATE), le tabelle tolte, la disposizione del diagramma (le tabelle spostate a mano tornano dove le avevi lasciate) e il database disegnato nell'editor. Con **Apri progetto** si riprende da lì. È un file JSON; non va messo su GitHub se contiene dati riservati (è già nel `.gitignore`).
 
 ### Struttura del progetto
 
@@ -147,6 +159,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
 | `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |
 | `sqlfk/web/` | l'interfaccia (HTML, CSS, JavaScript) |
+| `sqlfk/web/editor.js` | l'editor del database: entità, relazioni, schema logico e SQL |
 | `sqlfk/web/diagramma.js` | il diagramma delle tabelle; la disposizione usa dagre (licenza MIT, in `sqlfk/web/vendor/`) |
 | `app/` | l'app Electron, che avvia il server e mostra l'interfaccia |
 | `avvia_app.command`, `avvia_app.bat` | avvio dell'app con un doppio clic (Mac, Windows) |

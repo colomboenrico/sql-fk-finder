@@ -6,6 +6,10 @@ const $ = (selettore, dentro = document) => dentro.querySelector(selettore);
 const vista = $("#vista");
 let stato = { caricato: false };
 let filtroRegola = "";
+// editor: il database disegnato (entità, attributi, relazioni), l'elemento selezionato e la vista della tela
+let modelloEditor = Editor.nuovoModello();
+let selezioneEditor = null;
+let vistaEditor = null;
 // disposizione del diagramma: tabella -> [x, y], per le due viste; si salva nel file di progetto
 let layoutER = { iniziale: {}, collegamenti: {} };
 let regoleCache = null;
@@ -227,6 +231,7 @@ function nomeProgetto() {
 $("#salva-progetto").addEventListener("click", () => conAttesa(async () => {
   const progetto = await api("/api/progetto");
   progetto.layout = layoutER;
+  progetto.editor = modelloEditor;
   scaricaBlob(new Blob([JSON.stringify(progetto, null, 1)], { type: "application/json" }), nomeProgetto());
   avviso("Progetto salvato: riaprilo con Apri progetto per continuare il lavoro.");
 }));
@@ -241,6 +246,8 @@ $("#in-progetto").addEventListener("change", async e => {
     stato = await api("/api/progetto", progetto);
     const l = progetto.layout || {};
     layoutER = { iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
+    modelloEditor = progetto.editor && progetto.editor.entita ? progetto.editor : Editor.nuovoModello();
+    selezioneEditor = null; vistaEditor = null;
     regoleCache = null;
     avviso(`Progetto ${file.name} aperto: ${stato.tabelle_totali} tabelle, ${stato.rimosse.length} tolte.`);
     aggiornaTutto("panoramica");
@@ -276,14 +283,14 @@ function aggiornaRiepilogo() {
   if (!stato.caricato) { $("#riepilogo").textContent = "Nessun file caricato."; $("#voce-problemi").textContent = "Problemi"; return; }
   const n = (valore, testo) => [el("b", {}, valore), ` ${testo}`];
   const p = stato.problemi;
-  $("#voce-problemi").replaceChildren("Problemi",
+  $("#voce-problemi").replaceChildren(...["Problemi",
     p.errore ? el("span", { class: "contatore", title: "errori" }, p.errore) : null,
-    p.avviso ? el("span", { class: "contatore giallo", title: "avvisi" }, p.avviso) : null);
+    p.avviso ? el("span", { class: "contatore giallo", title: "avvisi" }, p.avviso) : null].filter(Boolean));
   $("#riepilogo").replaceChildren(
     el("span", { class: p.errore ? "errore" : null }, ...n(p.errore, p.errore === 1 ? "errore" : "errori")), " · ",
     el("span", { class: p.avviso ? "avviso-g" : null }, ...n(p.avviso, p.avviso === 1 ? "avviso" : "avvisi")), " · ",
     ...n(stato.tabelle_analizzate, "tabelle analizzate"), stato.rimosse.length ? ` (${stato.rimosse.length} tolte)` : "", " · ",
-    ...n(stato.gruppi, "gruppi"), " · ",
+    ...n(stato.aree, "aree"), " · ", ...n(stato.gruppi, "gruppi"), " · ",
     ...n(stato.pk_composte, "con chiave primaria composta"), " · ",
     ...n(stato.fk_dichiarate, "FK dichiarate"), " · ",
     ...n(stato.fk_candidate, "FK candidate"), ` (${stato.fk_alta} alta)`, " · ",
@@ -321,6 +328,202 @@ async function mostra(nome) {
 // ======================================================================= viste
 
 const VISTE = {
+  async editor() {
+    const M = () => modelloEditor;
+    const cornice = el("div", { class: "er-cornice" });
+    const pannello = el("div", { class: "pannello editor-pannello" });
+    const avvisiBox = el("div", { class: "editor-avvisi" });
+    const anteprima = el("pre", { style: "max-height: 320px" });
+    const nomeNuova = el("input", { type: "text", placeholder: "nome della nuova entità", "aria-label": "Nome della nuova entità" });
+    const tipoImport = el("select", { "aria-label": "Chiavi esterne da importare" },
+      el("option", { value: "iniziale" }, "solo FK dichiarate"), el("option", { value: "collegamenti" }, "FK dichiarate e trovate"));
+    let diagramma = null;
+    const regole = () => ({ on_delete: stato.impostazioni?.on_delete || "", on_update: stato.impostazioni?.on_update || "" });
+    const dialetto = () => stato.impostazioni?.dialetto || "mysql";
+
+    function posizioniModello() {
+      const p = {};
+      M().entita.forEach(e => { if (isFinite(e.x) && isFinite(e.y)) p[e.nome] = [e.x, e.y]; });
+      M().relazioni.forEach(r => { if (r.tipo === "N:M" && isFinite(r.x) && isFinite(r.y)) p[r.nome] = [r.x, r.y]; });
+      return p;
+    }
+    function elementoDaNome(nome) {
+      return M().entita.find(e => e.nome === nome) || M().relazioni.find(r => r.tipo === "N:M" && r.nome === nome) || null;
+    }
+    function salvaPosizioni(pos) {
+      M().entita.forEach(e => { if (pos[e.nome]) [e.x, e.y] = pos[e.nome]; });
+      M().relazioni.forEach(r => { if (r.tipo === "N:M" && pos[r.nome]) [r.x, r.y] = pos[r.nome]; });
+    }
+
+    function ridisegna() {
+      if (diagramma) { vistaEditor = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
+      const schema = Editor.schemaLogico(M());
+      const scelto = selezioneEditor && (Editor.entitaDi(M(), selezioneEditor)?.nome || M().relazioni.find(r => r.id === selezioneEditor)?.nome);
+      if (schema.tabelle.length) {
+        diagramma = DiagrammaER.crea(cornice, schema, {
+          tipi: true, posizioni: posizioniModello(), vista: vistaEditor, selezionata: scelto,
+          onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
+          onClic: nome => { selezioneEditor = nome ? elementoDaNome(nome)?.id || null : null; ridisegna(); },
+        });
+        salvaPosizioni(diagramma.posizioni());
+      } else {
+        diagramma = null;
+        cornice.replaceChildren(el("div", { class: "messaggio", style: "margin: 16px" },
+          "Tela vuota: scrivi il nome di un'entità (per esempio Clienti) e premi Nuova entità, oppure importa il database caricato."));
+      }
+      avvisiBox.replaceChildren(...schema.avvisi.map(a => el("div", {}, `Avviso: ${a}`)));
+      anteprima.textContent = Editor.sql(M(), regole(), dialetto());
+      disegnaPannello();
+    }
+
+    function riga(attributo, eliminabile, alCambio) {
+      const nome = el("input", { type: "text", value: attributo.nome, "aria-label": "Nome dell'attributo" });
+      const tipo = el("input", { type: "text", value: attributo.tipo, list: "tipi-sql", "aria-label": "Tipo" });
+      const spunta = (chiave, titolo) => {
+        const c = el("input", { type: "checkbox", checked: !!attributo[chiave], title: titolo, "aria-label": titolo });
+        c.addEventListener("change", () => { attributo[chiave] = c.checked; alCambio(); });
+        return el("td", { class: "stretto" }, c);
+      };
+      nome.addEventListener("change", () => { attributo.nome = Editor.pulisciNome(nome.value); alCambio(); });
+      tipo.addEventListener("change", () => { attributo.tipo = tipo.value.trim().toUpperCase() || "INT"; alCambio(); });
+      return el("tr", {}, el("td", {}, nome), el("td", {}, tipo),
+        "pk" in attributo ? spunta("pk", "chiave primaria") : el("td"), spunta("nn", "NOT NULL (obbligatorio)"),
+        "uq" in attributo ? spunta("uq", "UNIQUE") : el("td"),
+        el("td", { class: "stretto" }, eliminabile ? el("button", { title: "Elimina l'attributo", onclick: eliminabile }, "x") : null));
+    }
+
+    function formRelazione() {
+      const opzioni = () => M().entita.map(e => el("option", { value: e.id }, e.nome));
+      const da = el("select", { "aria-label": "Entità figlia" }, opzioni());
+      const a = el("select", { "aria-label": "Entità padre" }, opzioni());
+      if (M().entita.length > 1) a.selectedIndex = 1;
+      if (selezioneEditor && Editor.entitaDi(M(), selezioneEditor)) da.value = selezioneEditor;
+      const tipo = el("select", { "aria-label": "Cardinalità" },
+        el("option", { value: "1:N" }, "1:N  molte righe della prima per una della seconda"),
+        el("option", { value: "1:1" }, "1:1  una per una"),
+        el("option", { value: "N:M" }, "N:M  molte per molte (tabella ponte)"));
+      const obbl = el("input", { type: "checkbox", checked: true });
+      const nomePonte = el("input", { type: "text", class: "largo", placeholder: "nome della tabella ponte (facoltativo)" });
+      return [
+        el("h3", {}, "Nuova relazione"),
+        el("label", { class: "campo" }, "Prima entità (per 1:N: quella dal lato molti, che riceve la chiave esterna)", da),
+        el("label", { class: "campo" }, "Seconda entità (per 1:N: quella dal lato uno)", a),
+        el("label", { class: "campo" }, "Cardinalità", tipo),
+        el("label", {}, obbl, " obbligatoria (la chiave esterna è NOT NULL)"), el("br"), el("br"),
+        nomePonte, el("br"), el("br"),
+        el("button", { class: "primario", onclick: () => {
+          if (!da.value || !a.value) return avviso("Servono almeno due entità (o una per una relazione con se stessa).", true);
+          if (tipo.value === "N:M" && da.value === a.value) return avviso("Una relazione N:M deve collegare due entità diverse.", true);
+          const r = Editor.aggiungiRelazione(M(), { da: da.value, a: a.value, tipo: tipo.value, obbligatoria: obbl.checked, nome: nomePonte.value });
+          if (r.tipo === "N:M") {                 // la tabella ponte sotto, a metà tra le due entità
+            const e1 = Editor.entitaDi(M(), r.da), e2 = Editor.entitaDi(M(), r.a);
+            if (isFinite(e1.x) && isFinite(e2.x)) { r.x = Math.round((e1.x + e2.x) / 2); r.y = Math.max(e1.y, e2.y) + 260; }
+          }
+          selezioneEditor = r.tipo === "N:M" ? r.id : da.value;
+          ridisegna();
+        } }, "Crea relazione"),
+      ];
+    }
+
+    function disegnaPannello() {
+      const e = selezioneEditor && Editor.entitaDi(M(), selezioneEditor);
+      const r = !e && selezioneEditor && M().relazioni.find(x => x.id === selezioneEditor);
+      const contenuto = [];
+      const intestazione = el("tr", {}, ["nome", "tipo", "PK", "NN", "UQ", ""].map(x => el("th", {}, x)));
+      if (e) {
+        const nome = el("input", { type: "text", class: "largo", value: e.nome, "aria-label": "Nome dell'entità" });
+        nome.addEventListener("change", () => { e.nome = Editor.pulisciNome(nome.value); ridisegna(); });
+        const relazioni = M().relazioni.filter(x => x.da === e.id || x.a === e.id);
+        contenuto.push(
+          el("h3", {}, `Entità ${e.nome}`), el("label", { class: "campo" }, "Nome", nome),
+          el("table", {}, el("thead", {}, intestazione), el("tbody", {}, e.attributi.map((at, i) =>
+            riga(at, () => { e.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
+          el("div", { class: "riga-comandi", style: "margin-top: 8px" },
+            el("button", { onclick: () => { e.attributi.push({ nome: `attributo${e.attributi.length + 1}`, tipo: "VARCHAR(50)", pk: false, nn: false, uq: false }); ridisegna(); } }, "Aggiungi attributo"),
+            el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); selezioneEditor = null; ridisegna(); } }, "Elimina entità")),
+          relazioni.length ? el("h3", {}, "Relazioni") : null,
+          relazioni.map(x => el("div", { class: "riga-comandi" },
+            el("span", {}, x.tipo === "N:M" ? `${x.nome}: N:M` : `${Editor.entitaDi(M(), x.da).nome} → ${Editor.entitaDi(M(), x.a).nome} (${x.tipo}${x.obbligatoria ? ", obbligatoria" : ""})`),
+            el("button", { onclick: () => { M().relazioni = M().relazioni.filter(y => y !== x); ridisegna(); } }, "Elimina"))),
+          el("hr"));
+      } else if (r) {
+        const nome = el("input", { type: "text", class: "largo", value: r.nome, "aria-label": "Nome della tabella ponte" });
+        nome.addEventListener("change", () => { r.nome = Editor.pulisciNome(nome.value); ridisegna(); });
+        contenuto.push(
+          el("h3", {}, `Relazione N:M ${r.nome}`),
+          el("p", { class: "tenue" }, `Tra ${Editor.entitaDi(M(), r.da).nome} e ${Editor.entitaDi(M(), r.a).nome}: la tabella ponte ha come chiave primaria le chiavi delle due entità. Qui sotto gli attributi della relazione (per esempio la quantità).`),
+          el("label", { class: "campo" }, "Nome della tabella ponte", nome),
+          el("table", {}, el("thead", {}, el("tr", {}, ["nome", "tipo", "", "NN", "", ""].map(x => el("th", {}, x)))),
+            el("tbody", {}, (r.attributi || []).map((at, i) => riga(at, () => { r.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
+          el("div", { class: "riga-comandi", style: "margin-top: 8px" },
+            el("button", { onclick: () => { (r.attributi ||= []).push({ nome: `attributo${r.attributi.length + 1}`, tipo: "INT", nn: false }); ridisegna(); } }, "Aggiungi attributo"),
+            el("button", { class: "pericolo", onclick: () => { M().relazioni = M().relazioni.filter(y => y !== r); selezioneEditor = null; ridisegna(); } }, "Elimina relazione")),
+          el("hr"));
+      } else {
+        contenuto.push(el("p", { class: "tenue" }, "Clicca un'entità sulla tela per modificarne nome e attributi; trascinala per spostarla."));
+      }
+      contenuto.push(M().entita.length ? formRelazione() : null);
+      pannello.replaceChildren(...[contenuto].flat(Infinity).filter(Boolean));
+    }
+
+    function nuovaEntita() {
+      const nome = nomeNuova.value.trim();
+      if (!nome) return avviso("Scrivi il nome della nuova entità.", true);
+      if (M().entita.some(e => e.nome.toLowerCase() === Editor.pulisciNome(nome).toLowerCase())) return avviso("Esiste già un'entità con questo nome.", true);
+      const pos = diagramma ? diagramma.posizioni() : {};
+      const xs = Object.values(pos).map(p => p[0]), ys = Object.values(pos).map(p => p[1]);
+      // a destra dell'ultima, andando a capo ogni 4 entità
+      const n = M().entita.length;
+      const e = Editor.aggiungiEntita(M(), nome, xs.length ? 40 + (n % 4) * 360 : 40, ys.length ? 40 + Math.floor(n / 4) * 300 : 40);
+      selezioneEditor = e.id;
+      nomeNuova.value = "";
+      vistaEditor = null;                         // la vista si adatta per mostrare tutto
+      if (diagramma) salvaPosizioni(diagramma.posizioni());
+      diagramma = null;
+      ridisegna();
+    }
+    nomeNuova.addEventListener("keydown", ev => { if (ev.key === "Enter") nuovaEntita(); });
+
+    async function importa() {
+      if (M().entita.length && !confirm("L'editor contiene già un database: sostituirlo con quello caricato?")) return;
+      const dati = await api(`/api/diagramma?tipo=${tipoImport.value}`);
+      modelloEditor = Editor.daDiagramma(dati, layoutER[tipoImport.value] || {});
+      selezioneEditor = null; vistaEditor = null; diagramma = null;
+      ridisegna();
+      avviso(`Importate ${modelloEditor.entita.length} entità e ${modelloEditor.relazioni.length} relazioni.`);
+    }
+
+    async function analizza() {
+      if (!M().entita.length) return avviso("L'editor è vuoto.", true);
+      if (diagramma) salvaPosizioni(diagramma.posizioni());
+      stato = await api("/api/carica_file", { file: [{ nome: "editor.sql", testo: Editor.sql(M(), regole(), dialetto()) }], origine: "editor" });
+      const pos = posizioniModello();
+      layoutER = { iniziale: { ...pos }, collegamenti: { ...pos } };
+      regoleCache = null;
+      avviso("Schema analizzato: ora Problemi, Regole, Ontologia e Modello relazionale si riferiscono al database dell'editor.");
+      await aggiornaTutto("problemi");
+    }
+
+    setTimeout(ridisegna, 0);
+    return [
+      el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
+      el("h2", {}, "Editor del database"),
+      el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
+      el("div", { class: "riga-comandi" },
+        nomeNuova, el("button", { class: "primario", onclick: nuovaEntita }, "Nuova entità"),
+        el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) { modelloEditor = Editor.nuovoModello(); selezioneEditor = null; vistaEditor = null; diagramma = null; ridisegna(); } } }, "Nuovo database"),
+        stato.caricato ? [el("button", { onclick: () => conAttesa(importa) }, "Importa il database caricato"), tipoImport] : null,
+        el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
+        el("button", { onclick: () => conAttesa(analizza) }, "Analizza questo schema"),
+        el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), regole(), dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
+        el("button", { onclick: () => diagramma && conAttesa(async () => scaricaBlob(await diagramma.png(), "database.png")) }, "Scarica PNG")),
+      avvisiBox,
+      el("div", { class: "editor-griglia" }, cornice, pannello),
+      el("h3", {}, "Codice SQL generato"),
+      anteprima,
+    ];
+  },
+
   async regole() {
     const elenco = await regole();
     return [
@@ -426,7 +629,7 @@ const VISTE = {
   },
 
   async gruppi() {
-    const dati = await api("/api/gruppi");
+    const [dati, aree] = await Promise.all([api("/api/gruppi"), api("/api/aree")]);
     const iN = dati.gruppi.colonne.indexOf("n_tabelle");
     const soloGruppi = { colonne: dati.gruppi.colonne, righe: dati.gruppi.righe.filter(r => r[iN] > 1) };
     const singole = { colonne: dati.gruppi.colonne, righe: dati.gruppi.righe.filter(r => r[iN] === 1) };
@@ -454,11 +657,31 @@ const VISTE = {
         pulsantiSchemi());
     }
 
+    const righeGruppi = Object.fromEntries(dati.gruppi.righe.map(r => [r[dati.gruppi.colonne.indexOf("gruppo")],
+      Object.fromEntries(dati.gruppi.colonne.map((n, i) => [n, r[i]]))]));
+    const albero = alberoAree(aree, g => {
+      if (!righeGruppi[g]) return;
+      scegli(righeGruppi[g]);
+      dettaglio.scrollIntoView({ block: "center" });
+    });
+
     return [
-      el("h2", {}, "Gruppi di entità"),
-      el("p", { class: "tenue" }, "Tabelle con nomi simili, raggruppate con un clustering gerarchico (per esempio ordini, ordini_righe, tbl_ordini). La soglia si cambia in Impostazioni."),
-      griglia(soloGruppi, { titolo: "Gruppi con almeno 2 tabelle", alClic: scegli }),
+      el("h2", {}, "Aree, sottogruppi e categorie"),
+      el("p", { class: "tenue" },
+        "Due livelli. I sottogruppi sono le tabelle con nomi simili. Le aree sono sottogruppi molto collegati tra loro dalle chiavi esterne " +
+        "(dichiarate e trovate ad affidabilità alta): si trovano con un rilevamento di comunità, che mette insieme i sottogruppi con molti " +
+        "collegamenti tra loro e pochi con il resto. Le tabelle centrali, puntate da moltissime altre, nella divisione pesano poco, " +
+        "altrimenti unirebbero tutto in un'unica area. La categoria di ogni tabella è ricavata dalla struttura ed è da verificare."),
+      albero,
       dettaglio,
+      griglia(aree.collegamenti_aree, { titolo: "Collegamenti tra aree" }),
+      griglia(aree.collegamenti, { titolo: "Collegamenti tra sottogruppi (prima quelli tra aree diverse)" }),
+      griglia(aree.tabelle, { titolo: "Categoria di ogni tabella",
+        classiCella: (nome, valore) => nome === "categoria" ? `cat cat-${valore}` : null }),
+      el("h2", {}, "Gruppi di entità per nome"),
+      el("p", { class: "tenue" }, "Tabelle con nomi simili, raggruppate con un clustering gerarchico (per esempio ordini, ordini_righe, tbl_ordini). La soglia si cambia in Impostazioni."),
+      griglia(soloGruppi, { titolo: "Gruppi con almeno 2 tabelle (clicca per il dettaglio sotto l'albero delle aree)", alClic: r => {
+        scegli(r); dettaglio.scrollIntoView({ block: "center" }); } }),
       griglia(singole, { titolo: "Tabelle che non stanno in nessun gruppo", nascondi: ["gruppo", "n_tabelle"] }),
     ];
   },
@@ -828,6 +1051,36 @@ const VISTE = {
 
 // ======================================================================= schemi grafici
 
+/** Albero area -> sottogruppo -> tabelle con la loro categoria. */
+function alberoAree(aree, alClicSottogruppo) {
+  const righe = d => d.righe.map(r => Object.fromEntries(d.colonne.map((n, i) => [n, r[i]])));
+  const elencoAree = righe(aree.aree), sottogruppi = righe(aree.sottogruppi);
+  const info = Object.fromEntries(righe(aree.tabelle).map(t => [t.tabella, t]));
+  const aperte = elencoAree.length <= 12;
+  const legenda = el("div", { class: "legenda" }, Object.entries(aree.categorie).map(([c, testo]) =>
+    el("span", { title: testo }, el("span", { class: `cat cat-${c}` }, c))),
+    el("span", {}, el("b", {}, "*"), " tabella centrale"));
+  return el("div", { class: "pannello" },
+    el("h3", {}, `${elencoAree.length} aree, ${sottogruppi.length} sottogruppi` +
+      (aree.centrali.length ? ` · tabelle centrali: ${aree.centrali.join(", ")}` : "")),
+    legenda,
+    elencoAree.map(a => el("details", { class: "area", open: aperte ? "" : null },
+      el("summary", {}, el("b", {}, `Area ${a.area}`),
+        el("span", { class: "tenue" }, ` · ${a.n_sottogruppi} sottogruppi, ${a.n_tabelle} tabelle` +
+          (a["collegata a"] !== "-" ? ` · collegata a: ${a["collegata a"]}` : ""))),
+      el("div", { class: "riga-comandi" },
+        el("button", { onclick: () => { filtroER = `a:${a.area}`; mostraSchema("collegamenti", "er"); } }, "Diagramma dell'area")),
+      sottogruppi.filter(g => g.area === a.area).map(g => el("div", { class: "sottogruppo" },
+        el("a", { href: "#", title: "Dettagli e Togli/Rimetti", onclick: e => { e.preventDefault(); alClicSottogruppo(g.sottogruppo); } },
+          g.sottogruppo),
+        ": ",
+        g.tabelle.split(", ").filter(t => info[t]).map((t, i) => [i ? ", " : "", t,
+          info[t].centrale ? el("b", { title: "tabella centrale" }, "*") : null, " ",
+          el("span", { class: `cat cat-${info[t].categoria}`, title: info[t]["perché"] }, info[t].categoria)]))))));
+}
+
+let filtroER = "";             // "a:area" o "g:gruppo" scelto nel diagramma
+let coloraER = "gruppo";       // colore delle tabelle: per gruppo o per area
 let ultimoSchema = "iniziale";
 let vistaSchema = "er";
 let erMedie = false;
@@ -846,10 +1099,17 @@ async function contenutoSchema(quale) {
 async function contenutoER(quale) {
   const dati = await api(`/api/diagramma?tipo=${quale}&medie=${erMedie ? 1 : 0}`);
   const gruppi = [...new Set(dati.tabelle.map(t => t.gruppo))].sort();
+  const areeER = [...new Set(dati.tabelle.map(t => t.area).filter(Boolean))].sort();
   const cornice = el("div", { class: "er-cornice" });
   const info = el("span", { class: "tenue" });
-  const sceltaGruppo = el("select", { "aria-label": "Gruppo" }, el("option", { value: "" }, "tutte le tabelle"),
-    gruppi.map(g => el("option", { value: g }, `gruppo ${g}`)));
+  const sceltaGruppo = el("select", { "aria-label": "Area o gruppo" }, el("option", { value: "" }, "tutte le tabelle"),
+    areeER.length ? el("optgroup", { label: "Aree" }, areeER.map(a => el("option", { value: `a:${a}` }, `area ${a}`))) : null,
+    el("optgroup", { label: "Gruppi" }, gruppi.map(g => el("option", { value: `g:${g}` }, `gruppo ${g}`))));
+  if ([...sceltaGruppo.options].some(o => o.value === filtroER)) sceltaGruppo.value = filtroER;
+  const sceltaColore = el("select", { "aria-label": "Colore delle tabelle" },
+    el("option", { value: "gruppo" }, "colore per gruppo"), el("option", { value: "area" }, "colore per area"),
+    el("option", { value: "categoria" }, "colore per categoria"));
+  sceltaColore.value = coloraER;
   const ricerca = el("input", { type: "text", placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
   const conTipi = el("input", { type: "checkbox", checked: true });
   const medie = el("input", { type: "checkbox", checked: erMedie, disabled: quale !== "collegamenti" });
@@ -858,8 +1118,9 @@ async function contenutoER(quale) {
   function disegna() {
     let tabelle = dati.tabelle, collegamenti = dati.collegamenti;
     if (sceltaGruppo.value) {
-      // il gruppo scelto più le tabelle direttamente collegate
-      const nomi = new Set(tabelle.filter(t => t.gruppo === sceltaGruppo.value).map(t => t.nome));
+      // l'area o il gruppo scelto più le tabelle direttamente collegate
+      const [genere, valore] = [sceltaGruppo.value.slice(0, 1), sceltaGruppo.value.slice(2)];
+      const nomi = new Set(tabelle.filter(t => (genere === "a" ? t.area : t.gruppo) === valore).map(t => t.nome));
       collegamenti.forEach(l => { if (nomi.has(l.da) || nomi.has(l.a)) { nomi.add(l.da); nomi.add(l.a); } });
       tabelle = tabelle.filter(t => nomi.has(t.nome));
       collegamenti = collegamenti.filter(l => nomi.has(l.da) && nomi.has(l.a));
@@ -872,13 +1133,15 @@ async function contenutoER(quale) {
     }
     diagramma = DiagrammaER.crea(cornice, { tabelle, collegamenti }, {
       tipi: conTipi.checked,
+      coloraPer: coloraER,
       posizioni: layoutER[quale],
       onSposta: (nome, x, y) => { layoutER[quale][nome] = [x, y]; },
     });
     info.textContent = `${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti`;
   }
 
-  sceltaGruppo.addEventListener("change", disegna);
+  sceltaGruppo.addEventListener("change", () => { filtroER = sceltaGruppo.value; disegna(); });
+  sceltaColore.addEventListener("change", () => { coloraER = sceltaColore.value; disegna(); });
   conTipi.addEventListener("change", disegna);
   medie.addEventListener("change", () => { erMedie = medie.checked; mostraSchema(quale, "er"); });
   ricerca.addEventListener("keydown", e => {
@@ -903,7 +1166,7 @@ async function contenutoER(quale) {
       el("label", {}, medie, "anche affidabilità media"),
       el("button", { onclick: () => mostraSchema(quale, "grafo") }, "Vista a grafo")),
     el("div", { class: "riga-comandi" },
-      sceltaGruppo, ricerca,
+      sceltaGruppo, sceltaColore, ricerca,
       el("label", {}, conTipi, "mostra i tipi"),
       el("button", { onclick: () => diagramma && diagramma.zoom(1.25), title: "Ingrandisci" }, "+"),
       el("button", { onclick: () => diagramma && diagramma.zoom(0.8), title: "Rimpicciolisci" }, "-"),

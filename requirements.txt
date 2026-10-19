@@ -5,3 +5,4 @@ pyvis
 ipython
 scipy
 ipywidgets>=8
+networkx
