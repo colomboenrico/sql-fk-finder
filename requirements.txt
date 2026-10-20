@@ -6,3 +6,4 @@ ipython
 scipy
 ipywidgets>=8
 networkx
+comtypes; sys_platform == "win32"

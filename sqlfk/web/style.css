@@ -223,3 +223,12 @@ textarea.editor-query { min-height: 180px; font-family: ui-monospace, Menlo, Con
 @media (max-width: 900px) { .query-griglia { grid-template-columns: 1fr; } .query-laterale { max-height: 260px; } }
 a.pulsante { text-decoration: none; display: inline-flex; align-items: center; }
 .query-colonne a.trovata { background: #ffe58a; color: #1d2330; border-radius: 3px; padding: 0 3px; font-weight: 600; }
+td.ok-g { color: var(--ok); font-weight: 600; }
+td.errore-g { color: var(--pericolo); font-weight: 600; }
+
+/* verifica con l'interfaccia del programma */
+.elenco-finestre { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; max-height: 260px; overflow: auto; }
+.sintesi { font-size: 15px; line-height: 1.55; padding: 12px 14px; border-left: 4px solid var(--primario); background: var(--primario-chiaro); border-radius: 6px; margin-bottom: 12px; }
+.schermata h4 { margin: 14px 0 4px; }
+.schermata li { margin: 6px 0; line-height: 1.5; }
+.stato-rel { display: inline-block; color: #fff; border-radius: 8px; padding: 0 7px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }

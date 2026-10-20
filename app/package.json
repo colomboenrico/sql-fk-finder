@@ -57,7 +57,13 @@
         "dmg"
       ],
       "category": "public.app-category.developer-tools",
-      "identity": null
+      "identity": null,
+      "extraResources": [
+        {
+          "from": "python/mac-${arch}",
+          "to": "python"
+        }
+      ]
     },
     "dmg": {
       "title": "SQL FK Finder"
@@ -66,6 +72,12 @@
       "target": [
         "nsis",
         "portable"
+      ],
+      "extraResources": [
+        {
+          "from": "python/win-x64",
+          "to": "python"
+        }
       ]
     },
     "nsis": {
@@ -84,7 +96,13 @@
       ],
       "category": "Development",
       "maintainer": "Enrico Colombo",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "extraResources": [
+        {
+          "from": "python/linux-x64",
+          "to": "python"
+        }
+      ]
     }
   },
   "desktopName": "sql-fk-finder.desktop"

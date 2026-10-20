@@ -426,6 +426,86 @@ function ricordaQuery(testo) {
   } catch { /* storico non disponibile: non importa */ }
 }
 
+const STATI_RELAZIONE = {
+  confermata: ["confermata", "#2e7d32", "prevista dall'analisi e confermata dal programma"],
+  dichiarata: ["dichiarata", "#1f4e79", "già chiave esterna nel database"],
+  mancata: ["mancata", "#c62828", "il programma la usa ma l'analisi non l'aveva prevista"],
+  debole: ["indizio debole", "#8a94a3", "solo un nome simile: da verificare"],
+};
+
+/** Risultati della verifica con l'interfaccia: sintesi, mappa, racconto, dettagli e rapporto da scaricare. */
+function mostraAnalisiInterfaccia(V, dove) {
+  const S = V.spiegazione, M = V.mappa;
+  const cornice = el("div", { class: "er-cornice", style: "height: 520px" });
+  let diagramma = null;
+  const tabelle = M.classi.map(c => ({
+    nome: c.tabella, titolo: c.classe ? `${c.classe}  ·  ${c.tabella}` : `${c.tabella} (solo nel database)`,
+    gruppo: c.schermate[0] || "database", pk_indovinata: false,
+    colonne: (c.attributi.length ? c.attributi : c.pk.map(p => ({ nome: p, colonna: p }))).map(a => ({
+      nome: a.colonna !== "-" ? a.colonna : `(${a.nome})`, tipo: a.colonna !== "-" && a.nome !== a.colonna ? a.nome : "",
+      pk: c.pk.includes(a.colonna), fk: M.relazioni.some(r => r.da === c.tabella && r.colonna === a.colonna), unique: false, not_null: false })),
+  }));
+  const collegamenti = M.relazioni.map(r => ({
+    da: r.da, colonne_da: r.colonna ? [r.colonna] : [], a: r.a, colonne_a: r.verso, tipo: r.stato,
+    relazione: r.come === "elenco nella scheda" && !r.colonna ? "N:M" : "1:N", obbligatoria: false,
+    descrizione: `${STATI_RELAZIONE[r.stato][0]}: ${STATI_RELAZIONE[r.stato][2]} (visto in ${r.schermata})` }));
+  setTimeout(() => {
+    diagramma = DiagrammaER.crea(cornice, { tabelle, collegamenti }, { tipi: true });
+  }, 0);
+
+  const etichetta = stato => el("span", { class: "stato-rel", style: `background:${STATI_RELAZIONE[stato][1]}` }, STATI_RELAZIONE[stato][0]);
+  const racconto = el("div", {}, S.schermate.map(sch => el("div", { class: "schermata" },
+    el("h4", {}, sch.nome),
+    el("ul", {}, sch.frasi.map(f => el("li", {}, etichetta(f.stato), " ", f.testo, f.sql ? el("pre", {}, f.sql) : null))))),
+    S.non_viste.length ? el("div", { class: "schermata" }, el("h4", {}, "Previste ma non mostrate dal programma"),
+      el("p", { class: "tenue" }, "Le due tabelle si vedono nel programma, ma nessuna schermata mostra il collegamento: forse non esiste, o si vede in una schermata non letta."),
+      el("ul", {}, S.non_viste.map(t => el("li", {}, t)))) : null);
+
+  function rapporto() {
+    const svg = diagramma ? diagramma.esporta() : "";
+    const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const tab = d => `<table><tr>${d.colonne.map(c => `<th>${esc(c)}</th>`).join("")}</tr>` +
+      d.righe.map(r => `<tr>${r.map(v => `<td>${esc(v ?? "")}</td>`).join("")}</tr>`).join("") + "</table>";
+    const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Rapporto: come comunicano le parti del programma</title>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px;color:#1d2330;max-width:1200px}
+h1{font-size:24px}h2{margin-top:32px;border-bottom:1px solid #dde1e7;padding-bottom:4px}li{margin:6px 0;line-height:1.5}
+.s{display:inline-block;color:#fff;border-radius:8px;padding:0 7px;font-size:12px;font-weight:600}pre{background:#f5f6f8;padding:8px;border-radius:6px}
+table{border-collapse:collapse;font-size:12px;margin:8px 0}td,th{border:1px solid #dde1e7;padding:3px 6px;text-align:left}th{background:#f5f6f8}
+.mappa svg{max-width:100%;height:auto;border:1px solid #dde1e7}</style></head><body>
+<h1>Come comunicano le parti del programma</h1><p>${esc(S.sintesi)}</p>
+<h2>Mappa</h2><p>${Object.values(STATI_RELAZIONE).map(([n, c, d]) => `<span class="s" style="background:${c}">${n}</span> ${esc(d)}`).join(" &nbsp; ")}</p>
+<div class="mappa">${svg}</div>
+<h2>Schermata per schermata</h2>${S.schermate.map(sch => `<h3>${esc(sch.nome)}</h3><ul>${sch.frasi.map(f =>
+  `<li><span class="s" style="background:${STATI_RELAZIONE[f.stato][1]}">${STATI_RELAZIONE[f.stato][0]}</span> ${esc(f.testo)}${f.sql ? `<pre>${esc(f.sql)}</pre>` : ""}</li>`).join("")}</ul>`).join("")}
+${S.non_viste.length ? `<h3>Previste ma non mostrate dal programma</h3><ul>${S.non_viste.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+<h2>Precisione e richiamo</h2>${tab(V.numeri)}<h2>Classi</h2>${tab(V.classi)}<h2>Relazioni</h2>${tab(V.relazioni)}
+<h2>Previsioni</h2>${tab(V.previsioni)}<h2>Attributi</h2>${tab(V.attributi)}
+<p style="color:#5f6b7a;font-size:12px">Creato da SQL FK Finder il ${new Date().toLocaleString("it-IT")}.</p></body></html>`;
+    scaricaBlob(new Blob([html], { type: "text/html;charset=utf-8" }), "rapporto_programma.html");
+  }
+
+  const esito = (colonna, valore) => colonna !== "esito" ? null :
+    String(valore).startsWith("mancata") || valore === "non vista nell'interfaccia" ? "errore-g" :
+    String(valore).startsWith("confermata") || String(valore).startsWith("prevista") || String(valore).startsWith("N:M") ? "ok-g" : null;
+  dove.replaceChildren(
+    el("div", { class: "sintesi" }, S.sintesi),
+    el("div", { class: "riga-comandi" },
+      el("button", { class: "primario", onclick: rapporto }, "Scarica il rapporto (HTML)"),
+      el("a", { class: "pulsante", href: "/api/scarica/interfaccia" }, "Scarica i dettagli in Excel")),
+    el("h3", {}, "Mappa del programma"),
+    el("div", { class: "legenda" }, Object.keys(STATI_RELAZIONE).map(k => el("span", {}, etichetta(k), " ", STATI_RELAZIONE[k][2])),
+      el("span", {}, "Ogni riquadro è un'entità del programma con la sua tabella; le righe sono gli attributi con la colonna collegata.")),
+    cornice,
+    el("h3", {}, "Come comunicano le parti, schermata per schermata"),
+    racconto,
+    el("h3", {}, "Dettagli"),
+    griglia(V.numeri, { titolo: "Precisione e richiamo" }),
+    griglia(V.relazioni, { titolo: "Relazioni mostrate dal programma", classiCella: esito }),
+    griglia(V.previsioni, { titolo: "Chiavi esterne previste: cosa dice il programma", classiCella: esito }),
+    griglia(V.classi, { titolo: "Classi e tabelle" }),
+    griglia(V.attributi, { titolo: "Attributi e colonne" }));
+}
+
 /** Pagina Query quando i dati sono tanti: il database su disco va costruito (una volta sola). */
 function paginaDatabaseDaCostruire(info) {
   const velocita = ["mysql", "mariadb", "tsql"].includes(info.dialetto) ? 15e6 : 35e6;      // byte al secondo, circa
@@ -459,6 +539,97 @@ function paginaDatabaseDaCostruire(info) {
 }
 
 const VISTE = {
+  async interfaccia() {
+    const statoBox = el("div", { class: "messaggio" }, "Nessuna schermata letta.");
+    const pagineBox = el("div");
+    const risultati = el("div");
+    const elencoFinestre = el("div", { class: "elenco-finestre" }, el("span", { class: "tenue" }, "cerco le finestre aperte..."));
+    const massimo = el("input", { type: "number", min: "5", max: "2000", value: "150", style: "width: 90px", "aria-label": "Schede al massimo" });
+    let scelta = null, disponibile = true;
+
+    async function caricaFinestre() {
+      const r = await api("/api/finestre");
+      disponibile = r.disponibile;
+      if (!r.disponibile) {
+        elencoFinestre.replaceChildren(el("div", { class: "messaggio" }, r.messaggio));
+        return;
+      }
+      elencoFinestre.replaceChildren(...(r.finestre.length ? r.finestre.map(f => el("button", {
+        class: scelta === f.id ? "primario" : null, title: `${f.programma} (processo ${f.pid})`,
+        onclick: () => { scelta = f.id; caricaFinestre(); } }, el("b", {}, f.programma || "programma"), ` · ${f.titolo}`))
+        : [el("span", { class: "tenue" }, "Nessuna finestra aperta: apri il programma e premi Aggiorna.")]));
+    }
+
+    async function comando(nome, dati = {}) {
+      if (!scelta) return avviso("Scegli prima la finestra del programma.", true);
+      try {
+        const r = await api(`/api/finestre/${nome}`, { id: scelta, ...dati });
+        if (r.letta !== undefined) avviso(`Letta la schermata "${r.letta}": ${r.moduli} moduli, ${r.tabelle} tabelle.`);
+        aggiorna();
+      } catch (e) { avviso(e.message, true); }
+    }
+
+    async function aggiorna() {
+      const r = await api("/api/interfaccia");
+      const st = r.stato || {};
+      statoBox.textContent = `${r.pagine.length} schermate lette` + (st.in_corso ? " · lettura di tutte le schede in corso" : "") +
+        (st.registra ? " · registrazione attiva: naviga nel programma" : "") + (st.messaggio ? ` · ${st.messaggio}` : "");
+      const conta = {};
+      r.pagine.forEach(p => { conta[p.schema] = (conta[p.schema] || 0) + 1; });
+      pagineBox.replaceChildren(r.pagine.length ? griglia({ colonne: ["schermata", "letture", "elenchi", "moduli", "schede"],
+        righe: Object.keys(conta).sort().map(k => { const p = r.pagine.find(x => x.schema === k);
+          return [decodeURIComponent(k).replace(/^\//, "").replace(/\//g, " > "), conta[k], p.tabelle, p.moduli, p.schede]; }) },
+        { titolo: "Schermate lette" }) : "");
+    }
+    const ciclo = setInterval(async () => {
+      if (!document.body.contains(statoBox)) { clearInterval(ciclo); return; }
+      try { await aggiorna(); } catch { /* si riprova */ }
+    }, 2000);
+
+    async function analizza() {
+      const V = await conAttesa(() => api("/api/interfaccia/analisi"));
+      if (!V) return;
+      mostraAnalisiInterfaccia(V, risultati);
+    }
+
+    setTimeout(() => { caricaFinestre().catch(e => avviso(e.message, true)); aggiorna().catch(() => {}); }, 0);
+    return [
+      el("h2", {}, "Verifica con l'interfaccia del programma"),
+      el("p", { class: "tenue" }, "L'app legge le finestre del programma che usa questo database, come un lettore di schermo: etichette, " +
+        "campi, menu a tendina con le voci, griglie, schede. Ne ricava le entità (classi) con i loro attributi, le collega a tabelle e " +
+        "colonne, e mostra come comunicano le parti del programma, controllando le chiavi esterne previste. Tutto sul computer, senza rete: " +
+        "non preme pulsanti, non usa i comandi dei menu e non scrive nei campi."),
+      el("div", { class: "pannello" },
+        el("h3", {}, "1. Scegli la finestra del programma"),
+        el("div", { class: "riga-comandi" }, el("button", { onclick: () => caricaFinestre().catch(e => avviso(e.message, true)) }, "Aggiorna l'elenco")),
+        elencoFinestre),
+      el("div", { class: "pannello" },
+        el("h3", {}, "2. Leggi le schermate"),
+        el("p", { class: "tenue" }, "Leggi tutte le schede passa da solo tra le schede (tab) e le voci degli alberi di navigazione. " +
+          "Per le schermate che si aprono con un pulsante o un menu usa Registra e aprile tu: ogni schermata che vedi viene letta, " +
+          "anche le finestre secondarie dello stesso programma."),
+        el("div", { class: "riga-comandi" },
+          el("button", { onclick: () => comando("leggi") }, "Leggi questa schermata"),
+          el("button", { class: "primario", onclick: () => comando("leggi_tutto", { massimo: Number(massimo.value) || 150 }) }, "Leggi tutte le schede"),
+          el("label", {}, "al massimo ", massimo),
+          el("button", { onclick: () => comando("registra") }, "Registra mentre navigo"),
+          el("button", { onclick: () => comando("ferma") }, "Ferma"),
+          el("button", { onclick: async () => {
+            if (!confirm("Dimenticare le schermate lette?")) return;
+            await api("/api/interfaccia/svuota", {});
+            risultati.replaceChildren();
+            aggiorna();
+          } }, "Dimentica le schermate lette")),
+        statoBox, pagineBox),
+      el("div", { class: "pannello" },
+        el("h3", {}, "3. Come comunicano le parti del programma"),
+        el("p", { class: "tenue" }, "Se il database delle query è pronto (pagina Query sui dati) si confrontano anche i valori mostrati con i dati: " +
+          "i collegamenti diventano più sicuri."),
+        el("div", { class: "riga-comandi" }, el("button", { class: "primario", onclick: analizza }, "Analizza le schermate lette")),
+        risultati),
+    ];
+  },
+
   async query() {
     const info = await api("/api/query/tabelle");
     if (info.da_costruire) return paginaDatabaseDaCostruire(info);

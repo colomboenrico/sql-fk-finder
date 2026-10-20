@@ -6,8 +6,9 @@
 #   ./crea_eseguibili.sh win linux    solo per Windows e Linux
 #
 # Da un Mac si creano tutti e tre; da Linux quelli per Linux e Windows.
-# Serve Node.js (https://nodejs.org) e internet la prima volta (scarica Electron e electron-builder).
-# Sul computer dove si usa l'app serve Python 3: le librerie le installa l'app al primo avvio.
+# Serve Node.js (https://nodejs.org), un Python 3 con pip e internet, solo qui e solo per creare gli eseguibili:
+# si scaricano Electron, electron-builder e il Python da includere con le sue librerie.
+# Gli eseguibili creati contengono già tutto e non usano mai la rete.
 set -euo pipefail
 
 cd "$(dirname "$0")/app"
@@ -31,6 +32,16 @@ if command -v xdg-user-dir >/dev/null 2>&1; then DESKTOP="$(xdg-user-dir DESKTOP
 [ -d "$DESKTOP" ] || DESKTOP="$HOME"
 DEST="$DESKTOP/SQL FK Finder - eseguibili"
 
+# un Python con pip per preparare quello da includere
+PY=""
+for c in "${PYTHON:-}" python3 python /opt/anaconda3/bin/python; do
+  if [ -n "$c" ] && command -v "$c" >/dev/null 2>&1 && "$c" -m pip --version >/dev/null 2>&1; then PY="$c"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "Serve un Python 3 con pip per preparare il Python da includere negli eseguibili."
+  exit 1
+fi
+
 echo "== Preparazione (la prima volta scarica gli strumenti, qualche minuto)"
 npm install --no-audit --no-fund
 rm -rf dist
@@ -43,10 +54,12 @@ for s in $SCELTI; do
         continue
       fi
       echo "== Mac (Apple Silicon e Intel)"
+      "$PY" prepara_python.py mac-arm64 mac-x64
       npx electron-builder --mac --arm64 --x64
       ;;
     win|windows)
       echo "== Windows"
+      "$PY" prepara_python.py win-x64
       if command -v wine >/dev/null 2>&1 || command -v wine64 >/dev/null 2>&1; then
         npx electron-builder --win --x64
       else
@@ -57,6 +70,7 @@ for s in $SCELTI; do
       ;;
     linux)
       echo "== Linux"
+      "$PY" prepara_python.py linux-x64
       npx electron-builder --linux --x64
       ;;
     *)
@@ -97,8 +111,10 @@ Linux
   ...-linux-x86_64.AppImage    si avvia con doppio clic (o da terminale: ./SQL-FK-Finder-...AppImage)
   ...-linux-x64.tar.gz         versione da estrarre
 
-Su ogni computer serve Python 3 (3.9 o più recente, da https://www.python.org).
-Al primo avvio l'app installa da sola le librerie Python che le servono (serve internet).
+L'app contiene già Python e tutte le librerie: sul computer dove la usi non serve installare niente.
+Non usa mai la rete: niente internet e nessuna porta aperta (Electron e Python si parlano con le pipe del processo).
+Per controllarla: avviala con la variabile SQLFK_AUTOVERIFICA=1, scrive il risultato in sqlfk_autoverifica.txt
+nella cartella temporanea del sistema.
 TESTO
 
 echo

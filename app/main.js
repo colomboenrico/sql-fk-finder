@@ -1,39 +1,47 @@
-// App desktop: avvia il server Python (sqlfk.server) e mostra la sua interfaccia in una finestra.
-// Funziona sia dalla cartella del progetto (npm start) sia come app installata (eseguibile creato con
-// crea_eseguibili): in quel caso il modulo Python sqlfk è tra le risorse dell'app.
-const { app, BrowserWindow, dialog, shell } = require("electron");
+// App desktop: avvia il motore Python (sqlfk.ponte) e mostra l'interfaccia in una finestra.
+//
+// Nessuna rete: l'interfaccia si carica da un protocollo interno (sqlfk://app/) e ogni richiesta passa a
+// Python attraverso le pipe del processo (standard input e output), senza porte né socket. Tutte le
+// richieste verso internet (http, https, ws) sono bloccate.
+//
+// Funziona dalla cartella del progetto (npm start) e come app installata (crea_eseguibili): in quel caso
+// Python con le librerie e il modulo sqlfk sono tra le risorse dell'app.
+const { app, BrowserWindow, dialog, protocol, session } = require("electron");
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
 
-// cartella che contiene sqlfk/ e requirements.txt
-const RADICE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
-const REQUISITI = path.join(RADICE, "requirements.txt");
+const RADICE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");   // contiene sqlfk/
 const ICONA = path.join(__dirname, "icona.png");
 const LIBRERIE = "import pandas, scipy, pyvis, openpyxl, networkx";
 const WIN = process.platform === "win32";
-let server = null;
-let indirizzo = null;
-let finestraPrincipale = false;           // finché non c'è, chiudere la finestra dell'installazione non chiude l'app
+const INDIRIZZO = "sqlfk://app/";
+let ponte = null;
+let finestraPrincipale = false;
 
-// ambiente Python creato dall'app al primo avvio, se le librerie mancano
-function cartellaAmbiente() { return path.join(app.getPath("userData"), "python"); }
-function pythonAmbiente() { return path.join(cartellaAmbiente(), WIN ? "Scripts" : "bin", WIN ? "python.exe" : "python"); }
+// niente servizi di rete di Chromium in sottofondo
+app.commandLine.appendSwitch("disable-background-networking");
+app.commandLine.appendSwitch("disable-component-update");
+app.commandLine.appendSwitch("no-pings");
+protocol.registerSchemesAsPrivileged([
+  { scheme: "sqlfk", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
 
-// [comando, argomenti iniziali] dei Python da provare, in ordine
+// ---------------------------------------------------------------- Python
+// [comando, argomenti]: prima il Python incluso nell'app (con le librerie), poi quelli del computer
 function candidati() {
   const casa = os.homedir();
+  const incluso = WIN ? path.join(RADICE, "python", "python.exe") : path.join(RADICE, "python", "bin", "python3");
   const elenco = [];
   if (process.env.SQLFK_PYTHON) elenco.push([process.env.SQLFK_PYTHON, []]);
-  elenco.push([pythonAmbiente(), []]);
+  elenco.push([incluso, []]);
   if (WIN) {
     const programmi = path.join(process.env.LOCALAPPDATA || "", "Programs", "Python");
     elenco.push(["python", []], ["py", ["-3"]],
       [path.join(casa, "anaconda3", "python.exe"), []], [path.join(casa, "miniconda3", "python.exe"), []],
       ...["Python313", "Python312", "Python311", "Python310"].map(v => [path.join(programmi, v, "python.exe"), []]));
   } else {
-    // un'app avviata dal Finder o dal menu non ha il PATH del terminale: si provano anche i percorsi soliti
     // /usr/bin/python3 alla fine: sul Mac senza gli strumenti per sviluppatori apre la richiesta di installarli
     elenco.push(["/opt/anaconda3/bin/python", []], [path.join(casa, "anaconda3", "bin", "python"), []],
       [path.join(casa, "miniconda3", "bin", "python"), []], ["/opt/homebrew/bin/python3", []],
@@ -43,150 +51,186 @@ function candidati() {
   return elenco;
 }
 
-function prova(python, argomenti, codice) {
-  try {
-    const r = spawnSync(python, [...argomenti, "-c", codice], { cwd: RADICE, timeout: 60000, windowsHide: true });
-    return r.status === 0;
-  } catch { return false; }
-}
-
-// {pronto: [cmd, args]} se un Python ha già le librerie, altrimenti {base: [cmd, args]} (Python 3.9 o più recente)
 function trovaPython() {
-  let base = null;
   for (const [python, argomenti] of candidati()) {
     if (path.isAbsolute(python) && !fs.existsSync(python)) continue;
-    if (!prova(python, argomenti, "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)")) continue;
-    if (prova(python, argomenti, LIBRERIE)) return { pronto: [python, argomenti] };
-    if (!base && python !== pythonAmbiente()) base = [python, argomenti];
+    try {
+      const r = spawnSync(python, [...argomenti, "-c", LIBRERIE], { cwd: RADICE, timeout: 60000, windowsHide: true });
+      if (r.status === 0) return [python, argomenti];
+    } catch { /* il prossimo */ }
   }
-  return { base };
+  return null;
 }
 
-function esegui(comando, argomenti, finestra) {
-  return new Promise((risolvi, rifiuta) => {
-    const p = spawn(comando, argomenti, { cwd: RADICE, windowsHide: true });
-    let uscita = "";
-    const leggi = dati => {
-      uscita += dati;
-      const riga = String(dati).trim().split("\n").pop();
-      if (riga && finestra && !finestra.isDestroyed()) {
-        finestra.webContents.executeJavaScript(
-          `document.getElementById("dettaglio").textContent = ${JSON.stringify(riga.slice(0, 160))}`).catch(() => {});
-      }
-    };
-    p.stdout.on("data", leggi);
-    p.stderr.on("data", leggi);
-    p.on("error", rifiuta);
-    p.on("exit", codice => codice === 0 ? risolvi() : rifiuta(new Error(uscita.slice(-2000))));
-  });
-}
-
-// crea un ambiente Python dell'app e ci installa le librerie (serve internet, solo la prima volta)
-async function installaLibrerie([python, argomenti]) {
-  const finestra = new BrowserWindow({ width: 560, height: 220, resizable: false, title: "SQL FK Finder",
-                                       icon: ICONA, autoHideMenuBar: true, webPreferences: { sandbox: true } });
-  finestra.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(
-    "<body style='font-family:-apple-system,Segoe UI,sans-serif;padding:24px'><h3>Installazione delle librerie Python</h3>" +
-    "<p>Solo al primo avvio: serve internet e qualche minuto.</p><p id='dettaglio' style='color:#666;font-size:12px'>avvio...</p></body>"));
-  try {
-    await esegui(python, [...argomenti, "-m", "venv", cartellaAmbiente()], finestra);
-    await esegui(pythonAmbiente(), ["-m", "pip", "install", "--upgrade", "pip"], finestra);
-    await esegui(pythonAmbiente(), ["-m", "pip", "install", "-r", REQUISITI], finestra);
-  } finally {
-    if (!finestra.isDestroyed()) finestra.destroy();
-  }
-  return [pythonAmbiente(), []];
-}
-
-async function preparaPython() {
-  const trovato = trovaPython();
-  if (trovato.pronto) return trovato.pronto;
-  if (!trovato.base) {
-    const scelta = dialog.showMessageBoxSync({
-      type: "error", title: "Python non trovato", buttons: ["Scarica Python", "Esci"], defaultId: 0,
-      message: "Serve Python 3 (3.9 o più recente).",
-      detail: "Installalo da python.org (su Windows spunta \"Add python.exe to PATH\"), poi riapri l'app: " +
-              "le librerie le installa l'app da sola.\n\nSe Python è in un percorso particolare, avvia l'app con " +
-              "la variabile SQLFK_PYTHON impostata al percorso dell'eseguibile python.",
-    });
-    if (scelta === 0) await shell.openExternal("https://www.python.org/downloads/");
-    return null;
-  }
-  const scelta = dialog.showMessageBoxSync({
-    type: "question", title: "Primo avvio", buttons: ["Installa", "Esci"], defaultId: 0,
-    message: "Mancano le librerie Python dell'app (pandas, scipy, sqlglot...).",
-    detail: `Le installo ora in una cartella dell'app (${cartellaAmbiente()}), senza toccare il tuo Python. ` +
-            "Serve internet e qualche minuto, solo questa volta.",
-  });
-  if (scelta !== 0) return null;
-  try {
-    return await installaLibrerie(trovato.base);
-  } catch (e) {
-    fs.rmSync(cartellaAmbiente(), { recursive: true, force: true });
-    dialog.showErrorBox("Installazione non riuscita",
-      "Non sono riuscito a installare le librerie. Puoi installarle a mano con:\n  pip install -r requirements.txt\n\n" + e.message);
-    return null;
-  }
-}
-
-function avviaServer([python, argomenti]) {
-  return new Promise((risolvi, rifiuta) => {
-    server = spawn(python, [...argomenti, "-m", "sqlfk.server", "--porta", "0", "--con-app"], {
+// ---------------------------------------------------------------- il ponte con Python (pipe, niente rete)
+class Ponte {
+  constructor([python, argomenti]) {
+    this.attese = new Map();
+    this.prossimo = 1;
+    this.processo = spawn(python, [...argomenti, "-m", "sqlfk.ponte"], {
       cwd: RADICE, stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
-      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1", PYTHONUTF8: "1" },
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1", PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8",
+             SQLFK_PID_APP: String(process.pid) },
     });
-    let errori = "";
-    server.stdout.on("data", dati => {
-      const m = String(dati).match(/SQLFK_PORTA=(\d+)/);
-      if (m) risolvi(`http://127.0.0.1:${m[1]}/`);
+    this.errori = "";
+    let resto = "";
+    this.pronto = new Promise((risolvi, rifiuta) => {
+      this.processo.stdout.setEncoding("utf8");
+      this.processo.stdout.on("data", dati => {
+        resto += dati;
+        let i;
+        while ((i = resto.indexOf("\n")) >= 0) {
+          const riga = resto.slice(0, i);
+          resto = resto.slice(i + 1);
+          if (!riga.trim()) continue;
+          let m;
+          try { m = JSON.parse(riga); } catch { continue; }
+          if (m.pronto) { risolvi(); continue; }
+          this.ricevi(m);
+        }
+      });
+      this.processo.stderr.on("data", d => { this.errori = (this.errori + d).slice(-4000); process.stderr.write(d); });
+      this.processo.on("exit", codice => {
+        rifiuta(new Error(`Il motore Python si è chiuso (codice ${codice}).\n${this.errori.slice(-1500)}`));
+        for (const a of this.attese.values()) a.errore(new Error("Il motore Python si è chiuso."));
+        this.attese.clear();
+      });
     });
-    server.stderr.on("data", dati => { errori += dati; process.stderr.write(dati); });
-    server.on("exit", codice => rifiuta(new Error(`Il server Python si è chiuso (codice ${codice}).\n${errori.slice(-1500)}`)));
+  }
+
+  // la risposta è un flusso: la testa (stato, intestazioni) arriva prima, poi i dati a pezzi
+  richiesta(metodo, percorso, corpo) {
+    const id = this.prossimo++;
+    return new Promise((risolvi, rifiuta) => {
+      let controllo = null;
+      const flusso = new ReadableStream({ start: c => { controllo = c; } });
+      const a = {
+        testa: (stato, intestazioni) => { a.iniziata = true; risolvi({ stato, intestazioni, flusso }); },
+        pezzo: dati => controllo.enqueue(new Uint8Array(Buffer.from(dati, "base64"))),
+        fine: m => {
+          if (!a.iniziata) risolvi({ stato: m.stato, intestazioni: m.intestazioni || {}, flusso });
+          if (m.errore) controllo.enqueue(new TextEncoder().encode(JSON.stringify({ errore: m.errore })));
+          controllo.close();
+          this.attese.delete(id);
+        },
+        errore: e => { if (!a.iniziata) rifiuta(e); else controllo.error(e); },
+      };
+      this.attese.set(id, a);
+      const messaggio = { id, metodo, percorso };
+      if (corpo && corpo.length) messaggio.corpo = Buffer.from(corpo).toString("base64");
+      this.processo.stdin.write(JSON.stringify(messaggio) + "\n");
+    });
+  }
+
+  ricevi(m) {
+    const a = this.attese.get(m.id);
+    if (!a) return;
+    if (m.testa) a.testa(m.stato, m.intestazioni || {});
+    else if (m.pezzo) a.pezzo(m.pezzo);
+    else if (m.fine) a.fine(m);
+  }
+
+  chiudi() {
+    try { this.processo.stdin.end(); } catch { /* già chiuso */ }
+    setTimeout(() => { try { this.processo.kill(); } catch { /* già uscito */ } }, 1500);
+  }
+}
+
+function registraProtocollo() {
+  protocol.handle("sqlfk", async richiesta => {
+    const u = new URL(richiesta.url);
+    const corpo = richiesta.method === "POST" ? Buffer.from(await richiesta.arrayBuffer()) : null;
+    const r = await ponte.richiesta(richiesta.method, u.pathname + u.search, corpo);
+    const intestazioni = { ...r.intestazioni };
+    delete intestazioni["Content-Length"];
+    delete intestazioni["Connection"];
+    return new Response(r.flusso, { status: r.stato, headers: intestazioni });
+  });
+}
+
+// ---------------------------------------------------------------- niente rete
+function bloccaRete() {
+  const filtro = { urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*", "ftp://*/*"] };
+  session.defaultSession.webRequest.onBeforeRequest(filtro, (_d, cb) => cb({ cancel: true }));
+  app.on("web-contents-created", (_e, wc) => {
+    wc.on("will-navigate", (evento, url) => { if (!url.startsWith(INDIRIZZO)) evento.preventDefault(); });
+    wc.setWindowOpenHandler(({ url }) => url.startsWith(INDIRIZZO)
+      ? { action: "allow", overrideBrowserWindowOptions: { width: 1300, height: 900, autoHideMenuBar: true, icon: ICONA } }
+      : { action: "deny" });
   });
 }
 
 function creaFinestra() {
   finestraPrincipale = true;
   const finestra = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    title: "SQL FK Finder",
-    icon: ICONA,
-    autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true,
-                      preload: path.join(__dirname, "preload.js") },
+    width: 1400, height: 900, minWidth: 900, minHeight: 600, title: "SQL FK Finder", icon: ICONA, autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.js") },
   });
-
-  // "Apri in una finestra a parte" per gli schemi: nuova finestra dell'app; i link esterni nel browser
-  finestra.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(indirizzo)) {
-      return { action: "allow", overrideBrowserWindowOptions: { width: 1300, height: 900, autoHideMenuBar: true, icon: ICONA } };
-    }
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
-  finestra.loadURL(indirizzo);
+  finestra.loadURL(INDIRIZZO);
 }
 
 app.whenReady().then(async () => {
   if (process.platform === "darwin" && app.dock) app.dock.setIcon(ICONA);   // icona nel Dock del Mac
-  const python = await preparaPython();
+  bloccaRete();
+  const python = trovaPython();
   if (!python) {
+    dialog.showErrorBox("Python non trovato",
+      "Manca il Python dell'app con le sue librerie.\n\nNell'app creata con crea_eseguibili è incluso; dalla cartella " +
+      "del progetto serve un Python 3 con le librerie installate (pip install -r requirements.txt).\n\n" +
+      "Se Python è in un percorso particolare, avvia l'app con la variabile SQLFK_PYTHON impostata al percorso dell'eseguibile python.");
     app.quit();
     return;
   }
+  ponte = new Ponte(python);
   try {
-    indirizzo = await avviaServer(python);
+    await ponte.pronto;
   } catch (e) {
     dialog.showErrorBox("Errore all'avvio", e.message);
     app.quit();
     return;
   }
+  registraProtocollo();
   creaFinestra();
+  if (process.env.SQLFK_AUTOVERIFICA) autoverifica();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) creaFinestra(); });
 });
 
 app.on("window-all-closed", () => { if (finestraPrincipale) app.quit(); });
-app.on("will-quit", () => { if (server) server.kill(); });
+app.on("will-quit", () => { if (ponte) ponte.chiudi(); });
+
+// Autoverifica (SQLFK_AUTOVERIFICA=1): controlla che l'app funzioni e che non usi la rete, scrive il risultato
+// in sqlfk_autoverifica.txt nella cartella temporanea del sistema e chiude l'app.
+async function autoverifica() {
+  const righe = [];
+  const log = (...x) => { const r = x.join(" "); righe.push(r); console.log("AUTOVERIFICA", r); };
+  try {
+    const w = BrowserWindow.getAllWindows()[0];
+    await new Promise(r => w.webContents.once("did-finish-load", r));
+    const js = codice => w.webContents.executeJavaScript(codice, true);
+    log("interfaccia:", w.webContents.getURL(), "-", await js("document.title"));
+    log("python:", ponte.processo.spawnfile, "(pid " + ponte.processo.pid + ")");
+    const esempi = JSON.stringify(path.join(RADICE, "esempi"));
+    log("carica esempi:", await js(`fetch('/api/carica_cartella', {method: 'POST', body: JSON.stringify({cartella: ${esempi}})}).then(r => r.status)`));
+    await new Promise(r => setTimeout(r, 4000));
+    log("tabelle lette:", await js("fetch('/api/stato').then(r => r.json()).then(d => d.tabelle_totali)"));
+    log("query:", await js("fetch('/api/query', {method: 'POST', body: JSON.stringify({sql: 'SELECT COUNT(*) FROM comuni'})}).then(r => r.json()).then(d => JSON.stringify(d.risultati[0].righe))"));
+    log("lettura finestre:", await js("fetch('/api/finestre').then(r => r.json()).then(d => d.disponibile ? d.finestre.length + ' finestre aperte trovate' : d.messaggio)"));
+    log("internet:", await js("fetch('https://example.com').then(() => 'RAGGIUNTO (errore!)').catch(() => 'bloccato')"));
+    const pid = [process.pid, ponte.processo.pid];
+    let connessioni;
+    if (WIN) {
+      const out = spawnSync("netstat", ["-ano"], { encoding: "utf8", windowsHide: true }).stdout || "";
+      connessioni = out.split("\n").filter(r => pid.some(p => r.trim().endsWith(" " + p))).join("\n").trim();
+    } else {
+      connessioni = pid.map(p => (spawnSync("lsof", ["-nP", "-a", "-p", String(p), "-i"], { encoding: "utf8" }).stdout || "").trim())
+        .filter(Boolean).join("\n");
+    }
+    log("connessioni di rete aperte dall'app:", connessioni || "nessuna");
+  } catch (e) {
+    log("ERRORE:", e.message);
+  }
+  const file = path.join(os.tmpdir(), "sqlfk_autoverifica.txt");
+  fs.writeFileSync(file, righe.join("\n") + "\n");
+  console.log("AUTOVERIFICA FINE", file);
+  app.quit();
+}

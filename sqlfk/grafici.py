@@ -1,4 +1,5 @@
 """Schemi grafici interattivi (pyvis): il database prima dell'analisi e i collegamenti trovati."""
+import re
 from pathlib import Path
 
 from pyvis.network import Network
@@ -15,6 +16,9 @@ def _rete():
 def _salva(net, file_html):
     """Restituisce l'HTML; se file_html è dato lo scrive anche su disco."""
     html = net.generate_html()
+    # tutto in locale: via i riferimenti a internet (Bootstrap da un CDN, che pyvis aggiunge sempre ma qui non serve)
+    html = re.sub(r'<link[^>]+href="https?://[^"]*"[^>]*>', "", html)
+    html = re.sub(r'<script[^>]+src="https?://[^"]*"[^>]*>\s*</script>', "", html)
     if file_html:
         Path(file_html).write_text(html, encoding="utf-8")
     return html

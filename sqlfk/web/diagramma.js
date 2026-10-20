@@ -12,6 +12,10 @@ const DiagrammaER = (() => {
     dichiarata: { colore: "#1f4e79", spessore: 1.8, tratteggio: null },
     alta: { colore: "#2e7d32", spessore: 1.6, tratteggio: null },
     media: { colore: "#c25e00", spessore: 1.4, tratteggio: "6 4" },
+    // mappa del software letta dall'interfaccia
+    confermata: { colore: "#2e7d32", spessore: 2, tratteggio: null },
+    mancata: { colore: "#c62828", spessore: 2, tratteggio: null },
+    debole: { colore: "#8a94a3", spessore: 1.3, tratteggio: "4 4" },
   };
 
   const svgEl = (tag, attributi = {}, ...figli) => {
@@ -150,7 +154,7 @@ const DiagrammaER = (() => {
       g.append(svgEl("path", { d: `M0 5 Q0 0 5 0 H${t.larghezza - 5} Q${t.larghezza} 0 ${t.larghezza} 5 V${TESTA} H0 Z`, fill: colore }));
       const titolo = svgEl("text", { x: 10, y: 18, fill: "#ffffff", "font-size": 13, "font-weight": 700,
                                      "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
-      titolo.textContent = t.nome + (t.pk_indovinata ? " (PK non dichiarata)" : "");
+      titolo.textContent = (t.titolo || t.nome) + (t.pk_indovinata ? " (PK non dichiarata)" : "");
       const tooltip = svgEl("title"); tooltip.textContent = `${t.nome}\ngruppo: ${t.gruppo}` +
         (t.area ? `\narea: ${t.area}\ncategoria: ${t.categoria}` : "") + `\n${t.colonne.length} colonne`;
       g.append(titolo, tooltip);
@@ -193,14 +197,14 @@ const DiagrammaER = (() => {
       const titolo = svgEl("title");
       titolo.textContent = `${l.da}(${l.colonne_da.join(", ")}) → ${l.a}(${l.colonne_a.join(", ")})\n` +
         `relazione ${l.relazione}, ${l.obbligatoria ? "obbligatoria" : "facoltativa"}\n` +
-        (l.tipo === "dichiarata" ? "chiave esterna dichiarata" : `chiave esterna trovata (affidabilità ${l.tipo})`);
+        (l.descrizione || (l.tipo === "dichiarata" ? "chiave esterna dichiarata" : `chiave esterna trovata (affidabilità ${l.tipo})`));
       l.linea.append(titolo);
       l.puntoF = svgEl("circle", { r: 3, fill: stile.colore });
       l.puntoP = svgEl("circle", { r: 3, fill: stile.colore });
       l.cardF = svgEl("text", { "font-size": 10, "font-weight": 700, fill: stile.colore, "font-family": "Arial, sans-serif" });
       l.cardP = svgEl("text", { "font-size": 10, "font-weight": 700, fill: stile.colore, "font-family": "Arial, sans-serif" });
       l.cardF.textContent = l.relazione === "1:1" ? "1" : "N";
-      l.cardP.textContent = "1";
+      l.cardP.textContent = l.relazione === "N:M" ? "N" : "1";
       strLinee.append(l.linea);
       strEtichette.append(l.puntoF, l.puntoP, l.cardF, l.cardP);
     }

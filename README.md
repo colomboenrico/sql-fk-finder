@@ -110,6 +110,24 @@ I file si leggono a blocchi, senza caricarli interi in memoria:
 - nell'app i file scelti con **Carica cartella** o **Carica file .sql** si leggono direttamente dal disco. Nel browser i file sopra 64 MB vanno aperti scrivendo il loro percorso (o quello della cartella) nel campo in alto;
 - di ogni risultato si vedono le prime 1000 righe; **Scarica CSV completo** scarica tutte le righe, anche milioni. Una query lunga si ferma con **Interrompi**.
 
+## Verifica con l'interfaccia di un programma (Windows)
+
+Per un programma scaricato che usa il database (per esempio un gestionale per Windows), la pagina **Verifica con l'interfaccia** fa reverse engineering dall'interfaccia grafica, come un lettore di schermo, tutto in locale:
+
+1. **scegli la finestra del programma** dall'elenco delle finestre aperte;
+2. **leggi le schermate**: *Leggi questa schermata*, *Leggi tutte le schede* (passa da solo tra schede e voci degli alberi di navigazione), *Registra mentre navigo* (legge ogni schermata che apri tu, anche le finestre secondarie). Con UI Automation si leggono etichette, campi, menu a tendina con le voci, griglie con intestazioni e righe, schede. Non preme mai pulsanti, non usa i comandi dei menu, non scrive nei campi; apre e richiude i menu a tendina solo per leggerne le voci;
+3. **analizza**: ogni elenco, modulo o scheda diventa una classe (entità) con i suoi attributi, collegata a una tabella e alle colonne (per nome e, se il database delle query è pronto, per i valori mostrati). Le relazioni si riconoscono da menu a tendina, colonne i cui valori sono record di un'altra entità, elenchi dei figli dentro la scheda del padre (anche N:M tramite una tabella ponte), nomi di altre entità (indizio debole).
+
+Il risultato si capisce a colpo d'occhio:
+
+- una **sintesi** in parole semplici (schermate, entità, collegamenti, precisione delle previsioni);
+- la **mappa del programma**: le entità con la tabella e le colonne collegate, e le frecce di come comunicano (verde = prevista e confermata, blu = già chiave esterna, rosso = usata dal programma ma non prevista, grigio = indizio debole);
+- **come comunicano le parti**, schermata per schermata: una frase per ogni collegamento (per esempio *il menu a tendina «Regione» del modulo «Provincia» fa scegliere un record di regioni: ogni provincia è collegata a una regione...*), con l'istruzione SQL per aggiungere quelli mancanti;
+- precisione e richiamo delle chiavi esterne previste, e le tabelle di dettaglio;
+- **Scarica il rapporto (HTML)**: un file unico con testo e mappa da aprire senza rete, più i dettagli in Excel.
+
+Le schermate lette si salvano nel file di progetto. La lettura delle finestre funziona su Windows (modulo `sqlfk/finestre.py`, con `comtypes`); l'analisi (`sqlfk/interfaccia.py`) funziona ovunque.
+
 ## Query sui dati
 
 Dai file `.sql` si costruisce un database SQLite (in memoria, o su disco se i dati sono tanti: vedi sopra): le tabelle dei `CREATE TABLE` (più le colonne di `ALTER TABLE ... ADD COLUMN`) e i dati degli `INSERT INTO` e dei blocchi `COPY ... FROM stdin` dei dump di PostgreSQL. Nell'app c'è la pagina **Query sui dati**:
@@ -134,7 +152,9 @@ python -m sqlfk.query esempi --modifiche "DELETE FROM comuni WHERE id_comune = 1
 
 Oltre al notebook c'è un'app con interfaccia grafica che fa le stesse cose: carichi i file `.sql` (una cartella intera o singoli file) e navighi tra panoramica, gruppi, schemi grafici, PK composte, FK candidate, entità da togliere e salvataggio dei risultati.
 
-L'analisi è fatta in Python (modulo `sqlfk`, lo stesso usato dal notebook); l'interfaccia è una pagina web servita da un piccolo server locale che accetta solo connessioni dal computer stesso.
+L'analisi è fatta in Python (modulo `sqlfk`, lo stesso usato dal notebook); l'interfaccia è una pagina web mostrata da Electron.
+
+**Nessuna rete.** L'app non usa internet e non apre porte: l'interfaccia si carica da un protocollo interno (`sqlfk://app/`) ed Electron parla con Python attraverso le pipe del processo (`python -m sqlfk.ponte`, standard input e output). Ogni richiesta verso internet (http, https, websocket) è bloccata, anche gli schemi grafici sono tutti in locale. Per controllarlo: avvia l'app con la variabile `SQLFK_AUTOVERIFICA=1`; prova interfaccia, caricamento, query e lettura delle finestre, verifica che internet sia bloccato e che l'app non abbia connessioni aperte, scrive il risultato in `sqlfk_autoverifica.txt` nella cartella temporanea del sistema e si chiude.
 
 **Con un doppio clic**: `avvia_app.command` su Mac, `avvia_app.bat` su Windows (la prima volta scaricano Electron; su Mac, se il sistema blocca il file: tasto destro → Apri).
 
@@ -146,7 +166,7 @@ npm install
 npm start
 ```
 
-L'app cerca da sola un Python (`python3`, Anaconda, Homebrew, python.org...). Se mancano le librerie, al primo avvio propone di installarle in una cartella dell'app (un ambiente separato: il tuo Python non viene toccato). Se usi un Python in un percorso particolare, indicalo con la variabile `SQLFK_PYTHON`:
+Dalla cartella del progetto l'app usa un Python del computer con le librerie installate (`pip install -r requirements.txt`: `python3`, Anaconda, Homebrew...). Gli eseguibili invece hanno Python già dentro (vedi sotto). Se usi un Python in un percorso particolare, indicalo con la variabile `SQLFK_PYTHON`:
 
 ```bash
 SQLFK_PYTHON=/percorso/del/python npm start
@@ -168,7 +188,9 @@ Da un Mac crea tutti e tre (Mac Apple Silicon e Intel, Windows, Linux); da Linux
 | Windows | `...-win-x64.exe` (installazione), `...-portatile.exe` | doppio clic; se SmartScreen lo blocca: "Ulteriori informazioni" → "Esegui comunque" |
 | Linux | `...-linux-x86_64.AppImage`, `...-linux-x64.tar.gz` | doppio clic sull'AppImage, oppure da terminale `./SQL-FK-Finder-...AppImage` |
 
-Sul computer dove si usa l'app serve solo Python 3 (3.9 o più recente, da [python.org](https://www.python.org/downloads/)): le librerie le installa l'app al primo avvio.
+Gli eseguibili contengono **Python con tutte le librerie** (Python embeddable di python.org per Windows, python-build-standalone per Mac e Linux, preparati da `app/prepara_python.py` con versioni fisse): sul computer dove si usa l'app non serve installare niente e l'app non va mai in rete. Internet serve solo sul computer dove si creano gli eseguibili, per scaricare una volta Electron, il Python da includere e le librerie (anche per gli altri sistemi). Per crearli servono Node.js e un Python 3 con pip.
+
+Nel browser (comando qui sotto) invece c'è un piccolo server locale su `127.0.0.1`: è comodo per lavorare dal terminale, ma l'app non lo usa.
 
 **Nel browser**, senza Electron:
 
@@ -205,6 +227,10 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
 | `crea_eseguibili.sh`, `crea_eseguibili.bat` | creano gli eseguibili dell'app per Mac, Windows e Linux |
+| `sqlfk/finestre.py` | la lettura delle finestre di un programma Windows (UI Automation) |
+| `sqlfk/interfaccia.py` | classi, collegamenti e verifica dalle schermate lette, con il racconto e la mappa |
+| `sqlfk/ponte.py` | il collegamento tra l'app e Python con le pipe, senza rete |
+| `app/prepara_python.py` | prepara il Python con le librerie da includere negli eseguibili |
 | `sqlfk/lettura.py` | la lettura a blocchi dei file .sql di qualsiasi dimensione |
 | `sqlfk/query.py` | il database SQLite in memoria costruito dai file e l'esecuzione delle query |
 | `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |

@@ -28,6 +28,8 @@ from . import analisi as A
 from . import grafici as G
 from . import modello as MR
 from . import ontologia as O
+from . import finestre as FIN
+from . import interfaccia as UI
 from . import lettura as L
 from . import query as QY
 from .regole import REGOLE
@@ -87,6 +89,9 @@ class Sessione:
         self.db = None                    # database SQLite per le query, costruito alla prima richiesta
         self.lock_db = threading.Lock()
         self.lavoro = None                # l'ultimo lavoro in background (Lavoro)
+        self.interfaccia = {"pagine": {}, "stato": {}}     # fotografie delle schermate di un altro programma
+        self.lettura_finestre = None      # lettura delle finestre di Windows (sqlfk.finestre)
+        self.porta = None
 
     # ------------------------------------------------------------ lavori in background
     def in_corso(self):
@@ -290,6 +295,79 @@ class Sessione:
         with self.lock_db:
             return db.esegui(str(testo or ""), bool(conferma))
 
+    # ------------------------------------------------------------ verifica con l'interfaccia di un software
+    def interfaccia_pagina(self, foto):
+        if not isinstance(foto, dict) or not foto.get("url"):
+            raise Errore("Fotografia non valida.")
+        pagine = self.interfaccia["pagine"]
+        if len(pagine) < 3000:
+            pagine[f"{foto['url']}#{foto.get('firma', '')}"] = foto
+        return {"pagine": len(pagine)}
+
+    def finestre(self):
+        """Lettura delle finestre dei programmi (solo Windows)."""
+        if self.lettura_finestre is None:
+            if not FIN.SU_WINDOWS:
+                raise Errore("La lettura delle finestre dei programmi funziona su Windows: usa l'app sul computer Windows dove gira il programma.")
+            self.lettura_finestre = FIN.Sessione(lambda foto: self.interfaccia_pagina(foto))
+        return self.lettura_finestre
+
+    def elenco_finestre(self):
+        if not FIN.SU_WINDOWS:
+            return {"disponibile": False, "finestre": [],
+                    "messaggio": "La lettura delle finestre dei programmi funziona su Windows: usa l'app sul computer Windows dove gira il programma."}
+        try:
+            return {"disponibile": True, "finestre": self.finestre().finestre()}
+        except FIN.NonDisponibile as e:
+            return {"disponibile": False, "finestre": [], "messaggio": str(e)}
+
+    def comando_finestre(self, comando, dati):
+        F = self.finestre()
+        hwnd = int(dati.get("id") or 0)
+        try:
+            if comando == "leggi":
+                foto = F.leggi(hwnd)
+                return {"letta": foto["titolo"], "moduli": len(foto["moduli"]), "tabelle": len(foto["tabelle"])}
+            if comando == "leggi_tutto":
+                F.leggi_tutto(hwnd, int(dati.get("massimo") or 150))
+            elif comando == "registra":
+                F.avvia_registrazione(hwnd)
+            elif comando == "ferma":
+                F.ferma()
+        except FIN.NonDisponibile as e:
+            raise Errore(str(e))
+        except Exception as e:
+            raise Errore(f"Lettura della finestra non riuscita: {e}")
+        return {"stato": F.stato}
+
+    def interfaccia_elenco(self):
+        pagine = list(self.interfaccia["pagine"].values())
+        stato = dict(self.lettura_finestre.stato) if self.lettura_finestre else {}
+        if self.lettura_finestre:
+            stato["registra"] = self.lettura_finestre.registra
+        return {"stato": stato, "pagine": [
+            {"url": f["url"], "titolo": f.get("titolo", ""), "schema": UI.schema_url(f["url"]),
+             "moduli": len(f.get("moduli", [])), "tabelle": len(f.get("tabelle", [])), "schede": len(f.get("dettagli", []))}
+            for f in pagine]}
+
+    def interfaccia_analisi(self):
+        """Classi, relazioni e verifica delle previsioni dalle pagine fotografate."""
+        self.richiedi_dati()
+        pagine = list(self.interfaccia["pagine"].values())
+        if not pagine:
+            raise Errore("Nessuna pagina letta: apri il software e leggi le sue pagine.")
+        db = self.db
+        if db is None:                    # con i dati si confrontano anche i valori mostrati
+            try:
+                db = self.database()
+            except Errore:
+                db = None
+        with self.lock_db:
+            V = UI.verifica(pagine, self.R, db)
+        risposta = {k: tabella(getattr(V, k)) for k in ("riepilogo", "numeri", "classi", "attributi", "relazioni", "previsioni")}
+        risposta.update(spiegazione=V.spiegazione, mappa=V.mappa)
+        return risposta
+
     def pk_composte(self):
         self.richiedi_dati()
         df = self.R.pk_composte
@@ -408,6 +486,7 @@ class Sessione:
         self.richiedi_dati()
         return {"formato": self.FORMATO_PROGETTO, "versione": 1, "origine": self.origine,
                 "impostazioni": self.stato()["impostazioni"], "rimosse": sorted(self.rimosse),
+                "interfaccia": list(self.interfaccia["pagine"].values()),
                 "file": [{"nome": n, "testo": str(t), "percorso": str(t.percorso) if getattr(t, "percorso", None) else None,
                           "ridotto": bool(getattr(t, "ridotto", False)), "dimensione": getattr(t, "dimensione", len(t)),
                           "mappa": t.mappa.coppie() if getattr(t, "mappa", None) else None}
@@ -428,6 +507,8 @@ class Sessione:
         self.imposta(p.get("impostazioni") or {}, ricarica=False)
         self.rimosse = {str(t) for t in p.get("rimosse", [])}
         self.carica(file_sql, str(p.get("origine") or "progetto"))
+        self.interfaccia = {"pagine": {f"{f['url']}#{f.get('firma', '')}": f for f in p.get("interfaccia", []) if isinstance(f, dict) and f.get("url")},
+                            "stato": {}}
         return self.stato()
 
 
@@ -522,6 +603,9 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/schema_collegamenti": lambda: self.schema("collegamenti"),
             "/api/scarica/excel": self.scarica_excel,
             "/api/lavoro": lambda: {"lavoro": s.lavoro.dati() if s.lavoro else None},
+            "/api/interfaccia": s.interfaccia_elenco,
+            "/api/finestre": s.elenco_finestre,
+            "/api/scarica/interfaccia": self.scarica_interfaccia,
             "/api/scarica/sql": self.scarica_sql,
             "/api/scarica/create": self.scarica_create,
         }
@@ -537,6 +621,8 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in lunghe:
             return self.esegui(lunghe[percorso], blocca=False)
+        if percorso == "/api/interfaccia/analisi":
+            return self.esegui(s.interfaccia_analisi)
         if percorso == "/api/query/csv":
             testo = parse_qs(url.query).get("sql", [""])[0]
 
@@ -602,6 +688,17 @@ class Gestore(BaseHTTPRequestHandler):
         A.scrivi_excel(SESSIONE.R, buffer)
         return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 {"Content-Disposition": 'attachment; filename="possibili_collegamenti.xlsx"'})
+
+    def scarica_interfaccia(self):
+        SESSIONE.richiedi_dati()
+        V = UI.verifica(list(SESSIONE.interfaccia["pagine"].values()), SESSIONE.R, SESSIONE.db)
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer) as xls:
+            for nome, df in (("Riepilogo", V.riepilogo), ("Precisione e richiamo", V.numeri), ("Classi", V.classi),
+                             ("Attributi", V.attributi), ("Relazioni interfaccia", V.relazioni), ("Previsioni", V.previsioni)):
+                df.to_excel(xls, sheet_name=nome, index=False)
+        return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                {"Content-Disposition": 'attachment; filename="verifica_interfaccia.xlsx"'})
 
     def scarica_sql(self):
         SESSIONE.richiedi_dati()
@@ -687,6 +784,12 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/salva_cartella": salva_cartella,
             "/api/progetto": lambda: s.apri_progetto(dati),
             "/api/carica_percorsi": carica_percorsi,
+            "/api/interfaccia/pagina": lambda: s.interfaccia_pagina(dati),
+            "/api/finestre/leggi": lambda: s.comando_finestre("leggi", dati),
+            "/api/finestre/leggi_tutto": lambda: s.comando_finestre("leggi_tutto", dati),
+            "/api/finestre/registra": lambda: s.comando_finestre("registra", dati),
+            "/api/finestre/ferma": lambda: s.comando_finestre("ferma", dati),
+            "/api/interfaccia/svuota": lambda: (s.interfaccia["pagine"].clear(), {"ok": True})[1],
             "/api/lavoro/ferma": lambda: (s.lavoro.fermo.set() if s.lavoro else None, {"ok": True})[1],
             "/api/query/costruisci": lambda: s.costruisci_database(),
             "/api/query/svuota_cache": s.svuota_cache,
@@ -726,6 +829,7 @@ def main():
 
     server = ThreadingHTTPServer(("127.0.0.1", args.porta), Gestore)
     porta = server.server_address[1]
+    SESSIONE.porta = porta
     print(f"SQLFK_PORTA={porta}", flush=True)
     print(f"Interfaccia: http://127.0.0.1:{porta}  (Ctrl+C per chiudere)", flush=True)
     if args.apri:

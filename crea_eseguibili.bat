@@ -1,7 +1,8 @@
 @echo off
 rem Crea l'eseguibile per Windows di SQL FK Finder e lo mette in una cartella sul Desktop.
 rem Da avviare con doppio clic o dal Prompt dei comandi:  crea_eseguibili.bat
-rem Serve Node.js (https://nodejs.org) e internet la prima volta.
+rem Serve Node.js (https://nodejs.org), Python 3 con pip e internet, solo qui e solo per creare l'eseguibile:
+rem l'eseguibile contiene gia' Python con le librerie e non usa mai la rete.
 rem Per Mac e Linux usa crea_eseguibili.sh (l'app per Mac si crea solo da un Mac).
 setlocal
 cd /d "%~dp0app"
@@ -17,6 +18,12 @@ echo == Preparazione ^(la prima volta scarica gli strumenti, qualche minuto^)
 call npm install --no-audit --no-fund
 if errorlevel 1 goto errore
 if exist dist rmdir /s /q dist
+
+set "PY=python"
+where python >nul 2>nul || set "PY=py -3"
+echo == Python da includere
+call %PY% prepara_python.py win-x64
+if errorlevel 1 goto errore
 
 echo == Windows
 call npx electron-builder --win --x64
@@ -35,8 +42,9 @@ copy /y "dist\*.exe" "%DEST%\" >nul
   echo   ...-portatile.exe    si avvia con doppio clic, senza installare
   echo   Se Windows SmartScreen lo blocca: "Ulteriori informazioni" ^> "Esegui comunque".
   echo.
-  echo Serve Python 3 ^(3.9 o piu' recente, da https://www.python.org, spuntando "Add python.exe to PATH"^).
-  echo Al primo avvio l'app installa da sola le librerie Python che le servono ^(serve internet^).
+  echo L'app contiene gia' Python e le librerie: sul computer dove la usi non serve installare niente.
+  echo Non usa mai la rete: niente internet e nessuna porta aperta.
+  echo Per controllarla avviala con SQLFK_AUTOVERIFICA=1: scrive sqlfk_autoverifica.txt nella cartella temporanea.
 ) > "%DEST%\LEGGIMI.txt"
 
 echo.

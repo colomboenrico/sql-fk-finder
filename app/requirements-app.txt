@@ -1,0 +1,6 @@
+pandas
+openpyxl
+sqlglot
+pyvis
+scipy
+networkx
