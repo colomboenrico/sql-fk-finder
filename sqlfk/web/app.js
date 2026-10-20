@@ -577,6 +577,46 @@ function paginaDatabaseDaCostruire(info) {
 }
 
 const VISTE = {
+  async asp() {
+    const medie = el("input", { type: "checkbox" });
+    const conInterfaccia = el("input", { type: "checkbox", checked: true });
+    const risultati = el("div");
+    const pagine = (await api("/api/interfaccia")).pagine.length;
+    async function risolvi() {
+      const X = await conAttesa(() => api(`/api/asp?medie=${medie.checked ? 1 : 0}&interfaccia=${conInterfaccia.checked ? 1 : 0}`));
+      if (!X) return;
+      const righe = d => d.righe.map(x => Object.fromEntries(d.colonne.map((n, i) => [n, x[i]])));
+      risultati.replaceChildren(el("div", {},
+        el("div", { class: "riquadri" }, righe(X.riepilogo).map(x => el("div", { class: "riquadro" },
+          el("div", { class: "valore" }, String(x.valore)), el("div", { class: "voce" }, x.voce)))),
+        X.con_interfaccia ? el("div", { class: "messaggio" }, `Usate anche le ${X.schermate} schermate lette del programma: ` +
+          "le relazioni confermate dall'interfaccia valgono di più e quelle che solo l'interfaccia mostra sono tra le candidate.") : null,
+        el("div", { class: "riga-comandi" },
+          el("a", { class: "pulsante primario", href: "/api/scarica/asp_sql" }, "Scarica le chiavi scelte (.sql)"),
+          el("a", { class: "pulsante", href: "/api/scarica/asp_lp", title: "Regole e fatti, da usare anche con clingo da terminale" }, "Scarica il programma ASP (.lp)")),
+        griglia(X.scelte, { titolo: "Chiavi esterne scelte da clingo", nascondi: ["sql"] }),
+        griglia(X.scartate, { titolo: "Candidate scartate, con il motivo" }),
+        X.differenze.righe.length ? griglia(X.differenze, { titolo: "Differenze con la scelta automatica (dichiarate + la migliore ad affidabilità alta per colonna)" }) :
+          el("div", { class: "messaggio" }, "Nessuna differenza con la scelta automatica."),
+        el("details", { class: "pannello" }, el("summary", {}, "Le regole usate da clingo (sqlfk/regole_fk.lp)"), el("pre", {}, X.programma))));
+    }
+    return [
+      el("h2", {}, "Scelta delle chiavi con clingo"),
+      el("p", { class: "tenue" }, "clingo è un risolutore di Answer Set Programming: le candidate trovate dall'analisi (e quelle confermate " +
+        "dall'interfaccia del programma) diventano fatti, e le regole chiedono l'insieme di chiavi esterne più coerente: le chiavi dichiarate " +
+        "restano, le stesse colonne puntano a una sola tabella, due tabelle non si puntano a vicenda, si preferiscono le affidabilità alte e le " +
+        "relazioni confermate dal programma, si scartano tipi incompatibili, relazioni ridondanti e collegamenti di direzione incerta tra tabelle " +
+        "con la stessa chiave. Tutto in locale: clingo è una libreria dentro l'app."),
+      el("div", { class: "pannello" },
+        el("div", { class: "riga-comandi" },
+          el("label", {}, medie, " anche le candidate ad affidabilità media"),
+          el("label", { title: pagine ? "" : "nessuna schermata letta" }, conInterfaccia,
+            ` usa le schermate lette del programma (${pagine})`),
+          el("button", { class: "primario", onclick: risolvi }, "Risolvi con clingo"))),
+      risultati,
+    ];
+  },
+
   async interfaccia() {
     const statoBox = el("div", { class: "messaggio" }, "Nessuna schermata letta.");
     const pagineBox = el("div");

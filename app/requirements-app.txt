@@ -4,3 +4,4 @@ sqlglot
 pyvis
 scipy
 networkx
+clingo>=5.8,<5.9

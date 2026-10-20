@@ -7,3 +7,4 @@ scipy
 ipywidgets>=8
 networkx
 comtypes; sys_platform == "win32"
+clingo>=5.8,<5.9

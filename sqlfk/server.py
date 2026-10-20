@@ -28,6 +28,7 @@ from . import analisi as A
 from . import grafici as G
 from . import modello as MR
 from . import ontologia as O
+from . import asp as ASP
 from . import controllo as CTRL
 from . import finestre as FIN
 from . import interfaccia as UI
@@ -92,6 +93,7 @@ class Sessione:
         self.lavoro = None                # l'ultimo lavoro in background (Lavoro)
         self.interfaccia = {"pagine": {}, "stato": {}}     # fotografie delle schermate di un altro programma
         self.lettura_finestre = None      # lettura delle finestre di Windows (sqlfk.finestre)
+        self.ultimo_asp = None            # l'ultima scelta fatta con clingo
         self.porta = None
 
     # ------------------------------------------------------------ lavori in background
@@ -312,6 +314,22 @@ class Sessione:
                 raise Errore("La lettura delle finestre dei programmi funziona su Windows: usa l'app sul computer Windows dove gira il programma.")
             self.lettura_finestre = FIN.Sessione(lambda foto: self.interfaccia_pagina(foto))
         return self.lettura_finestre
+
+    def scelta_asp(self, medie=False, interfaccia=True):
+        """Le chiavi esterne scelte da clingo (con le conferme dell'interfaccia, se ci sono schermate lette)."""
+        self.richiedi_dati()
+        if not ASP.disponibile():
+            raise Errore("clingo non è installato (pip install clingo): negli eseguibili dell'app è già incluso.")
+        pagine = list(self.interfaccia["pagine"].values())
+        V = None
+        if interfaccia and pagine:
+            with self.lock_db:
+                V = UI.verifica(pagine, self.R, self.db)
+        X = ASP.risolvi(self.R, V, medie)
+        self.ultimo_asp = X
+        return {"riepilogo": tabella(X.riepilogo), "scelte": tabella(X.scelte), "scartate": tabella(X.scartate),
+                "differenze": tabella(X.differenze), "programma": X.programma, "ottimo": X.ottimo,
+                "con_interfaccia": V is not None, "schermate": len(pagine)}
 
     def elenco_finestre(self):
         if not FIN.SU_WINDOWS:
@@ -622,6 +640,21 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in lunghe:
             return self.esegui(lunghe[percorso], blocca=False)
+        if percorso == "/api/asp":
+            q = parse_qs(url.query)
+            return self.esegui(lambda: s.scelta_asp(q.get("medie", ["0"])[0] == "1", q.get("interfaccia", ["1"])[0] == "1"))
+        if percorso in ("/api/scarica/asp_sql", "/api/scarica/asp_lp"):
+            def scarica_asp():
+                if s.ultimo_asp is None:
+                    raise Errore("Prima risolvi con clingo.")
+                X = s.ultimo_asp
+                if percorso.endswith("sql"):
+                    return (X.script.encode("utf-8"), "application/sql; charset=utf-8",
+                            {"Content-Disposition": 'attachment; filename="fk_scelte_clingo.sql"'})
+                testo = X.programma + "\n% ---- fatti\n" + X.fatti
+                return (testo.encode("utf-8"), "text/plain; charset=utf-8",
+                        {"Content-Disposition": 'attachment; filename="scelta_fk.lp"'})
+            return self.esegui(scarica_asp)
         if percorso == "/api/autoverifica":
             return self.esegui(lambda: {"controlli": CTRL.controlla()}, blocca=False)
         if percorso == "/api/interfaccia/analisi":

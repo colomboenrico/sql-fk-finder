@@ -32,3 +32,5 @@ app/dist/
 # Python incluso negli eseguibili (creato da prepara_python.py)
 app/python/
 app/.cache-python/
+fk_scelte_clingo.sql
+scelta_fk.lp

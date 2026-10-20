@@ -2,9 +2,11 @@
 
 # sql-fk-finder
 
-Notebook Jupyter per **trovare i collegamenti mancanti tra tabelle** di un database a partire dai file `.sql` con i `CREATE TABLE`.
+App desktop e notebook Jupyter per **trovare i collegamenti mancanti tra tabelle** di un database a partire dai file `.sql` con i `CREATE TABLE`.
 
 Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e bisogna ricostruire le relazioni tra le tabelle guardando solo i nomi e i tipi delle colonne.
+
+> **Documentazione completa: [docs/](docs/README.md)** — introduzione, installazione e avvio, guida a tutte le pagine dell'app, come funzionano regole e algoritmi, codici della diagnostica, architettura (come comunicano le parti, perché l'app non usa la rete), riga di comando, domande frequenti.
 
 ## Cosa fa
 
@@ -109,6 +111,17 @@ I file si leggono a blocchi, senza caricarli interi in memoria:
 - **query**: con più di 256 MB di dati il database SQLite si costruisce su disco, nella cartella `~/.sqlfk/cache` (su Windows `C:\Users\nome\.sqlfk\cache`; si può cambiare con la variabile `SQLFK_CACHE`). Serve circa 1,2 volte lo spazio dei file. La costruzione richiede circa 30 secondi per GB per i dump PostgreSQL e 70 per quelli MySQL, mostra l'avanzamento e si può interrompere. Si fa una volta sola: con gli stessi file il database si riapre subito, anche dopo aver chiuso l'app;
 - nell'app i file scelti con **Carica cartella** o **Carica file .sql** si leggono direttamente dal disco. Nel browser i file sopra 64 MB vanno aperti scrivendo il loro percorso (o quello della cartella) nel campo in alto;
 - di ogni risultato si vedono le prime 1000 righe; **Scarica CSV completo** scarica tutte le righe, anche milioni. Una query lunga si ferma con **Interrompi**.
+
+## Scelta delle chiavi con clingo (ASP)
+
+La pagina **Scelta con clingo** (e la sezione 18 del notebook) usa [clingo](https://potassco.org/clingo/), un risolutore di Answer Set Programming, per scegliere l'insieme di chiavi esterne più coerente tra tutte le candidate. Le candidate diventano fatti e le regole sono nel file leggibile `sqlfk/regole_fk.lp`:
+
+- le chiavi già dichiarate restano;
+- le stesse colonne puntano al massimo a una tabella; due tabelle non si puntano a vicenda;
+- si preferiscono le candidate ad affidabilità alta e quelle **confermate dall'interfaccia del programma** (se hai letto le sue schermate), e diventano candidate anche le relazioni che solo l'interfaccia mostra;
+- si scartano tipi incompatibili, relazioni ridondanti (X → Z quando c'è X → Y → Z) e collegamenti di direzione incerta tra tabelle con la stessa chiave primaria (a meno che l'interfaccia li confermi).
+
+Per ogni candidata scartata c'è il motivo; si vedono le differenze con la scelta automatica, si scaricano le chiavi scelte (`.sql`) e il programma ASP con i fatti (`.lp`, da usare anche con `clingo` da terminale). clingo è una libreria inclusa nell'app: tutto resta in locale. Da terminale: `python -m sqlfk.asp cartella [--medie] [--programma scelta.lp]`.
 
 ## Verifica con l'interfaccia di un programma (Windows)
 
@@ -227,6 +240,8 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
 | `crea_eseguibili.sh`, `crea_eseguibili.bat` | creano gli eseguibili dell'app per Mac, Windows e Linux |
+| `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | la scelta delle chiavi esterne con clingo (ASP) |
+| `sqlfk/controllo.py` | il controllo dell'app |
 | `sqlfk/finestre.py` | la lettura delle finestre di un programma Windows (UI Automation) |
 | `sqlfk/interfaccia.py` | classi, collegamenti e verifica dalle schermate lette, con il racconto e la mappa |
 | `sqlfk/ponte.py` | il collegamento tra l'app e Python con le pipe, senza rete |

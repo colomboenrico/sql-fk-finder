@@ -29,7 +29,7 @@ def controlla():
     voce("Python", lambda: ("ok", f"{platform.python_version()} ({sys.executable})"))
 
     def librerie():
-        nomi = ["pandas", "scipy", "sqlglot", "pyvis", "openpyxl", "networkx"] + (["comtypes"] if sys.platform == "win32" else [])
+        nomi = ["pandas", "scipy", "sqlglot", "pyvis", "openpyxl", "networkx", "clingo"] + (["comtypes"] if sys.platform == "win32" else [])
         mancanti = []
         for n in nomi:
             try:
@@ -85,4 +85,16 @@ def controlla():
         trovata = any(r["tabella"] == "province" and r["→ tabella"] == "regioni" for r in V.relazioni.to_dict("records"))
         return ("ok", "analisi delle schermate: relazione province → regioni riconosciuta") if trovata else ("errore", "relazione non riconosciuta")
     voce("Analisi delle schermate", interfaccia)
+
+    def asp():
+        from . import analisi as A, asp as ASP
+        if not ASP.disponibile():
+            return "errore", "clingo non è installato (pip install clingo)"
+        df, pk, fk, _ = A.leggi_cartella(ESEMPI)
+        X = ASP.risolvi(A.analizza(df, pk, fk_dichiarate=fk), secondi=20)
+        scartata = any(r["tabella"] == "comuni" and r["→ tabella"] == "regioni" for r in X.scartate.to_dict("records"))
+        import clingo
+        return ("ok" if scartata and X.ottimo else "errore",
+                f"clingo {clingo.__version__}: {len(X.scelte)} chiavi scelte negli esempi, la ridondante comuni → regioni scartata")
+    voce("Scelta con clingo (ASP)", asp)
     return risultati

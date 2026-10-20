@@ -14,7 +14,7 @@ const fs = require("fs");
 
 const RADICE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");   // contiene sqlfk/
 const ICONA = path.join(__dirname, "icona.png");
-const LIBRERIE = "import pandas, scipy, pyvis, openpyxl, networkx";
+const LIBRERIE = "import pandas, scipy, pyvis, openpyxl, networkx";   // clingo è facoltativo: senza, la sua pagina lo dice
 const WIN = process.platform === "win32";
 const INDIRIZZO = "sqlfk://app/";
 let ponte = null;
