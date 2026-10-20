@@ -461,7 +461,7 @@ function mostraAnalisiInterfaccia(V, dove) {
       el("p", { class: "tenue" }, "Le due tabelle si vedono nel programma, ma nessuna schermata mostra il collegamento: forse non esiste, o si vede in una schermata non letta."),
       el("ul", {}, S.non_viste.map(t => el("li", {}, t)))) : null);
 
-  function rapporto() {
+  function rapportoHtml() {
     const svg = diagramma ? diagramma.esporta() : "";
     const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
     const tab = d => `<table><tr>${d.colonne.map(c => `<th>${esc(c)}</th>`).join("")}</tr>` +
@@ -481,7 +481,24 @@ ${S.non_viste.length ? `<h3>Previste ma non mostrate dal programma</h3><ul>${S.n
 <h2>Precisione e richiamo</h2>${tab(V.numeri)}<h2>Classi</h2>${tab(V.classi)}<h2>Relazioni</h2>${tab(V.relazioni)}
 <h2>Previsioni</h2>${tab(V.previsioni)}<h2>Attributi</h2>${tab(V.attributi)}
 <p style="color:#5f6b7a;font-size:12px">Creato da SQL FK Finder il ${new Date().toLocaleString("it-IT")}.</p></body></html>`;
-    scaricaBlob(new Blob([html], { type: "text/html;charset=utf-8" }), "rapporto_programma.html");
+    return html;
+  }
+
+  function rapportoTesto() {
+    const righe = d => d.righe.map(r => "  " + d.colonne.map((c, i) => `${c}: ${r[i] ?? ""}`).join(" | "));
+    return [
+      "COME COMUNICANO LE PARTI DEL PROGRAMMA", `(SQL FK Finder, ${new Date().toLocaleString("it-IT")})`, "",
+      S.sintesi, "",
+      ...S.schermate.flatMap(sch => [`== ${sch.nome}`, ...sch.frasi.flatMap(f => [`- [${STATI_RELAZIONE[f.stato][0]}] ${f.testo}`,
+        ...(f.sql ? [`    ${f.sql}`] : [])]), ""]),
+      ...(S.non_viste.length ? ["== Previste ma non mostrate dal programma", ...S.non_viste.map(t => `- ${t}`), ""] : []),
+      "== Precisione e richiamo", ...righe(V.numeri), "",
+      "== Classi e tabelle", ...righe(V.classi), "",
+    ].join("\n") + "\n";
+  }
+
+  function rapporto() {
+    scaricaBlob(new Blob([rapportoHtml()], { type: "text/html;charset=utf-8" }), "rapporto_programma.html");
   }
 
   const esito = (colonna, valore) => colonna !== "esito" ? null :
@@ -504,6 +521,27 @@ ${S.non_viste.length ? `<h3>Previste ma non mostrate dal programma</h3><ul>${S.n
     griglia(V.previsioni, { titolo: "Chiavi esterne previste: cosa dice il programma", classiCella: esito }),
     griglia(V.classi, { titolo: "Classi e tabelle" }),
     griglia(V.attributi, { titolo: "Attributi e colonne" }));
+  return { html: rapportoHtml, testo: rapportoTesto, pronto: () => !!diagramma };
+}
+
+/** Il risultato del controllo dell'app, voce per voce. */
+function risultatoControllo(r) {
+  const colori = { ok: "#2e7d32", errore: "#c62828", info: "#5f6b7a" };
+  return el("div", {},
+    el("div", { class: r.errori ? "messaggio errore" : "messaggio" }, r.errori ? `${r.errori} problemi trovati.` : "Tutto a posto."),
+    el("ul", { class: "controlli" }, r.controlli.map(c => el("li", {},
+      el("span", { class: "stato-rel", style: `background:${colori[c.esito] || colori.info}` }, c.esito === "ok" ? "OK" : c.esito.toUpperCase()),
+      " ", el("b", {}, c.voce), `: ${c.dettaglio}`))),
+    r.file ? el("p", { class: "tenue" }, `Salvato in ${r.file} `,
+      el("button", { onclick: () => window.sqlfkApp.apriCartella(r.file.replace(/[\\/][^\\/]+$/, "")) }, "Apri la cartella")) : null);
+}
+
+if (window.sqlfkApp && window.sqlfkApp.alControllo) {
+  // al primo avvio l'app si controlla da sola e dice com'è andata
+  window.sqlfkApp.alControllo(r => {
+    avviso(r.errori ? `Controllo dell'app: ${r.errori} problemi. Dettagli in Impostazioni, Controllo dell'app.`
+      : "Controllo dell'app al primo avvio: tutto a posto, e nessuna connessione di rete.", !!r.errori);
+  });
 }
 
 /** Pagina Query quando i dati sono tanti: il database su disco va costruito (una volta sola). */
@@ -588,8 +626,45 @@ const VISTE = {
 
     async function analizza() {
       const V = await conAttesa(() => api("/api/interfaccia/analisi"));
-      if (!V) return;
-      mostraAnalisiInterfaccia(V, risultati);
+      if (!V) return null;
+      return mostraAnalisiInterfaccia(V, risultati);
+    }
+
+    // un clic: legge tutte le schede, analizza e salva i rapporti in Documenti/SQL FK Finder/rapporti
+    async function tuttoDaSolo() {
+      if (!scelta) return avviso("Scegli prima la finestra del programma.", true);
+      const finestra = [...elencoFinestre.querySelectorAll("button")].find(b => b.classList.contains("primario"));
+      const programma = finestra ? finestra.querySelector("b").textContent.replace(/\.exe$/i, "") : "programma";
+      mostraAttesa("Lettura di tutte le schermate del programma...", el("button", { onclick: () => api("/api/finestre/ferma", {}) }, "Ferma"));
+      try {
+        await api("/api/finestre/leggi_tutto", { id: scelta, massimo: Number(massimo.value) || 150 });
+        for (let i = 0; i < 1800; i++) {                 // al massimo mezz'ora
+          await pausa(1000);
+          const st = (await api("/api/interfaccia")).stato || {};
+          $("#attesa .riquadro-attesa div").textContent = `Lettura delle schermate: ${st.messaggio || "in corso"}`;
+          if (!st.in_corso) break;
+        }
+      } catch (e) {
+        $("#attesa").hidden = true;
+        return avviso(e.message, true);
+      }
+      $("#attesa").hidden = true;
+      await aggiorna();
+      const rapporto = await analizza();
+      if (!rapporto) return;
+      for (let i = 0; i < 20 && !rapporto.pronto(); i++) await pausa(250);   // la mappa si disegna subito dopo
+      const nome = `${programma} ${new Date().toISOString().slice(0, 16).replace("T", " ").replace(":", ".")}`;
+      const excel = new Uint8Array(await (await fetch("/api/scarica/interfaccia")).arrayBuffer());
+      const file = { "rapporto.html": rapporto.html(), "rapporto.txt": rapporto.testo(), "dettagli.xlsx": excel };
+      if (window.sqlfkApp && window.sqlfkApp.salvaRapporto) {
+        const cartella = await window.sqlfkApp.salvaRapporto(nome, file);
+        risultati.prepend(el("div", { class: "messaggio" }, `Rapporti salvati in ${cartella} (rapporto.html, rapporto.txt, dettagli.xlsx). `,
+          el("button", { onclick: () => window.sqlfkApp.apriCartella(cartella) }, "Apri la cartella")));
+        avviso("Verifica finita: rapporti salvati.");
+      } else {
+        scaricaBlob(new Blob([file["rapporto.html"]], { type: "text/html;charset=utf-8" }), "rapporto_programma.html");
+        scaricaBlob(new Blob([file["rapporto.txt"]], { type: "text/plain;charset=utf-8" }), "rapporto_programma.txt");
+      }
     }
 
     setTimeout(() => { caricaFinestre().catch(e => avviso(e.message, true)); aggiorna().catch(() => {}); }, 0);
@@ -605,12 +680,14 @@ const VISTE = {
         elencoFinestre),
       el("div", { class: "pannello" },
         el("h3", {}, "2. Leggi le schermate"),
-        el("p", { class: "tenue" }, "Leggi tutte le schede passa da solo tra le schede (tab) e le voci degli alberi di navigazione. " +
+        el("p", { class: "tenue" }, "Fai tutto da solo legge tutte le schede, analizza e salva rapporto HTML, rapporto di testo ed Excel in " +
+          "Documenti/SQL FK Finder/rapporti. Leggi tutte le schede passa da solo tra le schede (tab) e le voci degli alberi di navigazione. " +
           "Per le schermate che si aprono con un pulsante o un menu usa Registra e aprile tu: ogni schermata che vedi viene letta, " +
           "anche le finestre secondarie dello stesso programma."),
         el("div", { class: "riga-comandi" },
+          el("button", { class: "primario", onclick: tuttoDaSolo, title: "Legge tutte le schede, analizza e salva i rapporti da solo" }, "Fai tutto da solo"),
           el("button", { onclick: () => comando("leggi") }, "Leggi questa schermata"),
-          el("button", { class: "primario", onclick: () => comando("leggi_tutto", { massimo: Number(massimo.value) || 150 }) }, "Leggi tutte le schede"),
+          el("button", { onclick: () => comando("leggi_tutto", { massimo: Number(massimo.value) || 150 }) }, "Leggi tutte le schede"),
           el("label", {}, "al massimo ", massimo),
           el("button", { onclick: () => comando("registra") }, "Registra mentre navigo"),
           el("button", { onclick: () => comando("ferma") }, "Ferma"),
@@ -1483,6 +1560,17 @@ const VISTE = {
 
   async impostazioni() {
     const imp = stato.impostazioni;
+    const esitoControllo = el("div");
+    const pannelloControllo = el("div", { class: "pannello" },
+      el("h3", {}, "Controllo dell'app"),
+      el("p", { class: "tenue" }, "Controlla che Python, librerie, analisi, query e lettura delle finestre funzionino, e che l'app non vada in rete " +
+        "(internet bloccato, nessuna connessione aperta). Usa una copia degli esempi: il lavoro aperto non cambia. Si fa da solo al primo avvio."),
+      el("div", { class: "riga-comandi" }, el("button", { class: "primario", onclick: async () => {
+        const r = await conAttesa(() => window.sqlfkApp && window.sqlfkApp.controlla ? window.sqlfkApp.controlla()
+          : api("/api/autoverifica").then(d => ({ controlli: d.controlli, errori: d.controlli.filter(c => c.esito === "errore").length })));
+        if (r) esitoControllo.replaceChildren(risultatoControllo(r));
+      } }, "Controlla l'app")),
+      esitoControllo);
     const dialetto = el("select", {}, ["mysql", "tsql", "oracle", "postgres", "sqlite"].map(d => el("option", { value: d, selected: d === imp.dialetto }, d)));
     const sSimili = el("input", { type: "number", min: "0.1", max: "1", step: "0.05", value: imp.soglia_simili });
     const sGruppi = el("input", { type: "number", min: "0.1", max: "1", step: "0.05", value: imp.soglia_gruppi });
@@ -1496,6 +1584,7 @@ const VISTE = {
     const elenco = t => t.value.split(",").map(x => x.trim()).filter(Boolean);
     return [
       el("h2", {}, "Impostazioni"),
+      pannelloControllo,
       el("div", { class: "pannello" },
         el("div", { class: "riquadri" },
           el("label", { class: "campo" }, "Dialetto SQL", dialetto),

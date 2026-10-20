@@ -28,6 +28,7 @@ from . import analisi as A
 from . import grafici as G
 from . import modello as MR
 from . import ontologia as O
+from . import controllo as CTRL
 from . import finestre as FIN
 from . import interfaccia as UI
 from . import lettura as L
@@ -621,6 +622,8 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in lunghe:
             return self.esegui(lunghe[percorso], blocca=False)
+        if percorso == "/api/autoverifica":
+            return self.esegui(lambda: {"controlli": CTRL.controlla()}, blocca=False)
         if percorso == "/api/interfaccia/analisi":
             return self.esegui(s.interfaccia_analisi)
         if percorso == "/api/query/csv":

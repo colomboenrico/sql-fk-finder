@@ -232,3 +232,5 @@ td.errore-g { color: var(--pericolo); font-weight: 600; }
 .schermata h4 { margin: 14px 0 4px; }
 .schermata li { margin: 6px 0; line-height: 1.5; }
 .stato-rel { display: inline-block; color: #fff; border-radius: 8px; padding: 0 7px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+ul.controlli { list-style: none; padding-left: 0; }
+ul.controlli li { margin: 5px 0; }

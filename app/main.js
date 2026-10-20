@@ -6,7 +6,7 @@
 //
 // Funziona dalla cartella del progetto (npm start) e come app installata (crea_eseguibili): in quel caso
 // Python con le librerie e il modulo sqlfk sono tra le risorse dell'app.
-const { app, BrowserWindow, dialog, protocol, session } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } = require("electron");
 const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const os = require("os");
@@ -167,6 +167,7 @@ function creaFinestra() {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.js") },
   });
   finestra.loadURL(INDIRIZZO);
+  return finestra;
 }
 
 app.whenReady().then(async () => {
@@ -190,34 +191,36 @@ app.whenReady().then(async () => {
     return;
   }
   registraProtocollo();
-  creaFinestra();
-  if (process.env.SQLFK_AUTOVERIFICA) autoverifica();
+  registraComandi();
+  controlloAllAvvio(creaFinestra());
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) creaFinestra(); });
 });
 
 app.on("window-all-closed", () => { if (finestraPrincipale) app.quit(); });
 app.on("will-quit", () => { if (ponte) ponte.chiudi(); });
 
-// Autoverifica (SQLFK_AUTOVERIFICA=1): controlla che l'app funzioni e che non usi la rete, scrive il risultato
-// in sqlfk_autoverifica.txt nella cartella temporanea del sistema e chiude l'app.
-async function autoverifica() {
-  const righe = [];
-  const log = (...x) => { const r = x.join(" "); righe.push(r); console.log("AUTOVERIFICA", r); };
+// ---------------------------------------------------------------- controllo dell'app
+// Controlla Python, librerie, analisi, query, lettura delle finestre (in Python, su una copia degli esempi,
+// senza toccare il lavoro aperto) e che l'app non usi la rete. Il risultato si salva in autoverifica.txt.
+function fileControllo() { return path.join(app.getPath("userData"), "autoverifica.txt"); }
+
+async function controllaApp(wc) {
+  const controlli = [];
+  const aggiungi = (voce, esito, dettaglio) => controlli.push({ voce, esito, dettaglio });
+  aggiungi("App", "ok", `${app.getName()} ${app.getVersion()}, Electron ${process.versions.electron}, ${process.platform} ${process.arch}`);
+  aggiungi("Interfaccia", wc.getURL().startsWith(INDIRIZZO) ? "ok" : "errore", wc.getURL());
   try {
-    const w = BrowserWindow.getAllWindows()[0];
-    await new Promise(r => w.webContents.once("did-finish-load", r));
-    const js = codice => w.webContents.executeJavaScript(codice, true);
-    log("interfaccia:", w.webContents.getURL(), "-", await js("document.title"));
-    log("python:", ponte.processo.spawnfile, "(pid " + ponte.processo.pid + ")");
-    const esempi = JSON.stringify(path.join(RADICE, "esempi"));
-    log("carica esempi:", await js(`fetch('/api/carica_cartella', {method: 'POST', body: JSON.stringify({cartella: ${esempi}})}).then(r => r.status)`));
-    await new Promise(r => setTimeout(r, 4000));
-    log("tabelle lette:", await js("fetch('/api/stato').then(r => r.json()).then(d => d.tabelle_totali)"));
-    log("query:", await js("fetch('/api/query', {method: 'POST', body: JSON.stringify({sql: 'SELECT COUNT(*) FROM comuni'})}).then(r => r.json()).then(d => JSON.stringify(d.risultati[0].righe))"));
-    log("lettura finestre:", await js("fetch('/api/finestre').then(r => r.json()).then(d => d.disponibile ? d.finestre.length + ' finestre aperte trovate' : d.messaggio)"));
-    log("internet:", await js("fetch('https://example.com').then(() => 'RAGGIUNTO (errore!)').catch(() => 'bloccato')"));
-    const pid = [process.pid, ponte.processo.pid];
-    let connessioni;
+    const r = await ponte.richiesta("GET", "/api/autoverifica", null);
+    const dati = JSON.parse(await new Response(r.flusso).text());
+    for (const c of dati.controlli || []) aggiungi(c.voce, c.esito, c.dettaglio);
+  } catch (e) {
+    aggiungi("Motore Python", "errore", e.message);
+  }
+  const internet = await wc.executeJavaScript("fetch('https://example.com').then(() => 'raggiunto').catch(() => 'bloccato')", true);
+  aggiungi("Internet", internet === "bloccato" ? "ok" : "errore", internet === "bloccato" ? "bloccato: l'app non va in rete" : "RAGGIUNTO");
+  const pid = [process.pid, ponte.processo.pid];
+  let connessioni = "";
+  try {
     if (WIN) {
       const out = spawnSync("netstat", ["-ano"], { encoding: "utf8", windowsHide: true }).stdout || "";
       connessioni = out.split("\n").filter(r => pid.some(p => r.trim().endsWith(" " + p))).join("\n").trim();
@@ -225,12 +228,54 @@ async function autoverifica() {
       connessioni = pid.map(p => (spawnSync("lsof", ["-nP", "-a", "-p", String(p), "-i"], { encoding: "utf8" }).stdout || "").trim())
         .filter(Boolean).join("\n");
     }
-    log("connessioni di rete aperte dall'app:", connessioni || "nessuna");
+    aggiungi("Connessioni di rete", connessioni ? "errore" : "ok", connessioni || "nessuna porta e nessuna connessione aperta");
   } catch (e) {
-    log("ERRORE:", e.message);
+    aggiungi("Connessioni di rete", "info", "controllo non disponibile: " + e.message);
   }
-  const file = path.join(os.tmpdir(), "sqlfk_autoverifica.txt");
-  fs.writeFileSync(file, righe.join("\n") + "\n");
-  console.log("AUTOVERIFICA FINE", file);
-  app.quit();
+  const errori = controlli.filter(c => c.esito === "errore").length;
+  const testo = [`Controllo di SQL FK Finder - ${new Date().toLocaleString("it-IT")}`,
+    errori ? `${errori} problemi trovati` : "Tutto a posto.", "",
+    ...controlli.map(c => `[${c.esito === "ok" ? "OK" : c.esito === "info" ? "INFO" : "ERRORE"}] ${c.voce}: ${c.dettaglio}`)].join("\n") + "\n";
+  fs.mkdirSync(app.getPath("userData"), { recursive: true });
+  fs.writeFileSync(fileControllo(), testo);
+  return { controlli, errori, file: fileControllo(), testo };
+}
+
+// cartella dei rapporti: Documenti/SQL FK Finder/rapporti
+function cartellaRapporti() { return path.join(app.getPath("documents"), "SQL FK Finder", "rapporti"); }
+
+function registraComandi() {
+  ipcMain.handle("controlla", e => controllaApp(e.sender));
+  ipcMain.handle("salva-rapporto", (_e, nome, file) => {
+    const pulito = String(nome || "rapporto").replace(/[^\w .-]+/g, "_").slice(0, 80);
+    const cartella = path.join(cartellaRapporti(), pulito);
+    fs.mkdirSync(cartella, { recursive: true });
+    for (const [n, contenuto] of Object.entries(file || {})) {
+      fs.writeFileSync(path.join(cartella, path.basename(n)), contenuto);
+    }
+    return cartella;
+  });
+  ipcMain.handle("apri-cartella", (_e, cartella) => {
+    // solo le cartelle dell'app (rapporti e controllo): niente percorsi qualsiasi
+    const p = path.resolve(String(cartella || ""));
+    if (p.startsWith(cartellaRapporti()) || p.startsWith(app.getPath("userData"))) return shell.openPath(p);
+    return "cartella non permessa";
+  });
+}
+
+// al primo avvio il controllo si fa da solo; con SQLFK_AUTOVERIFICA=1 si fa, si scrive e l'app si chiude
+async function controlloAllAvvio(finestra) {
+  await new Promise(r => finestra.webContents.once("did-finish-load", r));
+  if (process.env.SQLFK_AUTOVERIFICA) {
+    const r = await controllaApp(finestra.webContents);
+    console.log(r.testo);
+    fs.writeFileSync(path.join(os.tmpdir(), "sqlfk_autoverifica.txt"), r.testo);
+    console.log("AUTOVERIFICA FINE", r.file);
+    app.quit();
+    return;
+  }
+  if (!fs.existsSync(fileControllo())) {
+    const r = await controllaApp(finestra.webContents);
+    finestra.webContents.send("controllo", r);
+  }
 }
