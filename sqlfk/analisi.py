@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pandas as pd
 from scipy.cluster.hierarchy import fcluster, linkage
 
+from . import lettura as L
 from .regole import REGOLA_DI
 
 try:
@@ -76,13 +77,16 @@ def togli_commenti(sql, dialetto="mysql"):
 
 
 class Righe:
-    """Numero di riga (da 1) di una posizione nel testo."""
+    """Numero di riga (da 1) di una posizione nel testo. Con la mappa di un testo ridotto (file grandi,
+    senza i dati) restituisce la riga del file originale."""
 
-    def __init__(self, testo):
-        self.inizi = [0] + [i + 1 for i, c in enumerate(testo) if c == "\n"]
+    def __init__(self, testo, mappa=None):
+        self.inizi = [0] + [m.end() for m in re.finditer("\n", testo)]
+        self.mappa = mappa
 
     def __call__(self, posizione):
-        return bisect.bisect_right(self.inizi, posizione)
+        riga = bisect.bisect_right(self.inizi, posizione)
+        return self.mappa.originale(riga) if self.mappa else riga
 
 
 def parti_con_posizione(sql, inizio, fine):
@@ -405,7 +409,7 @@ def leggi_testi(file_sql, dialetto="mysql"):
         if nome_file in FILE_GENERATI:
             continue
         sql = togli_commenti(testo, dialetto)
-        riga_di = Righe(sql)
+        riga_di = Righe(sql, getattr(testo, "mappa", None))
 
         # chiavi esterne aggiunte dopo: ALTER TABLE x ADD FOREIGN KEY (...) REFERENCES y (...)
         for m in RE_ALTER_CHIAVE.finditer(sql):
@@ -502,10 +506,9 @@ def leggi_testi(file_sql, dialetto="mysql"):
 
 
 def leggi_cartella(cartella, dialetto="mysql"):
-    """Legge tutti i file .sql della cartella (vedi leggi_testi)."""
-    file_sql = [(f.name, f.read_text(encoding="utf-8", errors="replace"))
-                for f in sorted(Path(cartella).glob("*.sql"))]
-    return leggi_testi(file_sql, dialetto)
+    """Legge tutti i file .sql della cartella (vedi leggi_testi). I file grandi si leggono a blocchi
+    tenendo solo la struttura (sqlfk.lettura)."""
+    return leggi_testi(L.leggi_percorsi(cartella, dialetto), dialetto)
 
 
 # ====================================================================== togliere entità
@@ -1642,9 +1645,7 @@ def create_originali(file_sql, dialetto="mysql"):
 
 
 def create_originali_cartella(cartella, dialetto="mysql"):
-    file_sql = [(f.name, f.read_text(encoding="utf-8", errors="replace"))
-                for f in sorted(Path(cartella).glob("*.sql"))]
-    return create_originali(file_sql, dialetto)
+    return create_originali(L.leggi_percorsi(cartella, dialetto), dialetto)
 
 
 def _ordine_creazione(tabelle, dipende):

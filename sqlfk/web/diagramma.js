@@ -157,6 +157,9 @@ const DiagrammaER = (() => {
       t.colonne.forEach((c, i) => {
         const y = TESTA + i * RIGA;
         if (i % 2) g.append(svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#f6f8fa" }));
+        // sfondo per le colonne trovate con la ricerca
+        c.trovata = svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#ffe58a", visibility: "hidden" });
+        g.append(c.trovata);
         const s = sigle(c);
         const sigla = svgEl("text", { x: 8, y: y + 14, "font-size": 9.5, "font-weight": 700,
                                       fill: c.pk ? "#b8860b" : c.fk ? "#1f4e79" : "#6b7785",
@@ -309,13 +312,37 @@ const DiagrammaER = (() => {
       applica();
     }
 
+    /** Cerca nei nomi delle tabelle e delle colonne (per esempio "name"): evidenzia le tabelle trovate e,
+     *  in giallo, le colonne. Restituisce il numero di tabelle; i dettagli con ultimaRicerca(). */
+    let ricerca = { tabelle: 0, perNome: 0, colonne: 0 };
     function cerca(testo) {
       const f = norm(testo);
+      tabelle.forEach(t => t.colonne.forEach(c => c.trovata.setAttribute("visibility", "hidden")));
+      ricerca = { tabelle: 0, perNome: 0, colonne: 0 };
       if (!f) { evidenzia(null); return 0; }
-      const trovate = tabelle.filter(t => norm(t.nome).includes(f));
-      if (!trovate.length) return 0;
-      adatta(trovate.length > 6 ? trovate : [trovate[0]]);
-      evidenzia(trovate[0].nome);
+      const trovate = [];
+      for (const t of tabelle) {
+        const colonne = t.colonne.filter(c => norm(c.nome).includes(f));
+        colonne.forEach(c => c.trovata.setAttribute("visibility", "visible"));
+        const perNome = norm(t.nome).includes(f);
+        if (perNome || colonne.length) trovate.push(t);
+        ricerca.perNome += perNome ? 1 : 0;
+        ricerca.colonne += colonne.length;
+      }
+      ricerca.tabelle = trovate.length;
+      if (!trovate.length) { evidenzia(null); return 0; }
+      if (trovate.length === 1) {
+        adatta([trovate[0]]);
+        evidenzia(trovate[0].nome);
+      } else {
+        // più tabelle: si vedono tutte insieme, le altre restano sbiadite
+        adatta(trovate);
+        const nomi = new Set(trovate.map(t => t.nome));
+        svg.classList.add("er-focus");
+        collegamenti.forEach(l => [l.linea, l.puntoF, l.puntoP, l.cardF, l.cardP].forEach(n =>
+          n.classList.toggle("er-attiva", nomi.has(l.da) && nomi.has(l.a))));
+        tabelle.forEach(t => t.nodo.classList.toggle("er-attiva", nomi.has(t.nome)));
+      }
       return trovate.length;
     }
 
@@ -325,6 +352,7 @@ const DiagrammaER = (() => {
       const copia = svg.cloneNode(true);
       copia.classList.remove("er-focus");
       copia.querySelectorAll(".er-attiva").forEach(n => n.classList.remove("er-attiva"));
+      copia.querySelectorAll('rect[fill="#ffe58a"]').forEach(n => n.setAttribute("visibility", "hidden"));
       copia.querySelector("g").removeAttribute("transform");
       copia.setAttribute("xmlns", NS);
       copia.setAttribute("viewBox", `${b.x0 - 20} ${b.y0 - 20} ${b.x1 - b.x0 + 40} ${b.y1 - b.y0 + 40}`);
@@ -360,7 +388,7 @@ const DiagrammaER = (() => {
     if (opzioni.vista) applica(); else requestAnimationFrame(() => adatta());
     /** Posizioni attuali di tutte le tabelle: nome -> [x, y]. */
     const posizioni = () => Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y)]]));
-    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, esporta, png, posizioni, vista: () => ({ ...vista }),
+    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, ultimaRicerca: () => ({ ...ricerca }), esporta, png, posizioni, vista: () => ({ ...vista }),
              numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length } };
   }
 

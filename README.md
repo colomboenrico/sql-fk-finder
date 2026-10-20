@@ -101,15 +101,24 @@ Lo schema logico del database (`Fatture (numero (pk), data, id_cliente (fk → c
 python -m sqlfk.modello esempi --formato mermaid > modello.mmd
 ```
 
+## File grandi (anche decine di GB)
+
+I file si leggono a blocchi, senza caricarli interi in memoria:
+
+- **analisi**: dei file sopra 64 MB si tiene solo la struttura (CREATE TABLE, ALTER TABLE, indici...) e si saltano i dati (INSERT, COPY). I numeri di riga di errori e avvisi restano quelli del file originale. Su un portatile un dump PostgreSQL da 1 GB si legge in circa 3 secondi e uno MySQL in circa 8, con circa 250 MB di memoria;
+- **query**: con più di 256 MB di dati il database SQLite si costruisce su disco, nella cartella `~/.sqlfk/cache` (su Windows `C:\Users\nome\.sqlfk\cache`; si può cambiare con la variabile `SQLFK_CACHE`). Serve circa 1,2 volte lo spazio dei file. La costruzione richiede circa 30 secondi per GB per i dump PostgreSQL e 70 per quelli MySQL, mostra l'avanzamento e si può interrompere. Si fa una volta sola: con gli stessi file il database si riapre subito, anche dopo aver chiuso l'app;
+- nell'app i file scelti con **Carica cartella** o **Carica file .sql** si leggono direttamente dal disco. Nel browser i file sopra 64 MB vanno aperti scrivendo il loro percorso (o quello della cartella) nel campo in alto;
+- di ogni risultato si vedono le prime 1000 righe; **Scarica CSV completo** scarica tutte le righe, anche milioni. Una query lunga si ferma con **Interrompi**.
+
 ## Query sui dati
 
-Dai file `.sql` si costruisce un database SQLite in memoria: le tabelle dei `CREATE TABLE` (più le colonne di `ALTER TABLE ... ADD COLUMN`) e i dati degli `INSERT INTO` e dei blocchi `COPY ... FROM stdin` dei dump di PostgreSQL. Nell'app c'è la pagina **Query sui dati**:
+Dai file `.sql` si costruisce un database SQLite (in memoria, o su disco se i dati sono tanti: vedi sopra): le tabelle dei `CREATE TABLE` (più le colonne di `ALTER TABLE ... ADD COLUMN`) e i dati degli `INSERT INTO` e dei blocchi `COPY ... FROM stdin` dei dump di PostgreSQL. Nell'app c'è la pagina **Query sui dati**:
 
 - elenco delle tabelle con il numero di righe e le colonne (clic sul nome: prime 100 righe; clic su una colonna: la inserisce nella query);
 - editor delle query (Ctrl+Invio o Cmd+Invio per eseguire; se selezioni una parte viene eseguita solo quella), più istruzioni separate da `;`, query recenti;
 - le query si scrivono in SQLite o nel dialetto dei file: se serve vengono tradotte con sqlglot (`ILIKE`, `::int`, `TOP 10`...); i nomi con lo schema (`public.clienti`) funzionano;
 - INSERT, UPDATE, DELETE, DROP... chiedono conferma e cambiano **solo la copia in memoria**, non i file; "Ricarica i dati dai file" le annulla;
-- risultati in tabella (fino a 1000 righe mostrate), scaricabili in CSV; il database si scarica come file `.sqlite` (apribile con DBeaver) o come script SQL.
+- risultati in tabella (fino a 1000 righe mostrate), scaricabili in CSV, anche completi; il database si scarica come file `.sqlite` (apribile con DBeaver) o come script SQL.
 
 Da terminale:
 
@@ -137,11 +146,29 @@ npm install
 npm start
 ```
 
-L'app cerca da sola un Python con le librerie installate (`python3`, Anaconda, Homebrew...). Se ne usi uno in un percorso particolare, indicalo con la variabile `SQLFK_PYTHON`:
+L'app cerca da sola un Python (`python3`, Anaconda, Homebrew, python.org...). Se mancano le librerie, al primo avvio propone di installarle in una cartella dell'app (un ambiente separato: il tuo Python non viene toccato). Se usi un Python in un percorso particolare, indicalo con la variabile `SQLFK_PYTHON`:
 
 ```bash
 SQLFK_PYTHON=/percorso/del/python npm start
 ```
+
+### Eseguibili per Mac, Windows e Linux
+
+Per avere l'app come un programma normale (senza Node.js sul computer dove la usi), si creano gli eseguibili dal terminale:
+
+```bash
+./crea_eseguibili.sh
+```
+
+Da un Mac crea tutti e tre (Mac Apple Silicon e Intel, Windows, Linux); da Linux quelli per Linux e Windows; su Windows c'è `crea_eseguibili.bat` (solo Windows). Si può anche sceglierne alcuni: `./crea_eseguibili.sh mac`, `./crea_eseguibili.sh win linux`. La prima volta scarica gli strumenti (serve Node.js e internet). I file finiscono sul Desktop, nella cartella **SQL FK Finder - eseguibili**:
+
+| Sistema | File | Come si usa |
+|---|---|---|
+| Mac | `SQL FK Finder.app`, `...-mac-arm64.dmg`, `...-mac-x64.dmg` | doppio clic; la prima volta clic destro → Apri (l'app non è firmata) |
+| Windows | `...-win-x64.exe` (installazione), `...-portatile.exe` | doppio clic; se SmartScreen lo blocca: "Ulteriori informazioni" → "Esegui comunque" |
+| Linux | `...-linux-x86_64.AppImage`, `...-linux-x64.tar.gz` | doppio clic sull'AppImage, oppure da terminale `./SQL-FK-Finder-...AppImage` |
+
+Sul computer dove si usa l'app serve solo Python 3 (3.9 o più recente, da [python.org](https://www.python.org/downloads/)): le librerie le installa l'app al primo avvio.
 
 **Nel browser**, senza Electron:
 
@@ -177,6 +204,8 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/verifica.py` | il controllo da terminale, come un compilatore |
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
+| `crea_eseguibili.sh`, `crea_eseguibili.bat` | creano gli eseguibili dell'app per Mac, Windows e Linux |
+| `sqlfk/lettura.py` | la lettura a blocchi dei file .sql di qualsiasi dimensione |
 | `sqlfk/query.py` | il database SQLite in memoria costruito dai file e l'esecuzione delle query |
 | `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |
 | `sqlfk/web/` | l'interfaccia (HTML, CSS, JavaScript) |

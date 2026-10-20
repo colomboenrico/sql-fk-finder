@@ -174,7 +174,11 @@ td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
 /* ---------------------------------------------------------------- attesa e avvisi */
 .attesa { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .attesa[hidden] { display: none; }
-.riquadro-attesa { background: var(--pannello); padding: 18px 26px; border-radius: 8px; border: 1px solid var(--bordo); font-weight: 600; }
+.riquadro-attesa { background: var(--pannello); padding: 18px 26px; border-radius: 8px; border: 1px solid var(--bordo); font-weight: 600;
+                   display: flex; flex-direction: column; gap: 10px; align-items: center; min-width: 300px; max-width: 90vw; text-align: center; }
+.riquadro-attesa .tenue { font-weight: 400; }
+.barra { width: 100%; height: 8px; border-radius: 4px; background: var(--riga-alt); border: 1px solid var(--bordo); overflow: hidden; }
+.barra-piena { height: 100%; width: 0; background: var(--primario); transition: width .4s; }
 .avvisi { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 11; }
 .avviso { background: var(--pannello); border: 1px solid var(--bordo); border-left: 4px solid var(--primario); border-radius: 6px;
   padding: 10px 14px; max-width: 420px; box-shadow: 0 4px 12px rgba(0, 0, 0, .12); }
@@ -218,3 +222,4 @@ textarea.editor-query { min-height: 180px; font-family: ui-monospace, Menlo, Con
 .conferma { border-color: var(--pericolo); }
 @media (max-width: 900px) { .query-griglia { grid-template-columns: 1fr; } .query-laterale { max-height: 260px; } }
 a.pulsante { text-decoration: none; display: inline-flex; align-items: center; }
+.query-colonne a.trovata { background: #ffe58a; color: #1d2330; border-radius: 3px; padding: 0 3px; font-weight: 600; }

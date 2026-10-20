@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from . import analisi as A
+from . import lettura as L
 from .regole import spiega
 
 
@@ -42,9 +43,9 @@ def main():
     file_sql = []
     for percorso in map(Path, args.percorsi):
         if percorso.is_dir():
-            file_sql += [(f.name, f.read_text(encoding="utf-8", errors="replace")) for f in sorted(percorso.glob("*.sql"))]
+            file_sql += L.leggi_percorsi(percorso, args.dialetto)        # anche file grandi, a blocchi
         elif percorso.is_file():
-            file_sql.append((percorso.name, percorso.read_text(encoding="utf-8", errors="replace")))
+            file_sql.append((percorso.name, L.leggi_file(percorso, args.dialetto)))
         else:
             print(f"{percorso}: errore: file o cartella inesistente", file=sys.stderr)
             return 2

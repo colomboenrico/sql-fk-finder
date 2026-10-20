@@ -25,3 +25,6 @@ modello_relazionale.*
 
 # progetti dell'app: contengono i file .sql
 *.sqlfk
+
+# eseguibili creati da crea_eseguibili
+app/dist/

@@ -8,9 +8,84 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "44.5.1"
-  }
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "it.colomboenrico.sqlfkfinder",
+    "productName": "SQL FK Finder",
+    "artifactName": "SQL-FK-Finder-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icona.png",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../sqlfk",
+        "to": "sqlfk",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "requirements.txt"
+      },
+      {
+        "from": "../esempi",
+        "to": "esempi",
+        "filter": [
+          "esempio_*.sql",
+          "dati_esempio.sql"
+        ]
+      }
+    ],
+    "icon": "icona.png",
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "dmg": {
+      "title": "SQL FK Finder"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SQL FK Finder"
+    },
+    "portable": {
+      "artifactName": "SQL-FK-Finder-${version}-portatile.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Development",
+      "maintainer": "Enrico Colombo",
+      "syncDesktopName": true
+    }
+  },
+  "desktopName": "sql-fk-finder.desktop"
 }

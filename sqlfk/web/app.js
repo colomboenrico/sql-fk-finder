@@ -68,9 +68,58 @@ async function api(percorso, dati) {
   return json;
 }
 
+const pausa = ms => new Promise(r => setTimeout(r, ms));
+
+function formattaByte(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} GB`;
+  if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+  return `${Math.max(1, Math.round(n / 1e3))} KB`;
+}
+
+function formattaDurata(secondi) {
+  if (secondi < 60) return `${Math.max(1, Math.round(secondi))} s`;
+  if (secondi < 3600) return `${Math.round(secondi / 60)} min`;
+  return `${Math.floor(secondi / 3600)} h ${Math.round((secondi % 3600) / 60)} min`;
+}
+
+/** Riquadro di attesa con un testo e, se serve, un pulsante (per esempio Interrompi). */
+function mostraAttesa(testo, pulsante) {
+  $("#attesa .riquadro-attesa").replaceChildren(...[el("div", {}, testo), pulsante || null].filter(Boolean));
+  $("#attesa").hidden = false;
+}
+
+/** Segue un lavoro in background (lettura di file grandi, costruzione del database) con l'avanzamento. */
+async function seguiLavoro(titolo) {
+  const testo = el("div", { class: "tenue" }, "avvio...");
+  const piena = el("div", { class: "barra-piena" });
+  const ferma = el("button", { onclick: () => { ferma.disabled = true; api("/api/lavoro/ferma", {}); } }, "Interrompi");
+  $("#attesa .riquadro-attesa").replaceChildren(el("div", {}, titolo), el("div", { class: "barra" }, piena), testo, ferma);
+  $("#attesa").hidden = false;
+  let lavoro = null;
+  try {
+    while (true) {
+      lavoro = (await api("/api/lavoro")).lavoro;
+      if (!lavoro) break;
+      piena.style.width = `${lavoro.percentuale}%`;
+      const parti = [];
+      if (lavoro.totale) parti.push(`${lavoro.percentuale}% · ${formattaByte(lavoro.letti)} di ${formattaByte(lavoro.totale)}`);
+      if (lavoro.file) parti.push(lavoro.file);
+      if (lavoro.fase === "analisi") parti.push("analisi della struttura...");
+      if (lavoro.restano !== null && lavoro.fase !== "analisi") parti.push(`circa ${formattaDurata(lavoro.restano)} alla fine`);
+      testo.textContent = parti.join(" · ") || "avvio...";
+      if (lavoro.finito) break;
+      await pausa(600);
+    }
+  } finally {
+    $("#attesa").hidden = true;
+  }
+  if (lavoro && lavoro.errore) throw new Error(lavoro.errore);
+  return lavoro;
+}
+
 /** Esegue un'operazione lunga mostrando "Analisi in corso" e gli eventuali errori. */
 async function conAttesa(funzione) {
-  $("#attesa").hidden = false;
+  mostraAttesa("Analisi in corso...");
   try {
     return await funzione();
   } catch (e) {
@@ -201,9 +250,42 @@ function classiStandard(colonna, valore) {
 
 // ======================================================================= caricamento dei file
 
+const LIMITE_BROWSER = 64 * 1024 * 1024;     // oltre, il file si legge dal disco (percorso), non dal browser
+
+/** Fa leggere al server file o cartelle dal disco, in background (anche file da decine di GB). */
+async function caricaDaServer(percorso, dati) {
+  try {
+    await api(percorso, dati);
+    const lavoro = await seguiLavoro("Lettura dei file");
+    await conAttesa(async () => {
+      stato = await api("/api/stato");
+      layoutER = { iniziale: {}, collegamenti: {} };
+      const grandi = stato.file_ridotti && stato.file_ridotti.length;
+      avviso(`Letti ${formattaByte(lavoro?.totale || stato.dimensione_file || 0)} in ${formattaDurata(lavoro?.secondi || 1)}` +
+        (grandi ? ": dei file grandi è stata letta la struttura, i dati si usano nella pagina Query." : "."));
+      aggiornaTutto("panoramica");
+    });
+  } catch (e) {
+    avviso(e.message, true);
+  }
+}
+
 async function leggiFile(lista, origine) {
   const file = [...lista].filter(f => f.name.toLowerCase().endsWith(".sql"));
   if (!file.length) { avviso("Nessun file .sql tra quelli scelti.", true); return; }
+  // nell'app si passano i percorsi: il server legge i file dal disco, di qualsiasi dimensione
+  const percorsi = window.sqlfkApp ? file.map(f => window.sqlfkApp.percorso(f)).filter(Boolean) : [];
+  if (percorsi.length === file.length) {
+    const relativo = file[0].webkitRelativePath;
+    const cartella = relativo ? percorsi[0].slice(0, percorsi[0].length - relativo.length) + relativo.split("/")[0] : null;
+    return caricaDaServer("/api/carica_percorsi", { percorsi, origine: cartella || (percorsi.length === 1 ? percorsi[0] : origine) });
+  }
+  const grandi = file.filter(f => f.size > LIMITE_BROWSER);
+  if (grandi.length) {
+    avviso(`${grandi.map(f => `${f.name} (${formattaByte(f.size)})`).join(", ")}: troppo grande per il caricamento dal browser. ` +
+      "Scrivi il percorso del file o della cartella nel campo in alto e premi Apri, oppure usa l'app (avvia_app).", true);
+    return;
+  }
   await conAttesa(async () => {
     const contenuti = await Promise.all(file.map(async f => ({ nome: f.name, testo: await f.text() })));
     stato = await api("/api/carica_file", { file: contenuti, origine });
@@ -260,12 +342,7 @@ $("#form-percorso").addEventListener("submit", async e => {
   e.preventDefault();
   const cartella = $("#percorso").value.trim();
   if (!cartella) return;
-  await conAttesa(async () => {
-    stato = await api("/api/carica_cartella", { cartella });
-    layoutER = { iniziale: {}, collegamenti: {} };
-    avviso("Cartella caricata.");
-    aggiornaTutto("panoramica");
-  });
+  await caricaDaServer("/api/carica_cartella", { cartella });
 });
 
 // ======================================================================= navigazione
@@ -349,16 +426,50 @@ function ricordaQuery(testo) {
   } catch { /* storico non disponibile: non importa */ }
 }
 
+/** Pagina Query quando i dati sono tanti: il database su disco va costruito (una volta sola). */
+function paginaDatabaseDaCostruire(info) {
+  const velocita = ["mysql", "mariadb", "tsql"].includes(info.dialetto) ? 15e6 : 35e6;      // byte al secondo, circa
+  const stima = info.dimensione / velocita;
+  const spazio = info.dimensione * 1.2;
+  const poco = info.libero < spazio;
+  async function costruisci() {
+    try {
+      if (!info.in_costruzione) await api("/api/query/costruisci", {});
+      await seguiLavoro("Costruzione del database delle query");
+      avviso("Database pronto.");
+    } catch (e) {
+      avviso(e.message, true);
+    }
+    mostra("query");
+  }
+  if (info.in_costruzione) setTimeout(costruisci, 0);
+  return [
+    el("h2", {}, "Query sui dati"),
+    el("div", { class: "pannello" },
+      el("p", {}, `I file contengono ${formattaByte(info.dimensione)} di dati: per interrogarli si costruisce un database SQLite su disco, ` +
+        "leggendo i file a blocchi (non serve tutta quella memoria)."),
+      el("p", {}, `Si fa una volta sola: le volte dopo, con gli stessi file, si riapre subito. Tempo stimato: circa ${formattaDurata(stima)}. ` +
+        `Spazio su disco: circa ${formattaByte(spazio)} in ${info.cartella_cache} (liberi ${formattaByte(info.libero)}).`),
+      poco ? el("div", { class: "messaggio errore" },
+        "Lo spazio libero non basta: libera spazio, oppure avvia l'app con la variabile SQLFK_CACHE impostata a una cartella su un altro disco.") : null,
+      el("div", { class: "riga-comandi" },
+        el("button", { class: "primario", disabled: poco, onclick: costruisci }, info.in_costruzione ? "Costruzione in corso..." : "Costruisci il database")),
+      el("p", { class: "tenue" }, "Puoi interrompere la costruzione in qualsiasi momento e riprenderla più tardi (ricomincia da capo).")),
+  ];
+}
+
 const VISTE = {
   async query() {
     const info = await api("/api/query/tabelle");
+    if (info.da_costruire) return paginaDatabaseDaCostruire(info);
     const editor = el("textarea", { class: "editor-query", spellcheck: "false", "aria-label": "Query SQL",
       placeholder: "SELECT * FROM tabella LIMIT 100;\n\nCtrl+Invio (Cmd+Invio sul Mac) per eseguire. Se selezioni una parte, viene eseguita solo quella." });
     editor.value = testoQuery;
     editor.addEventListener("input", () => { testoQuery = editor.value; });
     const risultati = el("div");
-    const filtroTabelle = el("input", { type: "text", placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
+    const filtroTabelle = el("input", { type: "text", placeholder: "cerca una tabella o una colonna", "aria-label": "Cerca una tabella o una colonna" });
     const elenco = el("div", { class: "query-tabelle" });
+    const conteggioRicerca = el("p", { class: "tenue" });
     const storico = el("select", { "aria-label": "Query recenti" });
 
     function aggiornaStorico() {
@@ -371,23 +482,31 @@ const VISTE = {
     });
 
     function disegnaTabelle() {
-      const f = filtroTabelle.value.toLowerCase();
-      elenco.replaceChildren(...info.tabelle.filter(t => t.tabella.toLowerCase().includes(f)).map(t =>
-        el("details", {},
+      // si cerca nel nome della tabella e nei nomi delle colonne (per esempio "name")
+      const f = filtroTabelle.value.trim().toLowerCase();
+      const colonneTrovate = t => f ? t.colonne.filter(c => c.toLowerCase().includes(f)) : [];
+      const scelte = info.tabelle.filter(t => !f || t.tabella.toLowerCase().includes(f) || colonneTrovate(t).length);
+      const perColonna = scelte.filter(t => colonneTrovate(t).length).length;
+      conteggioRicerca.textContent = f ? `${scelte.length} tabelle` + (perColonna ? `, ${perColonna} con una colonna che contiene "${f}"` : "") : "";
+      elenco.replaceChildren(...scelte.map(t => {
+        const trovate = new Set(colonneTrovate(t));
+        return el("details", { open: trovate.size ? "" : null },
           el("summary", { title: "Clicca il nome per vedere le prime righe" },
             el("a", { href: "#", onclick: e => {
               e.preventDefault();
               editor.value = testoQuery = `SELECT * FROM "${t.tabella.replace(/"/g, '""')}" LIMIT 100;`;
               esegui();
             } }, t.tabella),
-            el("span", { class: "tenue" }, ` ${t.righe}`)),
-          el("div", { class: "query-colonne" }, t.colonne.map(c => el("a", { href: "#", title: "Inserisci nella query", onclick: e => {
+            el("span", { class: "tenue" }, ` ${t.righe.toLocaleString("it-IT")}`)),
+          el("div", { class: "query-colonne" }, t.colonne.map(c => el("a", { href: "#", class: trovate.has(c) ? "trovata" : null,
+            title: "Inserisci nella query", onclick: e => {
             e.preventDefault();
             const inizio = editor.selectionStart, fine = editor.selectionEnd;
             editor.setRangeText(/^[A-Za-z_][A-Za-z0-9_]*$/.test(c) ? c : `"${c}"`, inizio, fine, "end");
             testoQuery = editor.value;
             editor.focus();
-          } }, c))))));
+          } }, c))));
+      }));
     }
     filtroTabelle.addEventListener("input", disegnaTabelle);
 
@@ -414,8 +533,11 @@ const VISTE = {
         const nome = `risultato_${i + 1}.csv`;
         return el("div", {}, titolo, tradotta,
           el("div", { class: "riga-comandi" },
-            el("span", { class: "tenue" }, `${r.totale} righe` + (r.totale > r.righe.length ? `, mostrate le prime ${r.righe.length}` : "") + ` · ${r.secondi} s`),
-            el("button", { onclick: () => scaricaBlob(new Blob([csvRisultato(r)], { type: "text/csv;charset=utf-8" }), nome) }, "Scarica CSV")),
+            el("span", { class: "tenue" }, (r.altre ? `prime ${r.totale} righe, ce ne sono altre` : `${r.totale} righe`) + ` · ${r.secondi} s`),
+            el("button", { onclick: () => scaricaBlob(new Blob([csvRisultato(r)], { type: "text/csv;charset=utf-8" }), nome) },
+              r.altre ? "Scarica CSV (righe mostrate)" : "Scarica CSV"),
+            r.altre && esito.risultati.length === 1 ? el("a", { class: "pulsante", href: `/api/query/csv?sql=${encodeURIComponent(r.istruzione)}`,
+              title: "Tutte le righe del risultato, anche milioni: il file si scarica man mano" }, "Scarica CSV completo") : null),
           griglia({ colonne: r.colonne, righe: r.righe }, { titolo: "Risultato" }));
       }));
       if (esito.risultati.some(r => r.modificate !== null && !r.errore)) aggiornaConteggi();
@@ -435,7 +557,15 @@ const VISTE = {
       if (!testo.trim()) return;
       ricordaQuery(testo.trim());
       aggiornaStorico();
-      const esito = await conAttesa(() => api("/api/query", { sql: testo, conferma }));
+      mostraAttesa("Query in corso...", el("button", { onclick: () => api("/api/query/interrompi", {}) }, "Interrompi"));
+      let esito = null;
+      try {
+        esito = await api("/api/query", { sql: testo, conferma });
+      } catch (e) {
+        avviso(e.message, true);
+      } finally {
+        $("#attesa").hidden = true;
+      }
       if (esito) mostraRisultati(esito, testo);
     }
 
@@ -448,6 +578,11 @@ const VISTE = {
       if (!confirm("Ricaricare i dati dai file .sql? Le modifiche fatte con le query vanno perse.")) return;
       const nuove = await conAttesa(() => api("/api/query/ricostruisci", {}));
       if (!nuove) return;
+      if (nuove.lavoro) {                         // database su disco: si ricostruisce in background
+        try { await seguiLavoro("Costruzione del database delle query"); } catch (e) { avviso(e.message, true); }
+        ultimiRisultati = null;
+        return mostra("query");
+      }
       info.tabelle = nuove.tabelle; info.problemi = nuove.problemi;
       disegnaTabelle();
       risultati.replaceChildren();
@@ -462,16 +597,25 @@ const VISTE = {
     return [
       el("h2", {}, "Query sui dati"),
       el("p", { class: "tenue" },
-        `Database SQLite in memoria costruito dai file: ${info.tabelle.length} tabelle, ${conDati} con dati, ${totaleRighe} righe ` +
-        `(dagli INSERT e dai COPY dei file). Scrivi le query in SQLite o in ${info.dialetto}: se serve vengono tradotte. ` +
-        "INSERT, UPDATE, DELETE e DROP chiedono conferma e cambiano solo questa copia, non i file."),
+        `Database SQLite ${info.su_disco ? "su disco" : "in memoria"} costruito dai file: ${info.tabelle.length} tabelle, ${conDati} con dati, ` +
+        `${totaleRighe.toLocaleString("it-IT")} righe (dagli INSERT e dai COPY dei file). Scrivi le query in SQLite o in ${info.dialetto}: ` +
+        "se serve vengono tradotte. INSERT, UPDATE, DELETE e DROP chiedono conferma e cambiano solo questa copia, non i file. " +
+        `Si vedono le prime ${info.max_righe} righe di ogni risultato; il CSV completo le contiene tutte.`),
+      info.su_disco ? el("div", { class: "messaggio" },
+        `Il database è un file su disco (${formattaByte(info.dimensione_db || 0)}): ${info.su_disco}. ` +
+        "Con gli stessi file si riapre subito anche dopo aver chiuso l'app. ",
+        el("button", { onclick: async () => {
+          if (!confirm("Cancellare i database delle query salvati su disco? Si ricostruiscono dai file quando servono.")) return;
+          const r = await conAttesa(() => api("/api/query/svuota_cache", {}));
+          if (r) { avviso(`Liberati ${formattaByte(r.liberati)}.`); ultimiRisultati = null; mostra("query"); }
+        } }, "Cancella i database su disco")) : null,
       totaleRighe === 0 ? el("div", { class: "messaggio" },
         "I file non contengono dati (INSERT o COPY): le tabelle sono vuote. Puoi comunque inserire righe con INSERT INTO ... VALUES ...") : null,
       info.problemi.length ? griglia({ colonne: ["file", "riga", "problema", "istruzione"],
         righe: info.problemi.map(p => [p.file, p.riga, p.problema, p.istruzione]) },
-        { titolo: `Istruzioni di dati non caricate (${info.problemi.length})` }) : null,
+        { titolo: `Istruzioni di dati non caricate (${info.n_problemi > info.problemi.length ? `${info.n_problemi}, mostrate le prime ${info.problemi.length}` : info.problemi.length})` }) : null,
       el("div", { class: "query-griglia" },
-        el("div", { class: "pannello query-laterale" }, el("h3", {}, "Tabelle"), filtroTabelle,
+        el("div", { class: "pannello query-laterale" }, el("h3", {}, "Tabelle"), filtroTabelle, conteggioRicerca,
           el("p", { class: "tenue" }, "Nome: prime 100 righe. Freccia: colonne (clic per inserirle)."), elenco),
         el("div", {},
           editor,
@@ -771,6 +915,10 @@ const VISTE = {
       el("div", { class: "riquadro" }, el("div", { class: "valore" }, valore), el("div", { class: "voce" }, voce))));
     return [
       el("h2", {}, "Il database com'è prima dell'analisi"),
+      stato.file_ridotti && stato.file_ridotti.length ? el("div", { class: "messaggio" },
+        `File grandi (${formattaByte(stato.dimensione_file)} in tutto): di ${stato.file_ridotti.join(", ")} è stata letta solo la struttura ` +
+        "(CREATE TABLE, ALTER TABLE...), saltando i dati. I numeri di riga restano quelli del file. I dati si interrogano nella pagina ",
+        el("a", { href: "#", onclick: e => { e.preventDefault(); mostra("query"); } }, "Query sui dati"), ".") : null,
       riquadri,
       el("div", { class: "riga-comandi" },
         el("button", { class: "primario", onclick: () => mostra("problemi") },
@@ -1270,7 +1418,8 @@ async function contenutoER(quale) {
     el("option", { value: "gruppo" }, "colore per gruppo"), el("option", { value: "area" }, "colore per area"),
     el("option", { value: "categoria" }, "colore per categoria"));
   sceltaColore.value = coloraER;
-  const ricerca = el("input", { type: "text", placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
+  const ricerca = el("input", { type: "text", placeholder: "cerca una tabella o una colonna", "aria-label": "Cerca una tabella o una colonna",
+                                 title: "Nome di una tabella o di una colonna (per esempio name), poi Invio" });
   const conTipi = el("input", { type: "checkbox", checked: true });
   const medie = el("input", { type: "checkbox", checked: erMedie && quale === "collegamenti", title: "Aggiunge le FK trovate ad affidabilità media (passa a FK dichiarate e trovate)" });
   let diagramma = null;
@@ -1307,7 +1456,10 @@ async function contenutoER(quale) {
   ricerca.addEventListener("keydown", e => {
     if (e.key === "Enter" && diagramma) {
       const n = diagramma.cerca(ricerca.value);
-      if (!n) avviso(`Nessuna tabella contiene "${ricerca.value}".`, true);
+      const r = diagramma.ultimaRicerca();
+      if (!ricerca.value.trim()) info.textContent = `${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti`;
+      else if (!n) avviso(`Nessuna tabella o colonna contiene "${ricerca.value}".`, true);
+      else info.textContent = `trovate ${n} tabelle` + (r.colonne ? ` (${r.colonne} colonne in giallo)` : "");
     }
   });
   const scarica = () => {
