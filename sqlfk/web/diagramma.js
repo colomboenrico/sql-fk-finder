@@ -189,7 +189,8 @@ const DiagrammaER = (() => {
     });
 
     // ---------------------------------------------------------- struttura SVG
-    const svg = svgEl("svg", { class: "er-svg", width: "100%", height: "100%" });
+    // lineeSoloFocus: le linee si vedono solo per la tabella sotto il mouse (niente groviglio)
+    const svg = svgEl("svg", { class: "er-svg" + (opzioni.lineeSoloFocus ? " er-solo-focus" : ""), width: "100%", height: "100%" });
     const mondo = svgEl("g");
     const strCornici = svgEl("g"), strLinee = svgEl("g"), strTabelle = svgEl("g"), strEtichette = svgEl("g");
     mondo.append(strCornici, strLinee, strTabelle, strEtichette);

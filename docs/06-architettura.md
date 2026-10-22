@@ -72,6 +72,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/query.py` | database SQLite costruito dai file (in memoria o su disco, con cache), esecuzione e traduzione delle query, CSV completo |
 | `sqlfk/finestre.py` | lettura delle finestre di un programma Windows con UI Automation; conversione in fotografie |
 | `sqlfk/interfaccia.py` | dalle fotografie: classi, collegamento a tabelle e colonne, relazioni, verifica, racconto e mappa |
+| `sqlfk/descrizione.py` | reverse engineering: descrizione delle tabelle, significato delle colonne, filo logico |
 | `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | scelta delle chiavi esterne con clingo |
 | `sqlfk/controllo.py` | il controllo dell'app (in Python) |
 | `sqlfk/regole.py` | le regole di progettazione R0-R8 e le spiegazioni dei codici |
@@ -94,6 +95,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 | Gruppo | Richieste |
 |---|---|
 | caricamento | `carica_cartella`, `carica_percorsi`, `carica_file`, `lavoro`, `lavoro/ferma`, `progetto` |
+| reverse engineering | `reverse` |
 | analisi | `stato`, `panoramica`, `diagnostica`, `regole`, `tabelle`, `pk_composte`, `fk`, `altri`, `qualita`, `gruppi`, `aree`, `sorgente`, `cerca_entita` |
 | modifiche | `togli`, `togli_gruppo`, `rimetti`, `impostazioni` |
 | schemi | `diagramma`, `modello`, `schema_iniziale`, `schema_collegamenti`, `ontologia` |

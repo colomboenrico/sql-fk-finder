@@ -30,6 +30,7 @@ from . import modello as MR
 from . import ontologia as O
 from . import asp as ASP
 from . import controllo as CTRL
+from . import descrizione as DESCR
 from . import finestre as FIN
 from . import interfaccia as UI
 from . import lettura as L
@@ -623,6 +624,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/scarica/excel": self.scarica_excel,
             "/api/lavoro": lambda: {"lavoro": s.lavoro.dati() if s.lavoro else None},
             "/api/interfaccia": s.interfaccia_elenco,
+            "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
             "/api/finestre": s.elenco_finestre,
             "/api/scarica/interfaccia": self.scarica_interfaccia,
             "/api/scarica/sql": self.scarica_sql,

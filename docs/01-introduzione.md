@@ -22,6 +22,7 @@ SQL FK Finder legge i file `.sql` (i `CREATE TABLE`) e **ricostruisce le relazio
 | **Chiavi primarie composte** | Analizza colonna per colonna le chiavi su più colonne e le collega alle tabelle giuste |
 | **Diagnostica** | Errori, avvisi e info come un compilatore (integrità, normalizzazione, ridondanze), ognuno con la regola di progettazione e la correzione |
 | **Gruppi e aree** | Raggruppa le tabelle per nome (sottogruppi) e per collegamenti (aree), riconosce le tabelle centrali e la categoria di ogni tabella (anagrafica, movimento, dettaglio, ponte...) |
+| **Reverse engineering** | Per ogni tabella cosa rappresenta probabilmente e il significato delle colonne; il filo logico per leggere il database; il dizionario dei dati da scaricare |
 | **Diagrammi** | Diagramma delle tabelle in stile DBeaver, grafo interattivo, modello relazionale esportabile (PNG, SVG, Mermaid, PlantUML, Graphviz, DBML, JSON) |
 | **Query sui dati** | Interroga i dati degli `INSERT` e dei `COPY` dei file con SQL, anche per dump da decine di GB |
 | **Verifica con l'interfaccia** | Legge le finestre del programma Windows che usa il database, ne ricava le entità e controlla se le chiavi previste corrispondono a quello che il programma mostra |

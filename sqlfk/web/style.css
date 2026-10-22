@@ -238,3 +238,17 @@ ul.controlli li { margin: 5px 0; }
 .ricerca-er input[type=search] { width: 200px; }
 .query-laterale input[type=search] { width: 100%; margin-bottom: 6px; }
 .er-svg .er-linea.er-tra-gruppi:not(.er-attiva) { opacity: .22; }
+
+/* reverse engineering */
+.reverse-griglia { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 14px; align-items: start; }
+.reverse-laterale { max-height: 80vh; overflow: auto; padding: 12px; position: sticky; top: 0; }
+.reverse-laterale input[type=search] { width: 100%; margin-bottom: 6px; }
+.reverse-elenco a { display: block; padding: 3px 6px; border-radius: 5px; text-decoration: none; color: var(--testo); font-size: 13px;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reverse-elenco a:hover, .reverse-elenco a.scelta { background: var(--primario-chiaro); }
+.reverse-area { font-weight: 700; margin: 10px 0 3px; color: var(--tenue); font-size: 12px; text-transform: uppercase; }
+.filo-area ol li { margin: 6px 0; line-height: 1.5; }
+.filo-area h4 { margin: 0 0 4px; }
+@media (max-width: 900px) { .reverse-griglia { grid-template-columns: 1fr; } .reverse-laterale { position: static; max-height: 300px; } }
+.er-svg.er-solo-focus .er-linea:not(.er-attiva), .er-svg.er-solo-focus circle:not(.er-attiva),
+.er-svg.er-solo-focus text:not(.er-attiva):not(.er-tabella text) { opacity: .05; }

@@ -6,7 +6,7 @@
 
 1. **Carica** i file `.sql` (barra in alto).
 2. Guarda la **Panoramica** e i **Problemi** (errori e avvisi).
-3. Togli le entità che non interessano (**Togli entità**) e controlla **Aree e gruppi**.
+3. Leggi il **Reverse engineering** (cosa rappresenta ogni tabella, il filo logico), togli le entità che non interessano (**Togli entità**) e controlla **Aree e gruppi**.
 4. Controlla le **FK candidate** e falle scegliere a **clingo** (*Scelta con clingo*).
 5. Se hai il programma che usa il database: **Verifica con l'interfaccia** (su Windows), poi di nuovo *Scelta con clingo* con le conferme del programma.
 6. Guarda il risultato negli **Schemi grafici** e nel **Modello relazionale**.
@@ -37,6 +37,16 @@ Per disegnare un database da zero o modificarne uno: aggiungi entità con attrib
 ### Problemi
 La diagnostica come un compilatore: ogni riga ha gravità (errore, avviso, info), codice, file e riga, tabella e colonna, messaggio e suggerimento. Si filtra per gravità e per regola; cliccando una riga si vede il **pezzo di file** con la riga evidenziata e la **regola di progettazione** violata, con esempio sbagliato e corretto. Elenco completo dei codici: [Diagnostica](05-diagnostica.md).
 
+### Reverse engineering
+Per capire un database che non conosci, senza perdersi nel groviglio delle linee:
+
+- **il filo logico**: area per area, le tabelle nell'ordine in cui conviene leggerle (prima quelle da cui dipendono le altre: anagrafiche ed elenchi; poi movimenti, righe di dettaglio, tabelle ponte), una frase per tabella;
+- **la scheda di ogni tabella**: cosa rappresenta probabilmente (per esempio *"probabilmente le righe di dettaglio di «ordini»"*), da quali tabelle dipende e quali la usano, il **significato probabile di ogni colonna** (identificativo, riferimento a un'altra tabella, possibile riferimento, data, importo, quantità, stato, tipologia, nome, recapito, codice...) e un **mini-diagramma** con solo la tabella, sopra quelle da cui dipende e sotto quelle che la usano, con le sole colonne che le collegano;
+- a sinistra l'elenco delle tabelle per area, con la stessa ricerca per **entità** e per **attributo** del diagramma;
+- **Scarica il dizionario dei dati (HTML)**: un documento con la sintesi, il filo logico e la scheda di ogni tabella, con i collegamenti tra le schede.
+
+Le descrizioni sono **ipotesi** ricavate da nomi, chiavi, collegamenti e colonne tipiche: vanno confermate con chi conosce il programma, con i dati (*Query sui dati*) o con l'interfaccia del programma (*Verifica con l'interfaccia*).
+
 ### Aree e gruppi
 - **Albero area → sottogruppo → tabelle**: le aree sono insiemi di sottogruppi molto collegati tra loro; i sottogruppi sono tabelle con nomi simili. Ogni tabella ha la sua **categoria** (codifica, anagrafica, movimento, dettaglio, ponte, storico, dipendente, isolata) e le tabelle **centrali** sono segnate con un asterisco.
 - **Collegamenti tra aree e tra sottogruppi**: quante chiavi esterne, di che tipo, quali colonne.
@@ -51,6 +61,7 @@ La diagnostica come un compilatore: ogni riga ha gravità (errore, avviso, info)
   - **insieme**: se più tabelle hanno lo stesso nome, l'attributo le distingue (per esempio `taxa` + `species` lascia solo le tabelle `taxa` che hanno la colonna `species`);
   - *anche le collegate* aggiunge, più chiare, le tabelle collegate direttamente a quelle trovate; *Mostra tutte* toglie la ricerca.
 - Filtri per area o gruppo e colori per gruppo, area o categoria.
+- *Linee solo della tabella sotto il mouse*: le linee restano nascoste e compaiono solo per la tabella su cui passi il mouse, così il diagramma non diventa un groviglio.
 - **Vista a grafo**: grafo interattivo (pyvis), anche in una finestra a parte.
 
 ### Modello relazionale

@@ -101,6 +101,18 @@ Le tabelle si raggruppano per somiglianza dei nomi con un **clustering gerarchic
 | anagrafica | è puntata da altre tabelle |
 | dipendente | punta ad altre tabelle, ma nessuna punta a lei |
 
+## Reverse engineering: descrizione delle tabelle
+
+`sqlfk/descrizione.py` descrive ogni tabella con regole:
+
+- **nome leggibile**: le parole del nome al singolare quando è sicuro (le stesse regole dell'ontologia: `comuni` → comune, `ordini_righe` → riga di ordine);
+- **categoria** dal punto 7; in più una tabella con *righe*, *dettagli*, *items*... nel nome diventa *dettaglio* della tabella che ha il nome della prima parola (`ordini_righe` → `ordini`), anche se la chiave esterna non è sicura;
+- **collegamenti**: le chiavi dichiarate e quelle trovate ad affidabilità alta, senza le ridondanti (come il diagramma); le altre candidate diventano *possibili riferimenti*;
+- **significato delle colonne** dalle **parole** del nome (non da pezzi qualsiasi: `pathogenicity` non è una città) e dal tipo: data, importo, quantità, stato, tipologia, nome o descrizione (anche la colonna con lo stesso nome della tabella, come `regioni.regione`), recapito, codice (prima degli importi: `partita_iva` è un codice), indicatore sì/no, file o allegato, posizione, note, utente, versione;
+- una **frase per categoria**, sempre come ipotesi ("probabilmente").
+
+Il **filo logico** ordina le tabelle di ogni area con un ordinamento topologico: prima quelle senza padri nell'area (a parità: tabelle centrali, poi anagrafiche, elenchi, movimenti, dettagli, ponti, storici), poi via via quelle che dipendono da tabelle già elencate; i cicli si sciolgono partendo dalla tabella più usata.
+
 ## 8. Verifica con l'interfaccia del programma
 
 **Lettura (solo Windows, `sqlfk/finestre.py`).** Con **UI Automation** (la tecnologia dei lettori di schermo) si legge l'albero dei controlli della finestra scelta: per ogni controllo tipo (campo, menu a tendina, griglia, scheda...), nome, etichetta collegata, valore, voci del menu, intestazioni e righe delle griglie. Le password non si leggono. *Leggi tutte le schede* seleziona una dopo l'altra le schede e le voci degli alberi di navigazione (come un clic per spostarsi), mai pulsanti o comandi; i menu a tendina chiusi si aprono e richiudono solo per leggerne le voci. Ogni schermata diventa una **fotografia**: moduli con i campi, tabelle, coppie "etichetta: valore".

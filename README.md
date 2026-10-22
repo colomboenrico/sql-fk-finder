@@ -240,6 +240,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
 | `crea_eseguibili.sh`, `crea_eseguibili.bat` | creano gli eseguibili dell'app per Mac, Windows e Linux |
+| `sqlfk/descrizione.py` | reverse engineering: cosa rappresenta ogni tabella, filo logico, dizionario dei dati |
 | `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | la scelta delle chiavi esterne con clingo (ASP) |
 | `sqlfk/controllo.py` | il controllo dell'app |
 | `sqlfk/finestre.py` | la lettura delle finestre di un programma Windows (UI Automation) |

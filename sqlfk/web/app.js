@@ -576,7 +576,137 @@ function paginaDatabaseDaCostruire(info) {
   ];
 }
 
+/** Il dizionario dei dati (HTML da salvare): sintesi, filo logico e la scheda di ogni tabella. */
+function dizionarioDati(D, origine) {
+  const esc = t => String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const ancora = t => "t-" + t.replace(/[^A-Za-z0-9_]/g, "_");
+  const nomeTab = t => `<a href="#${ancora(t)}">${esc(t)}</a>`;
+  const conLink = testo => esc(testo).replace(/«([^»]+)»/g, (m, t) => D.tabelle[t] ? `«${nomeTab(t)}»` : m);
+  const schede = Object.values(D.tabelle).sort((a, b) => (a.area || "").localeCompare(b.area || "") || a.tabella.localeCompare(b.tabella));
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Dizionario dei dati</title>
+<style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:32px auto;max-width:1100px;color:#1d2330;line-height:1.5;padding:0 16px}
+h1{font-size:26px}h2{margin-top:36px;border-bottom:2px solid #1f4e79;padding-bottom:4px}h3{margin:26px 0 4px}
+.cat{display:inline-block;background:#e7eef6;color:#1f4e79;border-radius:8px;padding:0 8px;font-size:12px;font-weight:600}
+table{border-collapse:collapse;font-size:13px;margin:8px 0}td,th{border:1px solid #dde1e7;padding:3px 8px;text-align:left}th{background:#f5f6f8}
+.tenue{color:#5f6b7a}ol li{margin:4px 0}.scheda{border-left:3px solid #dde1e7;padding-left:14px}</style></head><body>
+<h1>Dizionario dei dati</h1><p class="tenue">${esc(origine || "")} · creato da SQL FK Finder il ${new Date().toLocaleString("it-IT")}</p>
+<p>${conLink(D.sintesi)}</p>
+<h2>Il filo logico</h2>${D.filo.map(a => `<h3>Area ${esc(a.area)}</h3><p class="tenue">${conLink(a.introduzione)}</p><ol>${a.passi.map(p =>
+  `<li>${nomeTab(p.tabella)} <span class="cat">${esc(p.categoria)}</span> ${conLink(p.frase)}</li>`).join("")}</ol>`).join("")}
+<h2>Le tabelle</h2>${schede.map(t => `<div class="scheda" id="${ancora(t.tabella)}"><h3>${esc(t.tabella)} <span class="cat">${esc(t.categoria)}</span></h3>
+<p class="tenue">${esc(t.nome)} · area ${esc(t.area || "-")} · gruppo ${esc(t.gruppo)}</p><p>${conLink(t.descrizione)}</p>
+${t.padri.length ? `<p><b>Dipende da:</b> ${t.padri.map(p => `${nomeTab(p.tabella)} (${esc(p.colonne.join(", "))})`).join(", ")}</p>` : ""}
+${t.figli.length ? `<p><b>Usata da:</b> ${t.figli.map(f => `${nomeTab(f.tabella)} (${esc(f.colonne.join(", "))})`).join(", ")}</p>` : ""}
+<table><tr><th>colonna</th><th>tipo</th><th>ruolo</th><th>significato probabile</th></tr>${t.colonne.map(c =>
+  `<tr><td>${esc(c.colonna)}</td><td>${esc(c.tipo)}</td><td>${esc(c.ruolo)}</td><td>${esc(c.significato)}</td></tr>`).join("")}</table></div>`).join("")}
+</body></html>`;
+}
+
 const VISTE = {
+  async reverse() {
+    const [D, diag] = await Promise.all([api("/api/reverse"), api("/api/diagramma?tipo=collegamenti")]);
+    const tabelleDiag = Object.fromEntries(diag.tabelle.map(t => [t.nome, t]));
+    const destra = el("div");
+    const elenco = el("div", { class: "reverse-elenco" });
+    const cercaE = el("input", { type: "search", placeholder: "tabella / entità", "aria-label": "Cerca una tabella o un'entità" });
+    const cercaA = el("input", { type: "search", placeholder: "attributo / colonna", "aria-label": "Cerca un attributo" });
+    const contatore = el("p", { class: "tenue" });
+    const etichetta = c => el("span", { class: `cat cat-${c}` }, c);
+    let entitaTrovate = new Set();
+
+    // le frasi con «tabella» diventano collegamenti alla scheda della tabella
+    const conLink = testo => String(testo).split(/(«[^»]+»)/).map(parte => {
+      const t = parte.startsWith("«") ? parte.slice(1, -1) : null;
+      return t && D.tabelle[t] ? el("a", { href: "#", onclick: e => { e.preventDefault(); apri(t); } }, `«${t}»`) : parte;
+    });
+
+    function filo() {
+      destra.replaceChildren(el("div", {},
+        el("div", { class: "sintesi" }, conLink(D.sintesi)),
+        el("h3", {}, "Il filo logico del database"),
+        el("p", { class: "tenue" }, "Area per area, nell'ordine in cui conviene leggerle: prima le tabelle da cui dipendono le altre " +
+          "(anagrafiche, codifiche), poi movimenti, dettagli e tabelle ponte. Clicca una tabella per la sua scheda."),
+        D.filo.map(a => el("div", { class: "pannello filo-area" },
+          el("h4", {}, `Area ${a.area}`), el("p", { class: "tenue" }, conLink(a.introduzione)),
+          el("ol", {}, a.passi.map(p => el("li", {},
+            el("a", { href: "#", onclick: e => { e.preventDefault(); apri(p.tabella); } }, el("b", {}, p.tabella)), " ",
+            etichetta(p.categoria), " ", conLink(p.frase))))))));
+    }
+
+    function apri(t) {
+      const T = D.tabelle[t];
+      if (!T) return;
+      // mini-diagramma: la tabella, chi la usa e chi usa lei (non tutto il database)
+      const vicine = [t, ...T.padri.map(p => p.tabella), ...T.figli.map(f => f.tabella)];
+      const nomi = new Set(vicine);
+      const collegamenti = diag.collegamenti.filter(l => (l.da === t || l.a === t) && nomi.has(l.da) && nomi.has(l.a));
+      // solo le colonne che servono a capire i collegamenti: chiave primaria e colonne collegate (le altre sono nell'elenco sotto)
+      const usate = new Set(collegamenti.flatMap(l => [...l.colonne_da.map(c => `${l.da}.${c}`), ...l.colonne_a.map(c => `${l.a}.${c}`)]));
+      const tabelle = [...nomi].filter(n => tabelleDiag[n]).map(n => {
+        const T0 = tabelleDiag[n];
+        const colonne = T0.colonne.filter(c => c.pk || usate.has(`${n}.${c.nome}`));
+        const tolte = T0.colonne.length - colonne.length;
+        return { ...T0, gruppo: n === t ? "selezionata" : T0.gruppo,
+                 colonne: tolte ? [...colonne, { nome: `… altre ${tolte} colonne`, tipo: "", pk: false, fk: false, unique: false, not_null: false }] : colonne };
+      });
+      const cornice = el("div", { class: "er-cornice", style: "height: 380px" });
+      setTimeout(() => DiagrammaER.crea(cornice, { tabelle, collegamenti }, { tipi: true, selezionata: t,
+        onClic: n => { if (n && n !== t) apri(n); } }), 0);
+      const lista = (voci, titolo) => voci.length ? el("p", {}, el("b", {}, titolo), " ",
+        voci.map((v, i) => [i ? ", " : "", el("a", { href: "#", onclick: e => { e.preventDefault(); apri(v.tabella); } }, v.tabella),
+          ` (${v.colonne.join(", ")})`])) : null;
+      destra.replaceChildren(el("div", {},
+        el("div", { class: "riga-comandi" }, el("button", { onclick: filo }, "Torna al filo logico")),
+        el("h3", {}, t, " ", etichetta(T.categoria), T.centrale ? el("span", { class: "tenue" }, " tabella centrale") : null),
+        el("p", { class: "tenue" }, `${T.nome} · area ${T.area || "-"} · gruppo ${T.gruppo}`),
+        el("div", { class: "sintesi" }, conLink(T.descrizione)),
+        lista(T.padri, "Dipende da:"), lista(T.figli, "È usata da:"),
+        el("p", { class: "tenue" }, "Sopra le tabelle da cui dipende, sotto quelle che la usano (clicca una tabella per aprirla)."),
+        cornice,
+        griglia({ colonne: ["colonna", "tipo", "ruolo", "significato probabile"], righe: T.colonne.map(c => [c.colonna, c.tipo, c.ruolo, c.significato]) },
+          { titolo: "Colonne" })));
+      elenco.querySelectorAll("a.scelta").forEach(a => a.classList.remove("scelta"));
+      const voce = elenco.querySelector(`a[data-tabella="${CSS.escape(t)}"]`);
+      if (voce) voce.classList.add("scelta");
+    }
+
+    function disegnaElenco() {
+      const e = cercaE.value.trim().toLowerCase(), a = cercaA.value.trim().toLowerCase();
+      const passa = T => (!e || T.tabella.toLowerCase().includes(e) || entitaTrovate.has(T.tabella)) &&
+        (!a || T.colonne.some(c => c.colonna.toLowerCase().includes(a)));
+      let quante = 0;
+      elenco.replaceChildren(...D.filo.map(area => {
+        const voci = area.passi.filter(p => passa(D.tabelle[p.tabella]));
+        quante += voci.length;
+        return voci.length ? el("div", {}, el("div", { class: "reverse-area" }, `${area.area} (${voci.length})`),
+          voci.map(p => el("a", { href: "#", "data-tabella": p.tabella, title: D.tabelle[p.tabella].sintesi,
+            onclick: ev => { ev.preventDefault(); apri(p.tabella); } }, etichetta(p.categoria), " ", p.tabella))) : null;
+      }).filter(Boolean));
+      contatore.textContent = e || a ? `${quante} tabelle su ${Object.keys(D.tabelle).length}` : "";
+    }
+    let attesa = null;
+    const cerca = () => { clearTimeout(attesa); attesa = setTimeout(async () => {
+      const e = cercaE.value.trim();
+      entitaTrovate = new Set(e.length >= 3 ? (await api(`/api/cerca_entita?parola=${encodeURIComponent(e)}`).catch(() => ({ tabelle: [] }))).tabelle : []);
+      disegnaElenco();
+    }, 200); };
+    cercaE.addEventListener("input", cerca);
+    cercaA.addEventListener("input", cerca);
+    disegnaElenco();
+    filo();
+    return [
+      el("h2", {}, "Reverse engineering"),
+      el("p", { class: "tenue" }, "Cosa rappresenta probabilmente ogni tabella e come si legge il database, ricavato da nomi, chiavi, " +
+        "collegamenti (dichiarati e trovati ad affidabilità alta) e colonne tipiche (date, importi, quantità, stato...). Sono ipotesi da confermare."),
+      el("div", { class: "riga-comandi" },
+        el("button", { class: "primario", onclick: () => scaricaBlob(new Blob([dizionarioDati(D, stato.origine)], { type: "text/html;charset=utf-8" }),
+          "dizionario_dei_dati.html") }, "Scarica il dizionario dei dati (HTML)")),
+      el("div", { class: "reverse-griglia" },
+        el("div", { class: "pannello reverse-laterale" }, el("h3", {}, "Tabelle"), cercaE, cercaA, contatore, elenco),
+        destra),
+    ];
+  },
+
   async asp() {
     const medie = el("input", { type: "checkbox" });
     const conInterfaccia = el("input", { type: "checkbox", checked: true });
@@ -1706,7 +1836,8 @@ function alberoAree(aree, alClicSottogruppo) {
 }
 
 let filtroER = "";             // "a:area" o "g:gruppo" scelto nel diagramma
-let raggruppaER = "";          // disposizione del diagramma: "" (per collegamenti), "gruppo" o "area"
+let raggruppaER = "";
+let lineeSoloFocusER = false;  // linee visibili solo per la tabella sotto il mouse          // disposizione del diagramma: "" (per collegamenti), "gruppo" o "area"
 let cercaER = { entita: "", attributo: "", collegate: false };   // ricerca che filtra il diagramma
 let coloraER = "gruppo";       // colore delle tabelle: per gruppo o per area
 let ultimoSchema = "iniziale";
@@ -1747,6 +1878,7 @@ async function contenutoER(quale) {
   const cercaAttributo = el("input", { type: "search", placeholder: "attributo / colonna", "aria-label": "Cerca un attributo",
     title: "Restano solo le tabelle che hanno una colonna con questo nome; le colonne trovate sono in giallo", value: cercaER.attributo });
   const conCollegate = el("input", { type: "checkbox", checked: cercaER.collegate });
+  const soloFocus = el("input", { type: "checkbox", checked: lineeSoloFocusER });
   const conTipi = el("input", { type: "checkbox", checked: true });
   const medie = el("input", { type: "checkbox", checked: erMedie && quale === "collegamenti", title: "Aggiunge le FK trovate ad affidabilità media (passa a FK dichiarate e trovate)" });
   let diagramma = null;
@@ -1811,6 +1943,7 @@ async function contenutoER(quale) {
       tipi: conTipi.checked,
       coloraPer: raggruppaER || coloraER,
       raggruppa: raggruppaER || null,
+      lineeSoloFocus: soloFocus.checked,
       colonne: cercaAttributo.value.trim(),
       attenuate,
       posizioni: filtrato ? {} : layoutER[chiave],
@@ -1825,6 +1958,7 @@ async function contenutoER(quale) {
   conTipi.addEventListener("change", disegna);
   medie.addEventListener("change", () => { erMedie = medie.checked; mostraSchema(medie.checked ? "collegamenti" : quale, "er"); });
   sceltaDisposizione.addEventListener("change", () => { raggruppaER = sceltaDisposizione.value; disegna(); });
+  soloFocus.addEventListener("change", () => { lineeSoloFocusER = soloFocus.checked; disegna(); });
   let attesaRicerca = null;
   const cerca = () => {
     clearTimeout(attesaRicerca);
@@ -1858,6 +1992,7 @@ async function contenutoER(quale) {
     el("div", { class: "riga-comandi" },
       sceltaDisposizione, sceltaGruppo, sceltaColore,
       el("label", {}, conTipi, "mostra i tipi"),
+      el("label", { title: "Le linee si vedono solo passando il mouse su una tabella" }, soloFocus, "linee solo della tabella sotto il mouse"),
       el("button", { onclick: () => diagramma && diagramma.zoom(1.25), title: "Ingrandisci" }, "+"),
       el("button", { onclick: () => diagramma && diagramma.zoom(0.8), title: "Rimpicciolisci" }, "-"),
       el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
