@@ -252,3 +252,60 @@ ul.controlli li { margin: 5px 0; }
 @media (max-width: 900px) { .reverse-griglia { grid-template-columns: 1fr; } .reverse-laterale { position: static; max-height: 300px; } }
 .er-svg.er-solo-focus .er-linea:not(.er-attiva), .er-svg.er-solo-focus circle:not(.er-attiva),
 .er-svg.er-solo-focus text:not(.er-attiva):not(.er-tabella text) { opacity: .05; }
+
+/* file della cartella e file XML */
+.scelta-cartella .percorso { display: flex; gap: 6px; }
+.scelta-cartella .percorso input { width: 280px; }
+.file-griglia { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; align-items: start; }
+.file-griglia .reverse-laterale input, .file-griglia .reverse-laterale select { width: 100%; margin-bottom: 6px; }
+.file-griglia .reverse-laterale .pulsante { display: block; text-align: center; margin-bottom: 8px; }
+.file-albero a { display: block; padding: 2px 6px; border-radius: 5px; text-decoration: none; color: var(--testo); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-albero a:hover, .file-albero a.scelta { background: var(--primario-chiaro); }
+.file-cartella { font-weight: 600; }
+.freccia { display: inline-block; width: 12px; color: var(--tenue); }
+.tipo-file { display: inline-block; min-width: 30px; text-align: center; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 0 3px;
+  background: var(--riga-alt); color: var(--tenue); border: 1px solid var(--bordo); }
+.tipo-sql { color: var(--primario); }
+.tipo-xml { color: var(--medio); }
+.affianca-riga { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.affianca-riga > * { flex: 1 1 0; min-width: 0; }
+.affiancati { display: flex; flex-direction: column; gap: 14px; }
+.affiancati[hidden] { display: none; }
+.affiancato { margin: 0; max-height: 82vh; overflow: auto; }
+.affiancato select { max-width: 100%; }
+.titolo-file { margin: 0; }
+.visore { position: relative; overflow: auto; background: var(--pannello); border: 1px solid var(--bordo); border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; }
+.riga-codice { display: flex; }
+.riga-codice .codice { white-space: pre-wrap; word-break: break-all; min-width: 0; }
+.riga-codice .num, .riga-trovata .num { flex: none; width: 56px; padding-right: 10px; text-align: right; color: var(--tenue); user-select: none;
+  background: var(--riga-alt); border-right: 1px solid var(--bordo); margin-right: 10px; }
+.riga-codice.trovata { background: #fff4c2; }
+.riga-codice.evidenziata, .xml-riga.evidenziata { background: #ffe08a; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.chip { border: 1px solid var(--bordo); border-radius: 12px; padding: 1px 9px; font-size: 12.5px; text-decoration: none; background: var(--pannello); }
+.chip.fuori { color: var(--tenue); border-style: dashed; }
+.risultato-ricerca { margin: 10px 0; }
+.riga-trovata { display: flex; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; text-decoration: none;
+  color: var(--testo); white-space: pre; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+.riga-trovata:hover { background: var(--primario-chiaro); }
+.xml-albero { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6; max-height: 70vh; overflow: auto;
+  background: var(--pannello); border: 1px solid var(--bordo); border-radius: 6px; padding: 6px 0; }
+.xml-riga { cursor: pointer; white-space: nowrap; padding-right: 10px; }
+.xml-riga:hover { background: var(--primario-chiaro); }
+.xml-tag { color: var(--primario); }
+.xml-attr { color: var(--medio); }
+.xml-val { color: var(--ok); }
+.xml-testo { color: var(--testo); font-weight: 600; margin-left: 4px; }
+.xml-altri { display: block; font-style: italic; }
+.xml-risultati { max-height: 180px; overflow: auto; margin-bottom: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.xml-risultati a { display: block; text-decoration: none; }
+.tabella-xml { border-collapse: collapse; font-size: 13px; width: 100%; }
+.tabella-xml td, .tabella-xml th { border-bottom: 1px solid var(--bordo); padding: 4px 8px; text-align: left; vertical-align: top; }
+@media (prefers-color-scheme: dark) {
+  .riga-codice.trovata { background: #4a4120; }
+  .riga-codice.evidenziata, .xml-riga.evidenziata { background: #6b5518; }
+}
+@media (max-width: 1100px) { .affianca-riga { flex-direction: column; } .affianca-riga > * { width: 100%; } }
+@media (max-width: 900px) { .file-griglia { grid-template-columns: 1fr; } }

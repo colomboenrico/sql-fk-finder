@@ -31,6 +31,7 @@ from . import ontologia as O
 from . import asp as ASP
 from . import controllo as CTRL
 from . import descrizione as DESCR
+from . import esplora as ESP
 from . import finestre as FIN
 from . import interfaccia as UI
 from . import lettura as L
@@ -95,6 +96,7 @@ class Sessione:
         self.interfaccia = {"pagine": {}, "stato": {}}     # fotografie delle schermate di un altro programma
         self.lettura_finestre = None      # lettura delle finestre di Windows (sqlfk.finestre)
         self.ultimo_asp = None            # l'ultima scelta fatta con clingo
+        self.radice_file = None           # cartella scelta nella scheda File (se no, quella caricata)
         self.porta = None
 
     # ------------------------------------------------------------ lavori in background
@@ -146,6 +148,8 @@ class Sessione:
         df, pk, fk, errori = A.leggi_testi(file_sql, self.imp.dialetto)
         if df.empty:
             raise Errore("Nei file non c'è nessun CREATE TABLE.")
+        if origine != self.origine:
+            self.radice_file = None       # file nuovi: la pagina File torna alla cartella caricata
         self.file_sql, self.origine = file_sql, origine
         self.chiudi_database()
         self.df_schema, self.pk, self.fk, self.errori = df, pk, fk, errori
@@ -424,6 +428,58 @@ class Sessione:
         numero = mappa.originale if mappa else (lambda n: n)
         return {"file": nome, "riga": riga, "ridotto": bool(mappa),
                 "righe": [[numero(n), righe[n - 1]] for n in range(inizio, fine + 1)]}
+
+    # ------------------------------------------------------------ file della cartella (scheda File e XML)
+    def radice(self):
+        radice = self.radice_file or ESP.radice_di(self.origine)
+        if radice is None:
+            raise Errore("Nessuna cartella da esplorare: scrivi il percorso di una cartella o sceglila con il pulsante.")
+        return radice
+
+    def scegli_radice(self, cartella):
+        cartella = str(cartella or "").strip().strip('"')
+        if not cartella:
+            self.radice_file = None
+            return self.elenco_file()
+        p = Path(cartella).expanduser()
+        if not p.is_dir():
+            raise Errore(f"La cartella non esiste: {p}")
+        self.radice_file = p.resolve()
+        return self.elenco_file()
+
+    def elenco_file(self):
+        E = ESP.elenco(self.radice())
+        caricata = ESP.radice_di(self.origine)
+        E["caricata"] = caricata is not None and Path(E["radice"]) == caricata
+        return E
+
+    def tabelle_del_file(self, relativo):
+        """Le tabelle definite in un file .sql caricato (con la riga), per affiancare il file e il suo schema."""
+        if self.df_schema is None or not relativo.lower().endswith(".sql"):
+            return []
+        cartella = ESP.radice_di(self.origine)
+        file = (Path(self.radice()) / relativo).resolve()
+        caricati = {n for n, _ in self.file_sql}
+        stesso = (cartella is not None and file.parent == cartella) or str(file) == str(Path(self.origine).expanduser().resolve())
+        if not stesso or file.name not in caricati:
+            return []
+        df = self.df_schema[self.df_schema["file"] == file.name].drop_duplicates("tabella")
+        return [{"tabella": r["tabella"], "riga": None if pd.isna(r["riga tabella"]) else int(r["riga tabella"]),
+                 "tolta": r["tabella"] in self.rimosse} for _, r in df.iterrows()]
+
+    def leggi_file(self, relativo, inizio):
+        try:
+            pezzo = ESP.leggi(self.radice(), relativo, inizio)
+        except ESP.FuoriCartella as e:
+            raise Errore(str(e))
+        pezzo["tabelle"] = self.tabelle_del_file(relativo) if not int(inizio or 0) else []
+        return pezzo
+
+    def leggi_xml(self, relativo):
+        try:
+            return ESP.leggi_xml(self.radice(), relativo)
+        except ESP.FuoriCartella as e:
+            raise Errore(str(e))
 
     def diagramma(self, tipo="collegamenti", medie=False):
         """Tabelle con le colonne e collegamenti tra colonne, per il diagramma e il modello relazionale."""
@@ -705,6 +761,17 @@ class Gestore(BaseHTTPRequestHandler):
         if percorso == "/api/sorgente":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.sorgente(q.get("file", [""])[0], int(q.get("riga", ["1"])[0] or 1)))
+        if percorso.startswith("/api/file/"):
+            q = parse_qs(url.query)
+            voce = lambda nome, predefinito="": q.get(nome, [predefinito])[0]
+            file = {
+                "/api/file/elenco": s.elenco_file,
+                "/api/file/leggi": lambda: s.leggi_file(voce("percorso"), int(voce("inizio", "0") or 0)),
+                "/api/file/xml": lambda: s.leggi_xml(voce("percorso")),
+                "/api/file/cerca": lambda: ESP.cerca_testo(s.radice(), voce("parola"), voce("nomi") or None),
+            }
+            if percorso in file:
+                return self.esegui(file[percorso], blocca=False)
         if percorso == "/api/cerca_entita":
             parola = parse_qs(url.query).get("parola", [""])[0]
             return self.esegui(lambda: (s.richiedi_dati(), {"tabelle": A.tabelle_entita(
@@ -831,6 +898,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/lavoro/ferma": lambda: (s.lavoro.fermo.set() if s.lavoro else None, {"ok": True})[1],
             "/api/query/costruisci": lambda: s.costruisci_database(),
             "/api/query/svuota_cache": s.svuota_cache,
+            "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
         }
         lunghe = {
             "/api/query": lambda: s.query(dati.get("sql"), dati.get("conferma")),

@@ -73,6 +73,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/finestre.py` | lettura delle finestre di un programma Windows con UI Automation; conversione in fotografie |
 | `sqlfk/interfaccia.py` | dalle fotografie: classi, collegamento a tabelle e colonne, relazioni, verifica, racconto e mappa |
 | `sqlfk/descrizione.py` | reverse engineering: descrizione delle tabelle, significato delle colonne, filo logico |
+| `sqlfk/esplora.py` | file della cartella: elenco, ricerca per nome e nel contenuto, lettura a pezzi con la codifica, file XML (sola lettura, mai fuori dalla cartella) |
 | `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | scelta delle chiavi esterne con clingo |
 | `sqlfk/controllo.py` | il controllo dell'app (in Python) |
 | `sqlfk/regole.py` | le regole di progettazione R0-R8 e le spiegazioni dei codici |
@@ -82,7 +83,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/server.py` | le richieste dell'interfaccia (`/api/...`), lo stato della sessione, i lavori in background; anche server HTTP locale per il browser |
 | `sqlfk/ponte.py` | collegamento con l'app tramite pipe |
 | `sqlfk/verifica.py` | diagnostica da terminale |
-| `sqlfk/web/` | l'interfaccia: `index.html`, `app.js` (pagine), `diagramma.js` (diagramma delle tabelle), `editor.js` (editor), `style.css` |
+| `sqlfk/web/` | l'interfaccia: `index.html`, `app.js` (pagine), `file.js` (pagine File della cartella e File XML), `diagramma.js` (diagramma delle tabelle), `editor.js` (editor), `style.css` |
 | `app/main.js`, `app/preload.js` | l'app Electron: avvio di Python, protocollo interno, blocco della rete, controllo, salvataggio dei rapporti |
 | `app/prepara_python.py` | prepara il Python con le librerie da includere negli eseguibili |
 | `crea_eseguibili.sh`, `.bat` | creano gli eseguibili |
@@ -96,6 +97,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 |---|---|
 | caricamento | `carica_cartella`, `carica_percorsi`, `carica_file`, `lavoro`, `lavoro/ferma`, `progetto` |
 | reverse engineering | `reverse` |
+| file della cartella | `file/elenco`, `file/leggi`, `file/xml`, `file/cerca`, `file/radice` |
 | analisi | `stato`, `panoramica`, `diagnostica`, `regole`, `tabelle`, `pk_composte`, `fk`, `altri`, `qualita`, `gruppi`, `aree`, `sorgente`, `cerca_entita` |
 | modifiche | `togli`, `togli_gruppo`, `rimetti`, `impostazioni` |
 | schemi | `diagramma`, `modello`, `schema_iniziale`, `schema_collegamenti`, `ontologia` |

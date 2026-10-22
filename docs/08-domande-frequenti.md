@@ -30,6 +30,12 @@ Nei file grandi l'app tiene solo la struttura ma i numeri di riga restano quelli
 **Troppe tabelle "senza chiave primaria" in un dump PostgreSQL.**
 pg_dump aggiunge le chiavi primarie alla fine con `ALTER TABLE ... ADD CONSTRAINT ... PRIMARY KEY`: l'app le legge, ma solo se il file con gli `ALTER` è tra quelli caricati.
 
+**Nella pagina File della cartella non vedo i file.**
+La pagina mostra la cartella caricata in alto. Se hai caricato singoli file dal browser, o un progetto, scegli la cartella con *Scegli un'altra cartella* o scrivine il percorso. Le cartelle `.git`, `node_modules`, `__pycache__` e gli ambienti virtuali non si elencano.
+
+**Un file XML non si apre come albero.**
+Se non è un XML valido compare l'errore con riga e colonna, e sotto il testo. Sopra i 64 MB l'albero non si costruisce: aprilo nella pagina *File della cartella*, che lo legge a pezzi.
+
 ## Chiavi esterne
 
 **Quanto mi posso fidare delle proposte?**

@@ -65,6 +65,22 @@ def controlla():
         return ("ok", "lettura a blocchi dei file .sql") if len(frasi) == 1002 else ("errore", f"{len(frasi)} istruzioni invece di 1002")
     voce("Lettura dei file", lettura_file_grandi)
 
+    def esplora_cartella():
+        from . import esplora as ESP
+        E = ESP.elenco(ESEMPI)
+        nomi = [f["nome"] for f in E["file"] if ESP.corrisponde(f["nome"], "esempio_5.sql")]
+        pezzo = ESP.leggi(ESEMPI, "esempio_5.sql", 0, 200)
+        trovati = ESP.cerca_testo(ESEMPI, "tessere_sanitarie")["risultati"]
+        try:
+            ESP.leggi(ESEMPI, "../README.md")
+            fuori = False
+        except ESP.FuoriCartella:
+            fuori = True
+        ok = nomi == ["esempio_5.sql"] and pezzo["altro"] and not pezzo["binario"] and trovati and fuori
+        return ("ok", f"{len(E['file'])} file negli esempi: ricerca per nome e per contenuto, lettura a pezzi, "
+                      "nessun accesso fuori dalla cartella") if ok else ("errore", f"nomi {nomi}, pezzo {pezzo['fine']}, fuori {fuori}")
+    voce("File della cartella", esplora_cartella)
+
     def finestre():
         from . import finestre as FIN
         if not FIN.SU_WINDOWS:

@@ -295,14 +295,25 @@ async function leggiFile(lista, origine) {
   });
 }
 
+/** Nel browser (senza percorsi su disco) le pagine File e File XML usano i file scelti; nell'app li legge il server. */
+function ricordaFileScelti(lista) {
+  const conPercorso = window.sqlfkApp && lista.length && window.sqlfkApp.percorso(lista[0]);
+  fileLocaliCaricati = conPercorso || !lista.length ? null : [...lista];
+  fileLocali = fileLocaliCaricati;
+  usaLocali = !!fileLocali;
+  fileAperto = xmlAperto = null;
+}
+
 $("#in-cartella").addEventListener("change", e => {
   const lista = e.target.files;
+  ricordaFileScelti(lista);
   const cartella = lista.length ? (lista[0].webkitRelativePath || "").split("/")[0] : "";
   leggiFile(lista, cartella ? `cartella ${cartella}` : null);
   e.target.value = "";
 });
 
 $("#in-file").addEventListener("change", e => {
+  ricordaFileScelti(e.target.files);
   leggiFile(e.target.files, `${e.target.files.length} file`);
   e.target.value = "";
 });
@@ -342,6 +353,7 @@ $("#form-percorso").addEventListener("submit", async e => {
   e.preventDefault();
   const cartella = $("#percorso").value.trim();
   if (!cartella) return;
+  ricordaFileScelti([]);
   await caricaDaServer("/api/carica_cartella", { cartella });
 });
 
@@ -602,69 +614,107 @@ ${t.figli.length ? `<p><b>Usata da:</b> ${t.figli.map(f => `${nomeTab(f.tabella)
 </body></html>`;
 }
 
+// ======================================================================= reverse engineering (condiviso)
+
+let cacheReverse = null;
+/** Descrizioni e diagramma per il reverse engineering, richiesti una volta sola per lo stesso stato dell'analisi. */
+async function datiReverse() {
+  const chiave = JSON.stringify([stato.origine, stato.tabelle_analizzate, stato.fk_candidate, stato.rimosse, stato.impostazioni]);
+  if (!cacheReverse || cacheReverse.chiave !== chiave) {
+    const [D, diag] = await Promise.all([api("/api/reverse"), api("/api/diagramma?tipo=collegamenti")]);
+    cacheReverse = { chiave, D, diag, tabelleDiag: Object.fromEntries(diag.tabelle.map(t => [t.nome, t])) };
+  }
+  return cacheReverse;
+}
+
+const etichettaCategoria = c => el("span", { class: `cat cat-${c}` }, c);
+
+/** Le frasi con «tabella» diventano collegamenti che aprono la tabella. */
+function conLinkReverse(R, testo, apri) {
+  return String(testo).split(/(«[^»]+»)/).map(parte => {
+    const t = parte.startsWith("«") ? parte.slice(1, -1) : null;
+    return t && R.D.tabelle[t] ? el("a", { href: "#", onclick: e => { e.preventDefault(); apri(t); } }, `«${t}»`) : parte;
+  });
+}
+
+/** Il filo logico: area per area, l'ordine in cui conviene leggere le tabelle. */
+function filoReverse(R, apri) {
+  const { D } = R;
+  return el("div", {},
+    el("div", { class: "sintesi" }, conLinkReverse(R, D.sintesi, apri)),
+    el("h3", {}, "Il filo logico del database"),
+    el("p", { class: "tenue" }, "Area per area, nell'ordine in cui conviene leggerle: prima le tabelle da cui dipendono le altre " +
+      "(anagrafiche, codifiche), poi movimenti, dettagli e tabelle ponte. Clicca una tabella per la sua scheda."),
+    D.filo.map(a => el("div", { class: "pannello filo-area" },
+      el("h4", {}, `Area ${a.area}`), el("p", { class: "tenue" }, conLinkReverse(R, a.introduzione, apri)),
+      el("ol", {}, a.passi.map(p => el("li", {},
+        el("a", { href: "#", onclick: e => { e.preventDefault(); apri(p.tabella); } }, el("b", {}, p.tabella)), " ",
+        etichettaCategoria(p.categoria), " ", conLinkReverse(R, p.frase, apri)))))));
+}
+
+/** Diagramma di alcune tabelle con solo le colonne che spiegano i collegamenti (chiave primaria e colonne collegate).
+    centrali: le tabelle in evidenza; vicine: si aggiungono anche le tabelle collegate a quelle centrali (attenuate). */
+function diagrammaTabelle(R, centrali, { vicine = true, selezionata = null, onClic = null, altezza = 380 } = {}) {
+  const { diag, tabelleDiag } = R;
+  const centro = new Set(centrali.filter(n => tabelleDiag[n]));
+  const nomi = new Set(centro);
+  const collegamenti = diag.collegamenti.filter(l => {
+    const tocca = centro.has(l.da) || centro.has(l.a);
+    if (tocca && vicine) { nomi.add(l.da); nomi.add(l.a); }
+    return tocca;
+  }).filter(l => nomi.has(l.da) && nomi.has(l.a));
+  const usate = new Set(collegamenti.flatMap(l => [...l.colonne_da.map(c => `${l.da}.${c}`), ...l.colonne_a.map(c => `${l.a}.${c}`)]));
+  const tabelle = [...nomi].map(n => {
+    const T0 = tabelleDiag[n];
+    const colonne = T0.colonne.filter(c => c.pk || usate.has(`${n}.${c.nome}`));
+    const tolte = T0.colonne.length - colonne.length;
+    return { ...T0, gruppo: n === selezionata ? "selezionata" : centro.has(n) ? "in evidenza" : T0.gruppo,
+             colonne: tolte ? [...colonne, { nome: `… altre ${tolte} colonne`, tipo: "", pk: false, fk: false, unique: false, not_null: false }] : colonne };
+  });
+  const cornice = el("div", { class: "er-cornice", style: `height: ${altezza}px` });
+  if (!tabelle.length) return el("p", { class: "tenue" }, "Nessuna di queste tabelle è nell'analisi.");
+  const attenuate = new Set([...nomi].filter(n => !centro.has(n)));
+  setTimeout(() => DiagrammaER.crea(cornice, { tabelle, collegamenti }, { tipi: true, selezionata, attenuate,
+    onClic: n => { if (n && onClic) onClic(n); } }), 0);
+  return cornice;
+}
+
+/** La scheda di una tabella: cosa rappresenta, da chi dipende, chi la usa, mini-diagramma e significato delle colonne. */
+function schedaReverse(R, t, apri, { altezza = 380 } = {}) {
+  const T = R.D.tabelle[t];
+  if (!T) return el("p", { class: "tenue" }, `La tabella ${t} non è nell'analisi (forse è stata tolta).`);
+  const lista = (voci, titolo) => voci.length ? el("p", {}, el("b", {}, titolo), " ",
+    voci.map((v, i) => [i ? ", " : "", el("a", { href: "#", onclick: e => { e.preventDefault(); apri(v.tabella); } }, v.tabella),
+      ` (${v.colonne.join(", ")})`])) : null;
+  return el("div", {},
+    el("h3", {}, t, " ", etichettaCategoria(T.categoria), T.centrale ? el("span", { class: "tenue" }, " tabella centrale") : null),
+    el("p", { class: "tenue" }, `${T.nome} · area ${T.area || "-"} · gruppo ${T.gruppo}`),
+    el("div", { class: "sintesi" }, conLinkReverse(R, T.descrizione, apri)),
+    lista(T.padri, "Dipende da:"), lista(T.figli, "È usata da:"),
+    el("p", { class: "tenue" }, "Sopra le tabelle da cui dipende, sotto quelle che la usano (clicca una tabella per aprirla)."),
+    diagrammaTabelle(R, [t], { selezionata: t, onClic: n => { if (n !== t) apri(n); }, altezza }),
+    griglia({ colonne: ["colonna", "tipo", "ruolo", "significato probabile"], righe: T.colonne.map(c => [c.colonna, c.tipo, c.ruolo, c.significato]) },
+      { titolo: "Colonne" }));
+}
+
 const VISTE = {
   async reverse() {
-    const [D, diag] = await Promise.all([api("/api/reverse"), api("/api/diagramma?tipo=collegamenti")]);
-    const tabelleDiag = Object.fromEntries(diag.tabelle.map(t => [t.nome, t]));
+    const R = await datiReverse();
+    const { D } = R;
     const destra = el("div");
     const elenco = el("div", { class: "reverse-elenco" });
     const cercaE = el("input", { type: "search", placeholder: "tabella / entità", "aria-label": "Cerca una tabella o un'entità" });
     const cercaA = el("input", { type: "search", placeholder: "attributo / colonna", "aria-label": "Cerca un attributo" });
     const contatore = el("p", { class: "tenue" });
-    const etichetta = c => el("span", { class: `cat cat-${c}` }, c);
     let entitaTrovate = new Set();
 
-    // le frasi con «tabella» diventano collegamenti alla scheda della tabella
-    const conLink = testo => String(testo).split(/(«[^»]+»)/).map(parte => {
-      const t = parte.startsWith("«") ? parte.slice(1, -1) : null;
-      return t && D.tabelle[t] ? el("a", { href: "#", onclick: e => { e.preventDefault(); apri(t); } }, `«${t}»`) : parte;
-    });
-
-    function filo() {
-      destra.replaceChildren(el("div", {},
-        el("div", { class: "sintesi" }, conLink(D.sintesi)),
-        el("h3", {}, "Il filo logico del database"),
-        el("p", { class: "tenue" }, "Area per area, nell'ordine in cui conviene leggerle: prima le tabelle da cui dipendono le altre " +
-          "(anagrafiche, codifiche), poi movimenti, dettagli e tabelle ponte. Clicca una tabella per la sua scheda."),
-        D.filo.map(a => el("div", { class: "pannello filo-area" },
-          el("h4", {}, `Area ${a.area}`), el("p", { class: "tenue" }, conLink(a.introduzione)),
-          el("ol", {}, a.passi.map(p => el("li", {},
-            el("a", { href: "#", onclick: e => { e.preventDefault(); apri(p.tabella); } }, el("b", {}, p.tabella)), " ",
-            etichetta(p.categoria), " ", conLink(p.frase))))))));
-    }
+    const filo = () => destra.replaceChildren(filoReverse(R, apri));
 
     function apri(t) {
-      const T = D.tabelle[t];
-      if (!T) return;
-      // mini-diagramma: la tabella, chi la usa e chi usa lei (non tutto il database)
-      const vicine = [t, ...T.padri.map(p => p.tabella), ...T.figli.map(f => f.tabella)];
-      const nomi = new Set(vicine);
-      const collegamenti = diag.collegamenti.filter(l => (l.da === t || l.a === t) && nomi.has(l.da) && nomi.has(l.a));
-      // solo le colonne che servono a capire i collegamenti: chiave primaria e colonne collegate (le altre sono nell'elenco sotto)
-      const usate = new Set(collegamenti.flatMap(l => [...l.colonne_da.map(c => `${l.da}.${c}`), ...l.colonne_a.map(c => `${l.a}.${c}`)]));
-      const tabelle = [...nomi].filter(n => tabelleDiag[n]).map(n => {
-        const T0 = tabelleDiag[n];
-        const colonne = T0.colonne.filter(c => c.pk || usate.has(`${n}.${c.nome}`));
-        const tolte = T0.colonne.length - colonne.length;
-        return { ...T0, gruppo: n === t ? "selezionata" : T0.gruppo,
-                 colonne: tolte ? [...colonne, { nome: `… altre ${tolte} colonne`, tipo: "", pk: false, fk: false, unique: false, not_null: false }] : colonne };
-      });
-      const cornice = el("div", { class: "er-cornice", style: "height: 380px" });
-      setTimeout(() => DiagrammaER.crea(cornice, { tabelle, collegamenti }, { tipi: true, selezionata: t,
-        onClic: n => { if (n && n !== t) apri(n); } }), 0);
-      const lista = (voci, titolo) => voci.length ? el("p", {}, el("b", {}, titolo), " ",
-        voci.map((v, i) => [i ? ", " : "", el("a", { href: "#", onclick: e => { e.preventDefault(); apri(v.tabella); } }, v.tabella),
-          ` (${v.colonne.join(", ")})`])) : null;
+      if (!D.tabelle[t]) return;
       destra.replaceChildren(el("div", {},
         el("div", { class: "riga-comandi" }, el("button", { onclick: filo }, "Torna al filo logico")),
-        el("h3", {}, t, " ", etichetta(T.categoria), T.centrale ? el("span", { class: "tenue" }, " tabella centrale") : null),
-        el("p", { class: "tenue" }, `${T.nome} · area ${T.area || "-"} · gruppo ${T.gruppo}`),
-        el("div", { class: "sintesi" }, conLink(T.descrizione)),
-        lista(T.padri, "Dipende da:"), lista(T.figli, "È usata da:"),
-        el("p", { class: "tenue" }, "Sopra le tabelle da cui dipende, sotto quelle che la usano (clicca una tabella per aprirla)."),
-        cornice,
-        griglia({ colonne: ["colonna", "tipo", "ruolo", "significato probabile"], righe: T.colonne.map(c => [c.colonna, c.tipo, c.ruolo, c.significato]) },
-          { titolo: "Colonne" })));
+        schedaReverse(R, t, apri)));
       elenco.querySelectorAll("a.scelta").forEach(a => a.classList.remove("scelta"));
       const voce = elenco.querySelector(`a[data-tabella="${CSS.escape(t)}"]`);
       if (voce) voce.classList.add("scelta");
@@ -680,7 +730,7 @@ const VISTE = {
         quante += voci.length;
         return voci.length ? el("div", {}, el("div", { class: "reverse-area" }, `${area.area} (${voci.length})`),
           voci.map(p => el("a", { href: "#", "data-tabella": p.tabella, title: D.tabelle[p.tabella].sintesi,
-            onclick: ev => { ev.preventDefault(); apri(p.tabella); } }, etichetta(p.categoria), " ", p.tabella))) : null;
+            onclick: ev => { ev.preventDefault(); apri(p.tabella); } }, etichettaCategoria(p.categoria), " ", p.tabella))) : null;
       }).filter(Boolean));
       contatore.textContent = e || a ? `${quante} tabelle su ${Object.keys(D.tabelle).length}` : "";
     }
@@ -697,7 +747,8 @@ const VISTE = {
     return [
       el("h2", {}, "Reverse engineering"),
       el("p", { class: "tenue" }, "Cosa rappresenta probabilmente ogni tabella e come si legge il database, ricavato da nomi, chiavi, " +
-        "collegamenti (dichiarati e trovati ad affidabilità alta) e colonne tipiche (date, importi, quantità, stato...). Sono ipotesi da confermare."),
+        "collegamenti (dichiarati e trovati ad affidabilità alta) e colonne tipiche (date, importi, quantità, stato...). Sono ipotesi da confermare. " +
+        "Le stesse schede si possono affiancare ai file nelle pagine File della cartella e File XML."),
       el("div", { class: "riga-comandi" },
         el("button", { class: "primario", onclick: () => scaricaBlob(new Blob([dizionarioDati(D, stato.origine)], { type: "text/html;charset=utf-8" }),
           "dizionario_dei_dati.html") }, "Scarica il dizionario dei dati (HTML)")),

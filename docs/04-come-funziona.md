@@ -113,6 +113,18 @@ Le tabelle si raggruppano per somiglianza dei nomi con un **clustering gerarchic
 
 Il **filo logico** ordina le tabelle di ogni area con un ordinamento topologico: prima quelle senza padri nell'area (a parità: tabelle centrali, poi anagrafiche, elenchi, movimenti, dettagli, ponti, storici), poi via via quelle che dipendono da tabelle già elencate; i cicli si sciolgono partendo dalla tabella più usata.
 
+## File della cartella e file XML
+
+`sqlfk/esplora.py` lavora in sola lettura sulla cartella caricata (o su quella scelta nella pagina):
+
+- l'**elenco** percorre le sottocartelle saltando quelle che non servono (`.git`, `node_modules`, `__pycache__`, ambienti virtuali), fino a 50.000 file;
+- ogni percorso chiesto dall'interfaccia è **relativo alla cartella** e viene controllato: non si può leggere niente fuori (`../`);
+- la **lettura** è a pezzi da 512 KB che finiscono a fine riga, così il pezzo dopo riparte da una riga intera; una riga più lunga di un pezzo si mostra lo stesso, divisa. La **codifica** si riconosce dai primi byte: BOM UTF-8 o UTF-16, UTF-16 senza BOM (uno zero ogni due byte), UTF-8 valido, altrimenti Windows-1252. Un file con byte zero (e non UTF-16) è **binario**;
+- la **ricerca nel contenuto** legge i file fino a 32 MB e restituisce, per ogni file, quante volte compare la parola e le prime 20 righe;
+- le **tabelle di un file `.sql`** vengono dall'analisi (file e riga di ogni `CREATE TABLE`); per i file non caricati l'interfaccia le cerca nel testo.
+
+I file **XML** si leggono interi (fino a 64 MB) e si analizzano nell'interfaccia con il parser XML del motore web, che non scarica risorse esterne. Le tabelle del database si riconoscono confrontando le **parole** (lettere, cifre e `_`) di nomi di elementi, nomi e valori degli attributi e testi brevi con i nomi delle tabelle; le **colonne** si cercano solo nell'elemento che nomina la tabella e nei suoi discendenti (fino a 300), così `id` o `nome` non si attribuiscono a caso.
+
 ## 8. Verifica con l'interfaccia del programma
 
 **Lettura (solo Windows, `sqlfk/finestre.py`).** Con **UI Automation** (la tecnologia dei lettori di schermo) si legge l'albero dei controlli della finestra scelta: per ogni controllo tipo (campo, menu a tendina, griglia, scheda...), nome, etichetta collegata, valore, voci del menu, intestazioni e righe delle griglie. Le password non si leggono. *Leggi tutte le schede* seleziona una dopo l'altra le schede e le voci degli alberi di navigazione (come un clic per spostarsi), mai pulsanti o comandi; i menu a tendina chiusi si aprono e richiudono solo per leggerne le voci. Ogni schermata diventa una **fotografia**: moduli con i campi, tabelle, coppie "etichetta: valore".

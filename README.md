@@ -28,6 +28,8 @@ Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e 
 
 Tutto si può usare da una **interfaccia grafica** dentro il notebook (ultima sezione).
 
+Nell'app ci sono anche le pagine **File della cartella** e **File XML**: tutti i file della cartella (sottocartelle comprese) da cercare per nome (`ordini.sql` mostra prima i file con lo stesso nome, `*.xml` è un modello) o per contenuto, da leggere a pezzi anche se enormi e da **affiancare** alla scheda di reverse engineering di una tabella, allo schema delle tabelle del file o al filo logico; i file XML si aprono come albero, con il riepilogo degli elementi e le tabelle e colonne del database che vi compaiono (per esempio nei mapping di un ORM). Dettagli in [docs/03-guida-all-uso.md](docs/03-guida-all-uso.md).
+
 Nell'app c'è anche un **diagramma delle tabelle** in stile DBeaver: ogni tabella con le sue colonne (PK, FK, UQ e tipi), le linee dalla colonna chiave esterna alla chiave puntata con la cardinalità, disposizione automatica, zoom, trascinamento, ricerca, filtro per gruppo ed esportazione in SVG.
 
 ## Diagnostica: errori e avvisi come un compilatore
@@ -240,6 +242,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/regole.py` | le regole di progettazione collegate ai codici della diagnostica |
 | `sqlfk/ontologia.py` | ontologia OWL e mapping R2RML |
 | `crea_eseguibili.sh`, `crea_eseguibili.bat` | creano gli eseguibili dell'app per Mac, Windows e Linux |
+| `sqlfk/esplora.py` | i file della cartella: elenco, ricerca per nome e nel contenuto, lettura a pezzi, file XML |
 | `sqlfk/descrizione.py` | reverse engineering: cosa rappresenta ogni tabella, filo logico, dizionario dei dati |
 | `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | la scelta delle chiavi esterne con clingo (ASP) |
 | `sqlfk/controllo.py` | il controllo dell'app |
@@ -251,6 +254,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/query.py` | il database SQLite in memoria costruito dai file e l'esecuzione delle query |
 | `sqlfk/modello.py` | modello relazionale ed esportazioni (testo, Mermaid, PlantUML, DOT, DBML, JSON) |
 | `sqlfk/web/` | l'interfaccia (HTML, CSS, JavaScript) |
+| `sqlfk/web/file.js` | le pagine File della cartella (esplora, ricerca, schemi affiancati) e File XML (albero, riepilogo, tabelle del database) |
 | `sqlfk/web/editor.js` | l'editor del database: entità, relazioni, schema logico e SQL |
 | `sqlfk/web/diagramma.js` | il diagramma delle tabelle; la disposizione usa dagre (licenza MIT, in `sqlfk/web/vendor/`) |
 | `app/` | l'app Electron, che avvia il server e mostra l'interfaccia |

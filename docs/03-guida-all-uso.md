@@ -6,7 +6,7 @@
 
 1. **Carica** i file `.sql` (barra in alto).
 2. Guarda la **Panoramica** e i **Problemi** (errori e avvisi).
-3. Leggi il **Reverse engineering** (cosa rappresenta ogni tabella, il filo logico), togli le entità che non interessano (**Togli entità**) e controlla **Aree e gruppi**.
+3. Leggi il **Reverse engineering** (cosa rappresenta ogni tabella, il filo logico); se nella cartella ci sono altri file (codice, configurazioni, mapping XML) guardali in **File della cartella** e **File XML** accanto alle schede delle tabelle; togli le entità che non interessano (**Togli entità**) e controlla **Aree e gruppi**.
 4. Controlla le **FK candidate** e falle scegliere a **clingo** (*Scelta con clingo*).
 5. Se hai il programma che usa il database: **Verifica con l'interfaccia** (su Windows), poi di nuovo *Scelta con clingo* con le conferme del programma.
 6. Guarda il risultato negli **Schemi grafici** e nel **Modello relazionale**.
@@ -46,6 +46,28 @@ Per capire un database che non conosci, senza perdersi nel groviglio delle linee
 - **Scarica il dizionario dei dati (HTML)**: un documento con la sintesi, il filo logico e la scheda di ogni tabella, con i collegamenti tra le schede.
 
 Le descrizioni sono **ipotesi** ricavate da nomi, chiavi, collegamenti e colonne tipiche: vanno confermate con chi conosce il programma, con i dati (*Query sui dati*) o con l'interfaccia del programma (*Verifica con l'interfaccia*).
+
+### File della cartella
+Tutti i file della cartella caricata, **sottocartelle comprese** (non solo i `.sql`), come in un esplora risorse: a sinistra l'albero delle cartelle, al centro il file aperto.
+
+- **Cerca per nome**: `ordini.sql` mostra prima i file **con lo stesso nome** (anche in sottocartelle diverse, per esempio una copia di backup), poi quelli che lo contengono nel nome; con `*` e `?` è un modello (`*.xml`, `ordini_*.sql`). Il menu sotto filtra per tipo (solo `.sql`, solo XML, gli altri).
+- **Cerca nel contenuto**: scrivi un testo (il nome di una tabella o di una colonna) e premi Invio: l'elenco dei file che lo contengono, quante volte e le righe; cliccando una riga si apre il file a quella riga. Se il campo del nome è pieno, si cerca solo nei file con quel nome.
+- **Il file aperto** si legge con le righe numerate e la ricerca nel file (Invio per la riga successiva). I file grandi si leggono **a pezzi** da 512 KB (*Carica il pezzo successivo*), quindi si aprono anche dump da decine di GB; la codifica (UTF-8, UTF-16 dei file di Windows, Windows-1252) si riconosce da sola; i file binari non si mostrano.
+- **Le tabelle del file**: per un `.sql` sopra il testo compaiono le tabelle che definisce, con la riga; cliccandone una si va alla riga e se ne apre la scheda accanto. Le tabelle che non sono nell'analisi (per esempio un `.sql` in una sottocartella, che non viene caricato) hanno il bordo tratteggiato.
+- **Affianca uno schema** (fino a due): accanto al file la **scheda della tabella** del reverse engineering, lo **schema delle tabelle del file** (le tabelle del file in evidenza, quelle collegate attenuate) o il **filo logico**. Gli schemi restano quando apri un altro file e si aggiornano con le sue tabelle.
+- **Scegli un'altra cartella** (o il suo percorso) per guardare un'altra cartella senza cambiare il database caricato; *Torna alla cartella caricata* per tornare indietro.
+
+I file si leggono soltanto: l'app non li modifica e non esce dalla cartella scelta.
+
+### File XML
+I file XML della cartella (anche `.xsd`, `.config`, `.xaml`, `.resx`, mapping `.hbm.xml`, `.edmx`...), oppure uno aperto dal computer, in quattro viste:
+
+- **Albero**: ogni elemento con i suoi attributi e il testo; si apre e chiude con un clic (i figli si disegnano solo quando servono, quindi vanno bene anche file grandi). La ricerca trova elementi, attributi, valori e testo e porta al punto nell'albero.
+- **Riepilogo**: elemento principale, numero di elementi, attributi, profondità, namespace e la tabella degli elementi (quante volte compaiono, con quali attributi, un percorso di esempio come `/hibernate-mapping/class[2]/property`).
+- **Tabelle del database**: le tabelle del database caricato che compaiono nel file (come nome di un elemento, di un attributo, come valore o come testo) e le loro **colonne** trovate vicino all'elemento che nomina la tabella, come nei mapping degli ORM (`<class table="fatture"><property column="importo"/>`). *mostra* porta al punto nell'albero, il nome apre la scheda della tabella accanto.
+- **Testo**: il file con le righe numerate. Se l'XML non è valido compare l'errore (riga e colonna) e il testo.
+
+Anche qui si possono **affiancare** la scheda di una tabella, lo schema delle tabelle trovate nel file o il filo logico.
 
 ### Aree e gruppi
 - **Albero area → sottogruppo → tabelle**: le aree sono insiemi di sottogruppi molto collegati tra loro; i sottogruppi sono tabelle con nomi simili. Ogni tabella ha la sua **categoria** (codifica, anagrafica, movimento, dettaglio, ponte, storico, dipendente, isolata) e le tabelle **centrali** sono segnate con un asterisco.
