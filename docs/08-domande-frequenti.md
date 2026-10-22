@@ -54,7 +54,7 @@ La verifica conta i valori degli `INSERT`/`COPY` dei file: con i soli `CREATE TA
 Allora i dati del dump hanno degli orfani (righe cancellate senza cancellare le figlie, vincolo disattivato, dump parziale): gli esempi di orfani dicono quali valori mancano.
 
 **L'app si può collegare direttamente al database (MySQL, SQL Server...)?**
-No: lavora sui file, senza rete. Il collegamento a un database attivo è stato valutato ma richiederebbe una connessione (anche solo locale) e va deciso a parte.
+No, per scelta: l'app lavora solo sui file e non usa la rete, nemmeno per collegarsi a un database sullo stesso computer. Per analizzare un database fai un dump in `.sql` (struttura, e se servono i dati) e caricalo.
 
 ## Query
 
