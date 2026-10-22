@@ -43,7 +43,14 @@ La diagnostica come un compilatore: ogni riga ha gravità (errore, avviso, info)
 - *Diagramma dell'area* apre il diagramma filtrato su quell'area; cliccando un sottogruppo si può toglierlo o rimetterlo nell'analisi.
 
 ### Schemi grafici
-- **Diagramma delle tabelle** (stile DBeaver): ogni tabella con le colonne (PK, FK, UQ, tipi) e le linee tra le colonne collegate, con cardinalità. *Solo FK dichiarate* / *FK dichiarate e trovate*, *anche affidabilità media*. Filtri per area o gruppo, colori per gruppo, area o categoria, ricerca per **nome di tabella o di colonna** (le colonne trovate si colorano di giallo). Le tabelle si trascinano (la disposizione si salva nel progetto); *Scarica SVG* / *Scarica PNG*.
+- **Diagramma delle tabelle** (stile DBeaver): ogni tabella con le colonne (PK, FK, UQ, tipi) e le linee tra le colonne collegate, con cardinalità. *Solo FK dichiarate* / *FK dichiarate e trovate*, *anche affidabilità media*. Le tabelle si trascinano (la disposizione si salva nel progetto); *Scarica SVG* / *Scarica PNG*.
+- **Disposizione**: *disposte per collegamenti* (le tabelle collegate vicine), oppure **raccolte per gruppi** o **raccolte per aree**: ogni gruppo (o area) è un riquadro separato con il suo nome e il numero di tabelle, i riquadri sono in ordine di nome e le tabelle senza gruppo stanno in fondo. Le linee tra gruppi diversi sono più leggere e tornano piene passando il mouse su una tabella. Dalla pagina *Aree e gruppi*: *Vedi i gruppi nel diagramma*, *Vedi le aree nel diagramma*.
+- **Cerca** (le altre tabelle spariscono):
+  - **tabella / entità**: restano solo le tabelle con quel nome, anche al plurale o con i sinonimi (`cliente` trova `clienti`, `tbl_cliente`...);
+  - **attributo / colonna**: restano solo le tabelle che hanno una colonna con quel nome, evidenziata in giallo;
+  - **insieme**: se più tabelle hanno lo stesso nome, l'attributo le distingue (per esempio `taxa` + `species` lascia solo le tabelle `taxa` che hanno la colonna `species`);
+  - *anche le collegate* aggiunge, più chiare, le tabelle collegate direttamente a quelle trovate; *Mostra tutte* toglie la ricerca.
+- Filtri per area o gruppo e colori per gruppo, area o categoria.
 - **Vista a grafo**: grafo interattivo (pyvis), anche in una finestra a parte.
 
 ### Modello relazionale
@@ -54,7 +61,7 @@ Scrivi un'entità (per esempio `piatto`) e vedi tutte le sue tabelle (riconosce 
 
 ### Query sui dati
 Un database SQLite costruito dai dati dei file (`INSERT`, `COPY ... FROM stdin`).
-- A sinistra le tabelle con il numero di righe e le colonne; si cercano per nome di **tabella o di colonna**. Clic sul nome: prime 100 righe; clic su una colonna: la inserisce nella query.
+- A sinistra le tabelle con il numero di righe e le colonne. Si cercano con due campi, come nel diagramma: **tabella / entità** e **attributo / colonna** (insieme restringono la ricerca; le colonne trovate sono in giallo). Clic sul nome: prime 100 righe; clic su una colonna: la inserisce nella query.
 - L'editor esegue con *Esegui* o Ctrl+Invio (Cmd+Invio sul Mac); se selezioni una parte, esegue solo quella. Le query si scrivono in SQLite **o nel dialetto dei file** (MySQL, PostgreSQL, SQL Server...): se serve vengono tradotte. I nomi con lo schema (`public.clienti`) funzionano.
 - Di ogni risultato si vedono le prime 1000 righe; *Scarica CSV completo* scarica tutte le righe, anche milioni. *Interrompi* ferma una query lunga.
 - `INSERT`, `UPDATE`, `DELETE`, `DROP` chiedono conferma e cambiano solo il database SQLite, mai i file. *Ricarica i dati dai file* annulla le modifiche.

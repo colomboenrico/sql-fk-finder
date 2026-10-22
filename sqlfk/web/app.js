@@ -329,7 +329,7 @@ $("#in-progetto").addEventListener("change", async e => {
     try { progetto = JSON.parse(await file.text()); } catch { throw new Error("Il file non è un progetto valido."); }
     stato = await api("/api/progetto", progetto);
     const l = progetto.layout || {};
-    layoutER = { iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
+    layoutER = { ...l, iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
     modelloEditor = progetto.editor && progetto.editor.entita ? progetto.editor : Editor.nuovoModello();
     selezioneEditor = null; vistaEditor = null;
     regoleCache = null;
@@ -755,7 +755,9 @@ const VISTE = {
     editor.value = testoQuery;
     editor.addEventListener("input", () => { testoQuery = editor.value; });
     const risultati = el("div");
-    const filtroTabelle = el("input", { type: "text", placeholder: "cerca una tabella o una colonna", "aria-label": "Cerca una tabella o una colonna" });
+    const filtroTabelle = el("input", { type: "search", placeholder: "tabella / entità", "aria-label": "Cerca una tabella o un'entità" });
+    const filtroAttributo = el("input", { type: "search", placeholder: "attributo / colonna", "aria-label": "Cerca un attributo" });
+    let entitaTrovate = new Set();
     const elenco = el("div", { class: "query-tabelle" });
     const conteggioRicerca = el("p", { class: "tenue" });
     const storico = el("select", { "aria-label": "Query recenti" });
@@ -770,12 +772,13 @@ const VISTE = {
     });
 
     function disegnaTabelle() {
-      // si cerca nel nome della tabella e nei nomi delle colonne (per esempio "name")
-      const f = filtroTabelle.value.trim().toLowerCase();
-      const colonneTrovate = t => f ? t.colonne.filter(c => c.toLowerCase().includes(f)) : [];
-      const scelte = info.tabelle.filter(t => !f || t.tabella.toLowerCase().includes(f) || colonneTrovate(t).length);
-      const perColonna = scelte.filter(t => colonneTrovate(t).length).length;
-      conteggioRicerca.textContent = f ? `${scelte.length} tabelle` + (perColonna ? `, ${perColonna} con una colonna che contiene "${f}"` : "") : "";
+      // restano solo le tabelle con quel nome (anche al plurale) e, se c'è, con quell'attributo
+      const f = filtroTabelle.value.trim().toLowerCase(), a = filtroAttributo.value.trim().toLowerCase();
+      const colonneTrovate = t => a ? t.colonne.filter(c => c.toLowerCase().includes(a)) : [];
+      const scelte = info.tabelle.filter(t => (!f || t.tabella.toLowerCase().includes(f) || entitaTrovate.has(t.tabella)) &&
+                                              (!a || colonneTrovate(t).length));
+      conteggioRicerca.textContent = f || a ? `${scelte.length} tabelle su ${info.tabelle.length}` +
+        (a ? `, con una colonna che contiene "${a}" (in giallo)` : "") : "";
       elenco.replaceChildren(...scelte.map(t => {
         const trovate = new Set(colonneTrovate(t));
         return el("details", { open: trovate.size ? "" : null },
@@ -796,7 +799,17 @@ const VISTE = {
           } }, c))));
       }));
     }
-    filtroTabelle.addEventListener("input", disegnaTabelle);
+    let attesa = null;
+    const filtra = () => {
+      clearTimeout(attesa);
+      attesa = setTimeout(async () => {
+        const e = filtroTabelle.value.trim();
+        entitaTrovate = new Set(e.length >= 3 ? (await api(`/api/cerca_entita?parola=${encodeURIComponent(e)}`).catch(() => ({ tabelle: [] }))).tabelle : []);
+        disegnaTabelle();
+      }, 200);
+    };
+    filtroTabelle.addEventListener("input", filtra);
+    filtroAttributo.addEventListener("input", filtra);
 
     function mostraRisultati(esito, testo) {
       if (esito.serve_conferma) {
@@ -903,7 +916,7 @@ const VISTE = {
         righe: info.problemi.map(p => [p.file, p.riga, p.problema, p.istruzione]) },
         { titolo: `Istruzioni di dati non caricate (${info.n_problemi > info.problemi.length ? `${info.n_problemi}, mostrate le prime ${info.problemi.length}` : info.problemi.length})` }) : null,
       el("div", { class: "query-griglia" },
-        el("div", { class: "pannello query-laterale" }, el("h3", {}, "Tabelle"), filtroTabelle, conteggioRicerca,
+        el("div", { class: "pannello query-laterale" }, el("h3", {}, "Tabelle"), filtroTabelle, filtroAttributo, conteggioRicerca,
           el("p", { class: "tenue" }, "Nome: prime 100 righe. Freccia: colonne (clic per inserirle)."), elenco),
         el("div", {},
           editor,
@@ -1266,6 +1279,11 @@ const VISTE = {
         "(dichiarate e trovate ad affidabilità alta): si trovano con un rilevamento di comunità, che mette insieme i sottogruppi con molti " +
         "collegamenti tra loro e pochi con il resto. Le tabelle centrali, puntate da moltissime altre, nella divisione pesano poco, " +
         "altrimenti unirebbero tutto in un'unica area. La categoria di ogni tabella è ricavata dalla struttura ed è da verificare."),
+      el("div", { class: "riga-comandi" },
+        el("button", { class: "primario", onclick: () => { raggruppaER = "gruppo"; filtroER = ""; mostraSchema("collegamenti", "er"); } },
+          "Vedi i gruppi nel diagramma"),
+        el("button", { onclick: () => { raggruppaER = "area"; filtroER = ""; mostraSchema("collegamenti", "er"); } }, "Vedi le aree nel diagramma"),
+        el("span", { class: "tenue" }, "ogni gruppo (o area) in un riquadro separato, in ordine di nome")),
       albero,
       dettaglio,
       griglia(aree.collegamenti_aree, { titolo: "Collegamenti tra aree" }),
@@ -1688,6 +1706,8 @@ function alberoAree(aree, alClicSottogruppo) {
 }
 
 let filtroER = "";             // "a:area" o "g:gruppo" scelto nel diagramma
+let raggruppaER = "";          // disposizione del diagramma: "" (per collegamenti), "gruppo" o "area"
+let cercaER = { entita: "", attributo: "", collegate: false };   // ricerca che filtra il diagramma
 let coloraER = "gruppo";       // colore delle tabelle: per gruppo o per area
 let ultimoSchema = "iniziale";
 let vistaSchema = "er";
@@ -1718,14 +1738,33 @@ async function contenutoER(quale) {
     el("option", { value: "gruppo" }, "colore per gruppo"), el("option", { value: "area" }, "colore per area"),
     el("option", { value: "categoria" }, "colore per categoria"));
   sceltaColore.value = coloraER;
-  const ricerca = el("input", { type: "text", placeholder: "cerca una tabella o una colonna", "aria-label": "Cerca una tabella o una colonna",
-                                 title: "Nome di una tabella o di una colonna (per esempio name), poi Invio" });
+  const sceltaDisposizione = el("select", { "aria-label": "Disposizione", title: "Come disporre le tabelle" },
+    el("option", { value: "" }, "disposte per collegamenti"), el("option", { value: "gruppo" }, "raccolte per gruppi"),
+    el("option", { value: "area" }, "raccolte per aree"));
+  sceltaDisposizione.value = raggruppaER;
+  const cercaEntita = el("input", { type: "search", placeholder: "tabella / entità", "aria-label": "Cerca una tabella o un'entità",
+    title: "Restano solo le tabelle con questo nome (anche al plurale o con i sinonimi)", value: cercaER.entita });
+  const cercaAttributo = el("input", { type: "search", placeholder: "attributo / colonna", "aria-label": "Cerca un attributo",
+    title: "Restano solo le tabelle che hanno una colonna con questo nome; le colonne trovate sono in giallo", value: cercaER.attributo });
+  const conCollegate = el("input", { type: "checkbox", checked: cercaER.collegate });
   const conTipi = el("input", { type: "checkbox", checked: true });
   const medie = el("input", { type: "checkbox", checked: erMedie && quale === "collegamenti", title: "Aggiunge le FK trovate ad affidabilità media (passa a FK dichiarate e trovate)" });
   let diagramma = null;
 
+  // ricerca: per entità (nome della tabella, plurali e sinonimi) e per attributo (nome di una colonna)
+  let entitaTrovate = new Set(), ultimaEntita = null;
+  async function aggiornaEntita() {
+    const e = cercaEntita.value.trim();
+    if (e === ultimaEntita) return;
+    ultimaEntita = e;
+    entitaTrovate = new Set(e.length >= 3 ? (await api(`/api/cerca_entita?parola=${encodeURIComponent(e)}`).catch(() => ({ tabelle: [] }))).tabelle : []);
+  }
+  const normale = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, "");
+
   function disegna() {
     let tabelle = dati.tabelle, collegamenti = dati.collegamenti;
+    let attenuate = null, trovateInfo = "";
+    const e = normale(cercaEntita.value), a = normale(cercaAttributo.value);
     if (sceltaGruppo.value) {
       // l'area o il gruppo scelto più le tabelle direttamente collegate
       const [genere, valore] = [sceltaGruppo.value.slice(0, 1), sceltaGruppo.value.slice(2)];
@@ -1734,34 +1773,70 @@ async function contenutoER(quale) {
       tabelle = tabelle.filter(t => nomi.has(t.nome));
       collegamenti = collegamenti.filter(l => nomi.has(l.da) && nomi.has(l.a));
     }
+    if (e || a) {
+      // restano solo le tabelle cercate (con le collegate, se richiesto, più chiare); le altre spariscono
+      const trovate = new Set(tabelle.filter(t =>
+        (!e || normale(t.nome).includes(e) || entitaTrovate.has(t.nome)) &&
+        (!a || t.colonne.some(c => normale(c.nome).includes(a)))).map(t => t.nome));
+      const nomi = new Set(trovate);
+      if (conCollegate.checked) collegamenti.forEach(l => {
+        if (trovate.has(l.da)) nomi.add(l.a);
+        if (trovate.has(l.a)) nomi.add(l.da);
+      });
+      attenuate = new Set([...nomi].filter(n => !trovate.has(n)));
+      const colonneTrovate = a ? tabelle.filter(t => trovate.has(t.nome)).reduce((n, t) => n + t.colonne.filter(c => normale(c.nome).includes(a)).length, 0) : 0;
+      trovateInfo = `trovate ${trovate.size} tabelle su ${tabelle.length}` + (a ? `, ${colonneTrovate} colonne in giallo` : "") +
+        (attenuate.size ? ` (più ${attenuate.size} collegate, più chiare)` : "");
+      tabelle = tabelle.filter(t => nomi.has(t.nome));
+      collegamenti = collegamenti.filter(l => nomi.has(l.da) && nomi.has(l.a));
+      if (!trovate.size) {
+        cornice.replaceChildren(el("div", { class: "messaggio" },
+          `Nessuna tabella ${e ? `con il nome "${cercaEntita.value.trim()}"` : ""}${e && a ? " e " : ""}${a ? `con un attributo "${cercaAttributo.value.trim()}"` : ""}.`));
+        info.textContent = "";
+        diagramma = null;
+        return;
+      }
+    }
     if (collegamenti.length > 3000) {
       cornice.replaceChildren(el("div", { class: "messaggio" },
         `${collegamenti.length} collegamenti sono troppi per un diagramma leggibile: scegli un gruppo o togli qualche entità.`));
       diagramma = null;
       return;
     }
+    // le posizioni spostate a mano valgono per la vista completa, con la sua disposizione
+    const chiave = quale + (raggruppaER ? `:${raggruppaER}` : "");
+    layoutER[chiave] ||= {};
+    const filtrato = !!(e || a);
     diagramma = DiagrammaER.crea(cornice, { tabelle, collegamenti }, {
       tipi: conTipi.checked,
-      coloraPer: coloraER,
-      posizioni: layoutER[quale],
-      onSposta: (nome, x, y) => { layoutER[quale][nome] = [x, y]; },
+      coloraPer: raggruppaER || coloraER,
+      raggruppa: raggruppaER || null,
+      colonne: cercaAttributo.value.trim(),
+      attenuate,
+      posizioni: filtrato ? {} : layoutER[chiave],
+      onSposta: (nome, x, y) => { if (!filtrato) layoutER[chiave][nome] = [x, y]; },
     });
-    info.textContent = `${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti`;
+    info.textContent = trovateInfo || (`${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti` +
+      (raggruppaER ? `, ${diagramma.numeri.gruppi} ${raggruppaER === "area" ? "aree" : "gruppi"}` : ""));
   }
 
   sceltaGruppo.addEventListener("change", () => { filtroER = sceltaGruppo.value; disegna(); });
   sceltaColore.addEventListener("change", () => { coloraER = sceltaColore.value; disegna(); });
   conTipi.addEventListener("change", disegna);
   medie.addEventListener("change", () => { erMedie = medie.checked; mostraSchema(medie.checked ? "collegamenti" : quale, "er"); });
-  ricerca.addEventListener("keydown", e => {
-    if (e.key === "Enter" && diagramma) {
-      const n = diagramma.cerca(ricerca.value);
-      const r = diagramma.ultimaRicerca();
-      if (!ricerca.value.trim()) info.textContent = `${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti`;
-      else if (!n) avviso(`Nessuna tabella o colonna contiene "${ricerca.value}".`, true);
-      else info.textContent = `trovate ${n} tabelle` + (r.colonne ? ` (${r.colonne} colonne in giallo)` : "");
-    }
-  });
+  sceltaDisposizione.addEventListener("change", () => { raggruppaER = sceltaDisposizione.value; disegna(); });
+  let attesaRicerca = null;
+  const cerca = () => {
+    clearTimeout(attesaRicerca);
+    attesaRicerca = setTimeout(async () => {
+      cercaER = { entita: cercaEntita.value, attributo: cercaAttributo.value, collegate: conCollegate.checked };
+      await aggiornaEntita();
+      disegna();
+    }, 250);
+  };
+  cercaEntita.addEventListener("input", cerca);
+  cercaAttributo.addEventListener("input", cerca);
+  conCollegate.addEventListener("change", cerca);
   const scarica = () => {
     if (!diagramma) return;
     const url = URL.createObjectURL(new Blob([diagramma.esporta()], { type: "image/svg+xml" }));
@@ -1769,7 +1844,7 @@ async function contenutoER(quale) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
   const scheda = (q, testo) => el("button", { class: q === quale ? "primario" : null, onclick: () => mostraSchema(q, "er") }, testo);
-  setTimeout(disegna, 0);
+  setTimeout(async () => { await aggiornaEntita(); disegna(); }, 0);
   return [
     el("h2", {}, "Diagramma delle tabelle"),
     el("div", { class: "riga-comandi" },
@@ -1777,13 +1852,16 @@ async function contenutoER(quale) {
       scheda("collegamenti", "FK dichiarate e trovate"),
       el("label", {}, medie, "anche affidabilità media"),
       el("button", { onclick: () => mostraSchema(quale, "grafo") }, "Vista a grafo")),
+    el("div", { class: "riga-comandi ricerca-er" },
+      el("b", {}, "Cerca:"), cercaEntita, cercaAttributo, el("label", {}, conCollegate, "anche le collegate"),
+      el("button", { onclick: () => { cercaEntita.value = ""; cercaAttributo.value = ""; cerca(); } }, "Mostra tutte")),
     el("div", { class: "riga-comandi" },
-      sceltaGruppo, sceltaColore, ricerca,
+      sceltaDisposizione, sceltaGruppo, sceltaColore,
       el("label", {}, conTipi, "mostra i tipi"),
       el("button", { onclick: () => diagramma && diagramma.zoom(1.25), title: "Ingrandisci" }, "+"),
       el("button", { onclick: () => diagramma && diagramma.zoom(0.8), title: "Rimpicciolisci" }, "-"),
       el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
-      el("button", { title: "Dimentica gli spostamenti fatti a mano", onclick: () => { layoutER[quale] = {}; disegna(); } }, "Disposizione automatica"),
+      el("button", { title: "Dimentica gli spostamenti fatti a mano", onclick: () => { layoutER[quale + (raggruppaER ? `:${raggruppaER}` : "")] = {}; disegna(); } }, "Disposizione automatica"),
       el("button", { onclick: scarica }, "Scarica SVG"),
       el("button", { onclick: () => diagramma && conAttesa(async () => scaricaBlob(await diagramma.png(), `diagramma_${quale}.png`)) }, "Scarica PNG"),
       info),

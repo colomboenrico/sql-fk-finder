@@ -97,6 +97,58 @@ const DiagrammaER = (() => {
     }
   }
 
+  /**
+   * Disposizione per gruppi (o per aree): le tabelle di ogni gruppo si dispongono insieme (come sopra) e i
+   * gruppi, ordinati per nome, si affiancano a righe come riquadri separati; le tabelle senza gruppo in fondo.
+   */
+  const CORNICE = 28, TITOLO_CORNICE = 30, SENZA_GRUPPO = "altre tabelle";
+  function disponiPerGruppi(tabelle, collegamenti, chiave, proporzione) {
+    const gruppi = new Map();
+    for (const t of tabelle) {
+      const g = chiave(t) || SENZA_GRUPPO;
+      if (!gruppi.has(g)) gruppi.set(g, []);
+      gruppi.get(g).push(t);
+    }
+    const inFondo = g => g === SENZA_GRUPPO || g === "senza collegamenti";
+    const nomi = [...gruppi.keys()].sort((a, b) => inFondo(a) - inFondo(b) || a.localeCompare(b, "it", { numeric: true }));
+    const blocchi = nomi.map(g => {
+      const membri = gruppi.get(g).sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+      const insieme = new Set(membri.map(t => t.nome));
+      const interni = collegamenti.filter(l => insieme.has(l.da) && insieme.has(l.a));
+      disponi(membri, interni, 1.4);              // posizioni relative dentro il gruppo
+      const x1 = Math.max(...membri.map(t => t.x + t.larghezza)), y1 = Math.max(...membri.map(t => t.y + t.altezza));
+      return { g, membri, larghezza: x1 + 2 * CORNICE, altezza: y1 + 2 * CORNICE + TITOLO_CORNICE };
+    });
+    // righe nell'ordine dei nomi; la larghezza delle righe si sceglie provandone diverse, per avere
+    // la forma più vicina a quella dello schermo (anche con gruppi molto alti, come tabelle con tante colonne)
+    const SPAZIO = 40;
+    const righe = massimo => {
+      let x = 0, y = 0, altezzaRiga = 0, larghezza = 0;
+      const posti = blocchi.map(b => {
+        if (x > 0 && x + b.larghezza > massimo) { x = 0; y += altezzaRiga + SPAZIO; altezzaRiga = 0; }
+        const p = [x, y];
+        x += b.larghezza + SPAZIO;
+        larghezza = Math.max(larghezza, x - SPAZIO);
+        altezzaRiga = Math.max(altezzaRiga, b.altezza);
+        return p;
+      });
+      return { posti, larghezza, altezza: y + altezzaRiga };
+    };
+    const minimo = Math.max(...blocchi.map(b => b.larghezza));
+    const totale = blocchi.reduce((s, b) => s + b.larghezza + SPAZIO, 0);
+    let migliore = null;
+    for (let i = 0; i <= 40; i++) {
+      const prova = righe(minimo * Math.pow(Math.max(1, totale / minimo), i / 40));
+      const scarto = Math.abs(Math.log((prova.larghezza / prova.altezza) / proporzione));
+      if (!migliore || scarto < migliore.scarto) migliore = { ...prova, scarto };
+    }
+    blocchi.forEach((b, i) => {
+      const [x, y] = migliore.posti[i];
+      b.membri.forEach(t => { t.x += x + CORNICE; t.y += y + CORNICE + TITOLO_CORNICE; });
+    });
+    return nomi;
+  }
+
   /** Punto di aggancio della colonna sul lato sinistro o destro del riquadro. */
   function aggancio(t, colonne, lato) {
     const nomi = new Set(colonne.map(norm));
@@ -125,7 +177,10 @@ const DiagrammaER = (() => {
     const perNome = Object.fromEntries(tabelle.map(t => [t.nome, t]));
     const collegamenti = dati.collegamenti.filter(l => perNome[l.da] && perNome[l.a]);
     const riquadro = contenitore.getBoundingClientRect();
-    disponi(tabelle, collegamenti, riquadro.width > 0 && riquadro.height > 0 ? riquadro.width / riquadro.height : 1.6);
+    const proporzione = riquadro.width > 0 && riquadro.height > 0 ? riquadro.width / riquadro.height : 1.6;
+    const chiaveGruppo = opzioni.raggruppa ? (t => t[opzioni.raggruppa]) : null;
+    if (chiaveGruppo) disponiPerGruppi(tabelle, collegamenti, chiaveGruppo, proporzione);
+    else disponi(tabelle, collegamenti, proporzione);
     // posizioni salvate (tabelle spostate a mano, anche da un progetto): hanno la precedenza sulla disposizione automatica
     const salvate = opzioni.posizioni || {};
     tabelle.forEach(t => {
@@ -136,8 +191,8 @@ const DiagrammaER = (() => {
     // ---------------------------------------------------------- struttura SVG
     const svg = svgEl("svg", { class: "er-svg", width: "100%", height: "100%" });
     const mondo = svgEl("g");
-    const strLinee = svgEl("g"), strTabelle = svgEl("g"), strEtichette = svgEl("g");
-    mondo.append(strLinee, strTabelle, strEtichette);
+    const strCornici = svgEl("g"), strLinee = svgEl("g"), strTabelle = svgEl("g"), strEtichette = svgEl("g");
+    mondo.append(strCornici, strLinee, strTabelle, strEtichette);
     svg.append(mondo);
     contenitore.replaceChildren(svg);
 
@@ -147,7 +202,7 @@ const DiagrammaER = (() => {
     // ---------------------------------------------------------- tabelle
     for (const t of tabelle) {
       const colore = coloreGruppo(t[opzioni.coloraPer || "gruppo"] || t.gruppo);
-      const g = svgEl("g", { class: "er-tabella", "data-nome": t.nome });
+      const g = svgEl("g", { class: "er-tabella" + (opzioni.attenuate && opzioni.attenuate.has(t.nome) ? " er-attenuata" : ""), "data-nome": t.nome });
       const scelta = opzioni.selezionata === t.nome;
       g.append(svgEl("rect", { x: 0, y: 0, width: t.larghezza, height: t.altezza, rx: 5, fill: "#ffffff",
                                stroke: scelta ? "#ef6c00" : "#b8c0cc", "stroke-width": scelta ? 3 : 1 }));
@@ -162,7 +217,8 @@ const DiagrammaER = (() => {
         const y = TESTA + i * RIGA;
         if (i % 2) g.append(svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#f6f8fa" }));
         // sfondo per le colonne trovate con la ricerca
-        c.trovata = svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#ffe58a", visibility: "hidden" });
+        const daEvidenziare = opzioni.colonne && norm(opzioni.colonne) && norm(c.nome).includes(norm(opzioni.colonne));
+        c.trovata = svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#ffe58a", visibility: daEvidenziare ? "visible" : "hidden" });
         g.append(c.trovata);
         const s = sigle(c);
         const sigla = svgEl("text", { x: 8, y: y + 14, "font-size": 9.5, "font-weight": 700,
@@ -192,8 +248,10 @@ const DiagrammaER = (() => {
     // ---------------------------------------------------------- collegamenti
     for (const l of collegamenti) {
       const stile = STILE_LINEA[l.tipo] || STILE_LINEA.alta;
+      // nella vista per gruppi le linee tra gruppi diversi sono più leggere (tornano piene al passaggio del mouse)
+      const traGruppi = chiaveGruppo && (chiaveGruppo(perNome[l.da]) || SENZA_GRUPPO) !== (chiaveGruppo(perNome[l.a]) || SENZA_GRUPPO);
       l.linea = svgEl("path", { fill: "none", stroke: stile.colore, "stroke-width": stile.spessore,
-                                "stroke-dasharray": stile.tratteggio, class: "er-linea" });
+                                "stroke-dasharray": stile.tratteggio, class: "er-linea" + (traGruppi ? " er-tra-gruppi" : "") });
       const titolo = svgEl("title");
       titolo.textContent = `${l.da}(${l.colonne_da.join(", ")}) → ${l.a}(${l.colonne_a.join(", ")})\n` +
         `relazione ${l.relazione}, ${l.obbligatoria ? "obbligatoria" : "facoltativa"}\n` +
@@ -223,6 +281,31 @@ const DiagrammaER = (() => {
     function posiziona(t) { t.nodo.setAttribute("transform", `translate(${t.x} ${t.y})`); }
     tabelle.forEach(posiziona);
     aggiornaLinee();
+
+    // riquadri dei gruppi: calcolati dalle posizioni delle tabelle (seguono gli spostamenti a mano)
+    const cornici = new Map();
+    if (chiaveGruppo) {
+      const membri = new Map();
+      tabelle.forEach(t => { const g = chiaveGruppo(t) || SENZA_GRUPPO; if (!membri.has(g)) membri.set(g, []); membri.get(g).push(t); });
+      for (const [g, elenco] of membri) {
+        const colore = g === SENZA_GRUPPO ? "#8a94a3" : coloreGruppo(g);
+        const rett = svgEl("rect", { rx: 10, fill: colore, "fill-opacity": 0.06, stroke: colore, "stroke-width": 1.5, "stroke-opacity": 0.6 });
+        const titolo = svgEl("text", { "font-size": 15, "font-weight": 700, fill: colore, "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
+        titolo.textContent = `${g}  ·  ${elenco.length} ${elenco.length === 1 ? "tabella" : "tabelle"}`;
+        strCornici.append(rett, titolo);
+        cornici.set(g, { elenco, rett, titolo });
+      }
+    }
+    function aggiornaCornice(g) {
+      const c = cornici.get(g);
+      if (!c) return;
+      const x0 = Math.min(...c.elenco.map(t => t.x)) - CORNICE, y0 = Math.min(...c.elenco.map(t => t.y)) - CORNICE - TITOLO_CORNICE;
+      const x1 = Math.max(...c.elenco.map(t => t.x + t.larghezza)) + CORNICE, y1 = Math.max(...c.elenco.map(t => t.y + t.altezza)) + CORNICE;
+      c.rett.setAttribute("x", x0); c.rett.setAttribute("y", y0);
+      c.rett.setAttribute("width", x1 - x0); c.rett.setAttribute("height", y1 - y0);
+      c.titolo.setAttribute("x", x0 + 14); c.titolo.setAttribute("y", y0 + 22);
+    }
+    cornici.forEach((_, g) => aggiornaCornice(g));
 
     // ---------------------------------------------------------- evidenziazione al passaggio del mouse
     function evidenzia(nome) {
@@ -265,6 +348,7 @@ const DiagrammaER = (() => {
         trascina.t.x = p.x - trascina.dx; trascina.t.y = p.y - trascina.dy;
         posiziona(trascina.t);
         aggiornaLinee(trascina.t.nome);
+        if (chiaveGruppo) aggiornaCornice(chiaveGruppo(trascina.t) || SENZA_GRUPPO);
       } else {
         vista.x = e.clientX - trascina.x; vista.y = e.clientY - trascina.y;
         applica();
@@ -300,8 +384,9 @@ const DiagrammaER = (() => {
     }
 
     function limiti(elenco = tabelle) {
-      const x0 = Math.min(...elenco.map(t => t.x)), y0 = Math.min(...elenco.map(t => t.y));
-      const x1 = Math.max(...elenco.map(t => t.x + t.larghezza)), y1 = Math.max(...elenco.map(t => t.y + t.altezza));
+      const bordo = chiaveGruppo ? CORNICE : 0, sopra = chiaveGruppo ? CORNICE + TITOLO_CORNICE : 0;
+      const x0 = Math.min(...elenco.map(t => t.x)) - bordo, y0 = Math.min(...elenco.map(t => t.y)) - sopra;
+      const x1 = Math.max(...elenco.map(t => t.x + t.larghezza)) + bordo, y1 = Math.max(...elenco.map(t => t.y + t.altezza)) + bordo;
       return { x0, y0, x1, y1 };
     }
 
@@ -356,7 +441,7 @@ const DiagrammaER = (() => {
       const copia = svg.cloneNode(true);
       copia.classList.remove("er-focus");
       copia.querySelectorAll(".er-attiva").forEach(n => n.classList.remove("er-attiva"));
-      copia.querySelectorAll('rect[fill="#ffe58a"]').forEach(n => n.setAttribute("visibility", "hidden"));
+      if (!opzioni.colonne) copia.querySelectorAll('rect[fill="#ffe58a"]').forEach(n => n.setAttribute("visibility", "hidden"));
       copia.querySelector("g").removeAttribute("transform");
       copia.setAttribute("xmlns", NS);
       copia.setAttribute("viewBox", `${b.x0 - 20} ${b.y0 - 20} ${b.x1 - b.x0 + 40} ${b.y1 - b.y0 + 40}`);
@@ -393,7 +478,7 @@ const DiagrammaER = (() => {
     /** Posizioni attuali di tutte le tabelle: nome -> [x, y]. */
     const posizioni = () => Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y)]]));
     return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, ultimaRicerca: () => ({ ...ricerca }), esporta, png, posizioni, vista: () => ({ ...vista }),
-             numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length } };
+             numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length, gruppi: cornici.size } };
   }
 
   return { crea, coloreGruppo };
