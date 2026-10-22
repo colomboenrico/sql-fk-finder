@@ -47,6 +47,15 @@ Aggiungi le sue colonne alle **colonne generiche** o toglila con *Togli entità*
 **Le mie tabelle hanno nomi in un'altra lingua o abbreviati.**
 Usa i **sinonimi** nelle Impostazioni (`cliente = customer = cli`).
 
+**Le chiavi risultano tutte "senza dati".**
+La verifica conta i valori degli `INSERT`/`COPY` dei file: con i soli `CREATE TABLE` non c'è niente da contare. Serve un dump con i dati.
+
+**Una chiave "probabilmente sbagliata" è dichiarata nel database.**
+Allora i dati del dump hanno degli orfani (righe cancellate senza cancellare le figlie, vincolo disattivato, dump parziale): gli esempi di orfani dicono quali valori mancano.
+
+**L'app si può collegare direttamente al database (MySQL, SQL Server...)?**
+No: lavora sui file, senza rete. Il collegamento a un database attivo è stato valutato ma richiederebbe una connessione (anche solo locale) e va deciso a parte.
+
 ## Query
 
 **La costruzione del database delle query è lenta.**

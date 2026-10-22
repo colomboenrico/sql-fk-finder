@@ -81,6 +81,24 @@ def controlla():
                       "nessun accesso fuori dalla cartella") if ok else ("errore", f"nomi {nomi}, pezzo {pezzo['fine']}, fuori {fuori}")
     voce("File della cartella", esplora_cartella)
 
+    def estensioni():
+        from . import analisi as A, estensioni as EXT, query as QY
+        df, pk, fk, errori = A.leggi_cartella(ESEMPI)
+        R = A.analizza(df, pk, fk_dichiarate=fk, errori=errori)
+        compile(EXT.generate_sqlalchemy_models(R), "modelli_sqlalchemy.py", "exec")
+        script = EXT.generate_migration_script(R)
+        db = QY.da_cartella(ESEMPI)
+        chiavi = EXT.check_inclusion(db, R)
+        profilo = EXT.profile_data(db, R)
+        db.chiudi()
+        confermata = any(r["table"] == "comuni" and r["→ table"] == "province" and r["verdict"] == EXT.CONFIRMED
+                         for r in chiavi.to_dict("records"))
+        crud = EXT.analyze_crud("CREATE VIEW v AS SELECT * FROM comuni JOIN province USING (id_provincia);")
+        ok = confermata and "1NF" in script and not profilo.empty and set(crud["table"]) == {"comuni", "province"}
+        return ("ok", "modelli SQLAlchemy, script di normalizzazione, chiavi verificate sui dati (comuni → province confermata), "
+                      "profilo e matrice CRUD") if ok else ("errore", f"confermata {confermata}, CRUD {sorted(set(crud['table']))}")
+    voce("Estensioni", estensioni)
+
     def finestre():
         from . import finestre as FIN
         if not FIN.SU_WINDOWS:

@@ -32,6 +32,7 @@ from . import asp as ASP
 from . import controllo as CTRL
 from . import descrizione as DESCR
 from . import esplora as ESP
+from . import estensioni as EXT
 from . import finestre as FIN
 from . import interfaccia as UI
 from . import lettura as L
@@ -62,6 +63,7 @@ class Lavoro:
     def __init__(self, tipo, descrizione):
         self.tipo, self.descrizione = tipo, descrizione
         self.fase, self.letti, self.totale, self.file = "inizio", 0, 0, ""
+        self.unita = "byte"               # "passi" quando si contano tabelle o collegamenti
         self.inizio, self.errore, self.finito = time.time(), None, False
         self.fermo = threading.Event()
 
@@ -77,7 +79,7 @@ class Lavoro:
         return {"tipo": self.tipo, "descrizione": self.descrizione, "fase": self.fase, "letti": self.letti,
                 "totale": self.totale, "file": self.file, "percentuale": round(100 * quota, 1),
                 "secondi": round(trascorsi), "restano": round(resta) if resta is not None else None,
-                "errore": self.errore, "finito": self.finito}
+                "errore": self.errore, "finito": self.finito, "unita": self.unita}
 
 
 class Sessione:
@@ -97,6 +99,8 @@ class Sessione:
         self.lettura_finestre = None      # lettura delle finestre di Windows (sqlfk.finestre)
         self.ultimo_asp = None            # l'ultima scelta fatta con clingo
         self.radice_file = None           # cartella scelta nella scheda File (se no, quella caricata)
+        self.verifica = None              # l'ultima verifica con i dati (chiavi, collegamenti dai valori, profilo)
+        self.crud = None                  # (R, analisi CRUD di viste e procedure)
         self.porta = None
 
     # ------------------------------------------------------------ lavori in background
@@ -150,6 +154,7 @@ class Sessione:
             raise Errore("Nei file non c'è nessun CREATE TABLE.")
         if origine != self.origine:
             self.radice_file = None       # file nuovi: la pagina File torna alla cartella caricata
+        self.verifica = self.crud = None
         self.file_sql, self.origine = file_sql, origine
         self.chiudi_database()
         self.df_schema, self.pk, self.fk, self.errori = df, pk, fk, errori
@@ -335,6 +340,62 @@ class Sessione:
         return {"riepilogo": tabella(X.riepilogo), "scelte": tabella(X.scelte), "scartate": tabella(X.scartate),
                 "differenze": tabella(X.differenze), "programma": X.programma, "ottimo": X.ottimo,
                 "con_interfaccia": V is not None, "schermate": len(pagine)}
+
+    # ------------------------------------------------------------ estensioni (sqlfk.estensioni)
+    def verifica_dati(self, medie=True):
+        """In background: chiavi esterne controllate sui dati, collegamenti trovati dai valori, profilo delle colonne."""
+        db = self.database()
+        R = self.R
+
+        def lavoro(lav):
+            lav.unita = "passi"
+            lav.fase = "chiavi esterne: valori presenti nella tabella collegata"
+            chiavi = EXT.check_inclusion(db, R, medie, progress=lav.avanza)
+            lav.fase = "collegamenti dai valori"
+            valori = EXT.find_value_links(db, R, progress=lav.avanza)
+            lav.fase = "profilo delle colonne"
+            profilo = EXT.profile_data(db, R, progress=lav.avanza)
+            with self.lock:
+                if self.R is R:
+                    self.verifica = {"R": R, "chiavi": chiavi, "valori": valori, "profilo": profilo, "medie": medie,
+                                     "secondi": round(time.time() - lav.inizio, 1)}
+        return self.avvia("verifica", "verifica delle chiavi con i dati", lavoro)
+
+    def risultato_verifica(self):
+        self.richiedi_dati()
+        V = self.verifica
+        if V is None:
+            return {"pronta": False}
+        return {"pronta": True, "superata": V["R"] is not self.R, "medie": V["medie"], "secondi": V["secondi"],
+                "chiavi": tabella(V["chiavi"]), "valori": tabella(V["valori"]), "profilo": tabella(V["profilo"])}
+
+    def valori_colonna(self, tabella_, colonna, quanti=50):
+        """I valori più frequenti di una colonna (per capire i codici di un possibile ENUM)."""
+        db = self.database()
+        t = db.tabella_di(tabella_)
+        colonne = [r[1] for r in db.conn.execute(f"PRAGMA table_info({QY.q(t)})")] if t else []
+        if colonna not in colonne:
+            raise Errore(f"Colonna non trovata: {tabella_}.{colonna}")
+        with self.lock_db:
+            righe = db.conn.execute(f"SELECT {QY.q(colonna)}, COUNT(*) FROM {QY.q(t)} GROUP BY 1 ORDER BY 2 DESC, 1 "
+                                    f"LIMIT {int(quanti) + 1}").fetchall()
+        return {"tabella": t, "colonna": colonna, "valori": [list(r) for r in righe[:quanti]], "altri": len(righe) > quanti}
+
+    def analisi_crud(self):
+        """Viste, procedure, funzioni e trigger dei file: quali tabelle leggono, inseriscono, modificano, cancellano."""
+        self.richiedi_dati()
+        if self.crud is None or self.crud[0] is not self.R:
+            C = EXT.analyze_crud_files(self.file_sql, self.imp.dialetto, list(self.R.S.col_per_tab))
+            self.crud = (self.R, C)
+        C = self.crud[1]
+        return {"righe": tabella(C), "matrice": tabella(EXT.crud_matrix(C)),
+                "oggetti": int(C["object"].nunique()) if not C.empty else 0}
+
+    def codice(self, quale, dialetto=None):
+        self.richiedi_dati()
+        if quale == "modelli":
+            return EXT.generate_sqlalchemy_models(self.R)
+        return EXT.generate_migration_script(self.R, dialetto or self.imp.dialetto)
 
     def elenco_finestre(self):
         if not FIN.SU_WINDOWS:
@@ -681,6 +742,10 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/lavoro": lambda: {"lavoro": s.lavoro.dati() if s.lavoro else None},
             "/api/interfaccia": s.interfaccia_elenco,
             "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
+            "/api/verifica_dati": s.risultato_verifica,
+            "/api/crud": s.analisi_crud,
+            "/api/scarica/verifica_dati": self.scarica_verifica_dati,
+            "/api/scarica/crud": self.scarica_crud,
             "/api/finestre": s.elenco_finestre,
             "/api/scarica/interfaccia": self.scarica_interfaccia,
             "/api/scarica/sql": self.scarica_sql,
@@ -761,6 +826,20 @@ class Gestore(BaseHTTPRequestHandler):
         if percorso == "/api/sorgente":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.sorgente(q.get("file", [""])[0], int(q.get("riga", ["1"])[0] or 1)))
+        if percorso in ("/api/codice/modelli", "/api/codice/normalizzazione", "/api/scarica/modelli", "/api/scarica/normalizzazione"):
+            dialetto = parse_qs(url.query).get("dialetto", [""])[0] or None
+            quale = "modelli" if percorso.endswith("modelli") else "normalizzazione"
+
+            def codice():
+                testo = s.codice(quale, dialetto)
+                if percorso.startswith("/api/codice/"):
+                    return {"testo": testo}
+                nome, tipo = ("modelli_sqlalchemy.py", "text/x-python") if quale == "modelli" else ("normalizzazione.sql", "application/sql")
+                return (testo.encode("utf-8"), f"{tipo}; charset=utf-8", {"Content-Disposition": f'attachment; filename="{nome}"'})
+            return self.esegui(codice)
+        if percorso == "/api/valori":
+            q = parse_qs(url.query)
+            return self.esegui(lambda: s.valori_colonna(q.get("tabella", [""])[0], q.get("colonna", [""])[0]), blocca=False)
         if percorso.startswith("/api/file/"):
             q = parse_qs(url.query)
             voce = lambda nome, predefinito="": q.get(nome, [predefinito])[0]
@@ -804,6 +883,28 @@ class Gestore(BaseHTTPRequestHandler):
                 df.to_excel(xls, sheet_name=nome, index=False)
         return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 {"Content-Disposition": 'attachment; filename="verifica_interfaccia.xlsx"'})
+
+    def scarica_verifica_dati(self):
+        SESSIONE.richiedi_dati()
+        V = SESSIONE.verifica
+        if V is None:
+            raise Errore("Prima fai la verifica con i dati.")
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer) as xls:
+            for nome, df in (("Chiavi esterne", V["chiavi"]), ("Collegamenti dai valori", V["valori"]), ("Profilo", V["profilo"])):
+                df.to_excel(xls, sheet_name=nome, index=False)
+        return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                {"Content-Disposition": 'attachment; filename="verifica_con_i_dati.xlsx"'})
+
+    def scarica_crud(self):
+        SESSIONE.analisi_crud()
+        C = SESSIONE.crud[1]
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer) as xls:
+            EXT.crud_matrix(C).to_excel(xls, sheet_name="Matrice CRUD", index=False)
+            C.to_excel(xls, sheet_name="Dettaglio", index=False)
+        return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                {"Content-Disposition": 'attachment; filename="matrice_crud.xlsx"'})
 
     def scarica_sql(self):
         SESSIONE.richiedi_dati()
@@ -899,6 +1000,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/query/costruisci": lambda: s.costruisci_database(),
             "/api/query/svuota_cache": s.svuota_cache,
             "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
+            "/api/verifica_dati": lambda: s.verifica_dati(bool(dati.get("medie", True))),
         }
         lunghe = {
             "/api/query": lambda: s.query(dati.get("sql"), dati.get("conferma")),

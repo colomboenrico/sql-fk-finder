@@ -7,7 +7,7 @@
 1. **Carica** i file `.sql` (barra in alto).
 2. Guarda la **Panoramica** e i **Problemi** (errori e avvisi).
 3. Leggi il **Reverse engineering** (cosa rappresenta ogni tabella, il filo logico); se nella cartella ci sono altri file (codice, configurazioni, mapping XML) guardali in **File della cartella** e **File XML** accanto alle schede delle tabelle; togli le entità che non interessano (**Togli entità**) e controlla **Aree e gruppi**.
-4. Controlla le **FK candidate** e falle scegliere a **clingo** (*Scelta con clingo*).
+4. Controlla le **FK candidate**; se i file hanno i dati, verificale con **Chiavi verificate sui dati**; poi falle scegliere a **clingo** (*Scelta con clingo*).
 5. Se hai il programma che usa il database: **Verifica con l'interfaccia** (su Windows), poi di nuovo *Scelta con clingo* con le conferme del programma.
 6. Guarda il risultato negli **Schemi grafici** e nel **Modello relazionale**.
 7. **Salva risultati** (Excel, script SQL, schemi) e **Salva progetto** per riprendere il lavoro.
@@ -125,6 +125,20 @@ Tutte le chiavi esterne proposte con affidabilità, tipi, relazione (1:1, 1:N), 
 
 ### Scelta con clingo
 clingo sceglie, tra tutte le candidate, l'**insieme di chiavi esterne più coerente** (dettagli in [Come funziona](04-come-funziona.md#9-scelta-con-clingo-asp)). Opzioni: *anche le candidate ad affidabilità media*, *usa le schermate lette del programma*. Risultato: riepilogo (candidate, scelte, scartate, ottimo dimostrato), chiavi scelte con il motivo, **candidate scartate con il motivo**, differenze con la scelta automatica, le regole usate. Si scaricano le chiavi scelte (`.sql`) e il programma ASP con i fatti (`.lp`, utilizzabile con clingo da terminale).
+
+### Chiavi verificate sui dati
+Serve un dump con i dati (`INSERT` o `COPY`); usa il database della pagina *Query sui dati* (se è grande va costruito prima, una volta sola). *Verifica con i dati* lavora in background con l'avanzamento e si può interrompere; *Scarica (Excel)* salva i tre risultati.
+
+- **Chiavi esterne controllate sui dati**: per ogni chiave dichiarata o trovata (anche ad affidabilità media, se la casella è spuntata), i valori della colonna figlia, quanti non esistono nella tabella collegata (**orfani**, contati sulle righe e sui valori diversi), la percentuale trovata, qualche esempio di orfano e l'esito: **confermata** (nessun orfano), **pochi orfani** (almeno il 95%), **dubbia** (almeno la metà), **probabilmente sbagliata**, **senza dati**.
+- **Collegamenti trovati dai valori**: colonne i cui valori sono **tutti** nella chiave primaria (o in una colonna UNIQUE) di un'altra tabella, anche se i nomi non si somigliano (`ordini.agente` → `agenti.matricola`). *Forte* se ci sono almeno 10 valori diversi che non sono una semplice sequenza 1, 2, 3... e la colonna copre quella chiave meglio delle altre; *debole* altrimenti (nascosti di default).
+- **Profilo delle colonne**: righe, NULL, valori diversi e una classificazione con il suggerimento: tabella vuota, sempre vuota, quasi vuota, costante, possibile ENUM, possibile chiave naturale. Cliccando una colonna si vedono i suoi **valori più frequenti** (utile per capire i codici).
+
+### Viste e procedure
+Le viste, le procedure, le funzioni e i trigger dei file `.sql`, con la **matrice CRUD**: per ogni oggetto e tabella se la inserisce (C), la legge (R), la modifica (U) o la cancella (D). Il dettaglio dice l'istruzione, se la tabella è nello schema e se è stata riconosciuta con l'albero sintattico (sqlglot) o con le espressioni regolari (codice procedurale); cliccando una riga si vede il pezzo di file. *Scarica (Excel)* salva matrice e dettaglio.
+
+### Codice generato
+- **Modelli SQLAlchemy (Python)**: una classe per tabella con colonne, tipi, chiavi primarie, `ForeignKey` (dichiarate e trovate ad affidabilità alta, segnate con un commento) e `relationship()`; le tabelle senza chiave primaria diventano `Table`. Si scarica come `modelli_sqlalchemy.py`.
+- **Script di normalizzazione (SQL)**: una bozza per correggere i problemi della pagina *Qualità schema*: divide i campi composti, sposta gruppi ripetuti e colonne con più valori in tabelle figlie (1NF), controlla e toglie le copie di colonne di altre tabelle (2NF, 3NF). Si sceglie il dialetto; i `DROP COLUMN` sono commentati. Va rivisto e provato su una copia del database.
 
 ### Qualità schema
 I controlli di progettazione raccolti per tipo: tabelle senza chiave primaria, tabelle ponte (N:M), problemi di normalizzazione (1NF, 2NF, 3NF), relazioni ridondanti, con le regole ON DELETE / ON UPDATE scelte nelle Impostazioni.

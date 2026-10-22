@@ -102,7 +102,9 @@ async function seguiLavoro(titolo) {
       if (!lavoro) break;
       piena.style.width = `${lavoro.percentuale}%`;
       const parti = [];
-      if (lavoro.totale) parti.push(`${lavoro.percentuale}% · ${formattaByte(lavoro.letti)} di ${formattaByte(lavoro.totale)}`);
+      if (lavoro.unita === "passi" && lavoro.fase !== "inizio") parti.push(lavoro.fase);
+      if (lavoro.totale) parti.push(lavoro.unita === "passi" ? `${lavoro.percentuale}% · ${lavoro.letti} di ${lavoro.totale}`
+        : `${lavoro.percentuale}% · ${formattaByte(lavoro.letti)} di ${formattaByte(lavoro.totale)}`);
       if (lavoro.file) parti.push(lavoro.file);
       if (lavoro.fase === "analisi") parti.push("analisi della struttura...");
       if (lavoro.restano !== null && lavoro.fase !== "analisi") parti.push(`circa ${formattaDurata(lavoro.restano)} alla fine`);

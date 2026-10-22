@@ -28,6 +28,9 @@ SQL FK Finder legge i file `.sql` (i `CREATE TABLE`) e **ricostruisce le relazio
 | **Query sui dati** | Interroga i dati degli `INSERT` e dei `COPY` dei file con SQL, anche per dump da decine di GB |
 | **Verifica con l'interfaccia** | Legge le finestre del programma Windows che usa il database, ne ricava le entità e controlla se le chiavi previste corrispondono a quello che il programma mostra |
 | **Scelta con clingo** | Un risolutore logico (Answer Set Programming) sceglie l'insieme di chiavi esterne più coerente e spiega ogni scarto |
+| **Chiavi verificate sui dati** | Controlla ogni chiave esterna (dichiarata o trovata) sui dati degli `INSERT`/`COPY`: quanti valori esistono nella tabella collegata e quanti sono orfani; trova collegamenti che i nomi non rivelano e fa il profilo di ogni colonna (tabelle vuote, colonne sempre vuote, possibili ENUM) |
+| **Viste e procedure** | Per viste, procedure, funzioni e trigger: quali tabelle leggono, inseriscono, modificano o cancellano (matrice CRUD) |
+| **Codice generato** | I modelli SQLAlchemy (Python) di tutto il database e una bozza di script SQL che corregge i problemi di normalizzazione |
 | **Ontologia** | Genera un'ontologia OWL e il mapping R2RML dallo schema |
 | **Editor** | Disegna entità e relazioni da zero (o parte dal database caricato) e ottiene lo schema logico e l'SQL |
 | **Progetti** | Salva e riapre il lavoro (file `.sqlfk`) |

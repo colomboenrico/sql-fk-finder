@@ -309,3 +309,7 @@ ul.controlli li { margin: 5px 0; }
 }
 @media (max-width: 1100px) { .affianca-riga { flex-direction: column; } .affianca-riga > * { width: 100%; } }
 @media (max-width: 900px) { .file-griglia { grid-template-columns: 1fr; } }
+
+/* codice generato */
+.codice-generato { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 6px; padding: 12px; max-height: 70vh; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; }
