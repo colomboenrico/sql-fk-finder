@@ -84,7 +84,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/server.py` | le richieste dell'interfaccia (`/api/...`), lo stato della sessione, i lavori in background; anche server HTTP locale per il browser |
 | `sqlfk/ponte.py` | collegamento con l'app tramite pipe |
 | `sqlfk/verifica.py` | diagnostica da terminale |
-| `sqlfk/web/` | l'interfaccia: `index.html`, `app.js` (pagine), `file.js` (pagine File della cartella e File XML), `estensioni.js` (Chiavi verificate sui dati, Viste e procedure, Codice generato), `diagramma.js` (diagramma delle tabelle), `editor.js` (editor), `lavagna.js` (Disegno affiancato), `dati.js` (Dati e Peso delle tabelle), `style.css` |
+| `sqlfk/web/` | l'interfaccia: `index.html`, `app.js` (pagine), `file.js` (pagine File della cartella e File XML), `estensioni.js` (Chiavi verificate sui dati, Viste e procedure, Codice generato), `diagramma.js` (diagramma delle tabelle), `editor.js` (editor), `lavagna.js` (Disegno affiancato), `dati.js` (Dati e Peso delle tabelle), `guida.js` (Come si usa), `style.css` |
 | `app/main.js`, `app/preload.js` | l'app Electron: avvio di Python, protocollo interno, blocco della rete, controllo, salvataggio dei rapporti |
 | `app/prepara_python.py` | prepara il Python con le librerie da includere negli eseguibili |
 | `crea_eseguibili.sh`, `.bat` | creano gli eseguibili |

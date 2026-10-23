@@ -43,10 +43,35 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius: 6px; padding: 10px 12px; overflow: auto; white-space: pre-wrap; }
 
 /* ---------------------------------------------------------------- testata */
-.testata { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-  padding: 12px 20px; background: var(--pannello); border-bottom: 1px solid var(--bordo); }
-.marchio { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.marchio .logo { width: 40px; height: 40px; flex-shrink: 0; }
+/* barra a schede in stile Word: titolo, schede (funzionalità) e nastro con i gruppi di pulsanti */
+.testata { background: var(--pannello); border-bottom: 1px solid var(--bordo); }
+.barra-titolo { display: flex; align-items: center; gap: 10px; padding: 8px 16px 0; min-width: 0; }
+.barra-titolo .logo { width: 28px; height: 28px; flex-shrink: 0; }
+.barra-titolo h1 { font-size: 15px; }
+.schede-nastro { display: flex; gap: 2px; padding: 6px 12px 0; overflow-x: auto; border-bottom: 1px solid var(--bordo); }
+.scheda-nastro { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: none; padding: 6px 14px;
+  color: var(--testo); white-space: nowrap; margin-bottom: -1px; }
+.scheda-nastro:hover { background: var(--primario-chiaro); border-color: transparent; }
+.scheda-nastro.attiva { background: var(--sfondo); border-color: var(--bordo); color: var(--primario); font-weight: 600; }
+.nastro { display: block; background: var(--sfondo); overflow-x: auto; }
+.pannello-nastro { display: flex; align-items: stretch; padding: 6px 8px; min-height: 96px; }
+.pannello-nastro[hidden] { display: none; }
+.gruppo-nastro { display: flex; flex-direction: column; justify-content: space-between; padding: 0 10px; border-right: 1px solid var(--bordo); flex-shrink: 0; }
+.gruppo-nastro:last-child { border-right: none; }
+.comandi-nastro { display: flex; align-items: flex-start; gap: 4px; flex: 1; }
+.nome-gruppo { font-size: 11px; color: var(--tenue); text-align: center; padding-top: 4px; }
+.nastro button[data-vista], .nastro .grande { display: inline-flex; align-items: center; cursor: pointer; color: var(--testo); flex-direction: column; justify-content: flex-start; gap: 4px; width: 92px; min-height: 70px;
+  padding: 6px 4px; border: 1px solid transparent; background: none; font-size: 12px; line-height: 1.2; text-align: center; border-radius: 6px; }
+.nastro button[data-vista]:hover:not(:disabled), .nastro .grande:hover { background: var(--primario-chiaro); border-color: var(--bordo); }
+.nastro button[data-vista].attiva { background: var(--primario-chiaro); border-color: var(--primario); color: var(--primario); font-weight: 600; }
+.nastro .grande.primario { background: var(--primario); color: #fff; border-color: var(--primario); }
+.nastro .grande.primario .icona { stroke: #fff; }
+.icona { width: 26px; height: 26px; flex-shrink: 0; fill: none; stroke: var(--primario); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.nastro button[data-vista] .contatore { margin-left: 2px; }
+#voce-problemi { position: relative; }
+.percorso-nastro { flex-direction: column; align-self: center; gap: 4px; margin-left: 6px; }
+.percorso-nastro button { align-self: flex-start; padding: 3px 14px; }
+.percorso-nastro input { width: 230px; }
 .origine { color: var(--tenue); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 .caricamento { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .percorso { display: flex; gap: 6px; }
@@ -72,12 +97,6 @@ label.campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; 
 
 /* ---------------------------------------------------------------- struttura */
 .corpo { flex: 1; display: flex; min-height: 0; }
-.menu { width: 190px; flex-shrink: 0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px;
-  background: var(--pannello); border-right: 1px solid var(--bordo); overflow-y: auto; }
-.menu button { border: none; background: none; text-align: left; justify-content: flex-start; padding: 8px 12px; width: 100%; }
-.menu button:hover { background: var(--primario-chiaro); }
-.menu button.attiva { background: var(--primario-chiaro); color: var(--primario); font-weight: 600; }
-.menu .separatore { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--tenue); padding: 14px 12px 4px; }
 .vista { flex: 1; overflow: auto; padding: 20px 24px; min-width: 0; }
 
 .pannello { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
@@ -186,10 +205,8 @@ td.sql { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
 
 @media (max-width: 800px) {
   .corpo { flex-direction: column; }
-  .menu { width: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--bordo); }
-  .menu button { width: auto; }
-  .menu .separatore { display: none; }
-  .percorso input { width: 100%; }
+  .nastro button[data-vista], .nastro .grande { width: 78px; min-height: 62px; font-size: 11px; }
+  .percorso-nastro input { width: 180px; }
   .vista { padding: 16px; }
 }
 
@@ -327,7 +344,7 @@ ul.controlli li { margin: 5px 0; }
 /* peso delle tabelle e dati delle tabelle */
 .tabella-peso { border-collapse: collapse; width: 100%; font-size: 13px; }
 .tabella-peso th, .tabella-peso td { border-bottom: 1px solid var(--bordo); padding: 4px 8px; text-align: left; }
-.tabella-peso td.numero { text-align: right; font-variant-numeric: tabular-nums; }
+.tabella-peso td.numero, .tabella-peso th.numero { text-align: right; font-variant-numeric: tabular-nums; }
 .tabella-peso tr.tolta td { color: var(--tenue); }
 .barra-peso { width: 28%; }
 .barra-peso div { height: 10px; background: var(--primario); border-radius: 3px; opacity: .75; }
@@ -340,3 +357,12 @@ ul.controlli li { margin: 5px 0; }
 .tabella-dati td.nullo { color: var(--tenue); font-style: italic; }
 .collegata { margin: 8px 0; padding: 10px; }
 .collegata .griglia-scorri { max-height: 260px; }
+
+/* guida */
+.gruppo-guida { margin: 10px 0 4px; }
+.gruppo-guida h4 { margin: 0 0 6px; color: var(--tenue); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.voce-guida { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 12px; align-items: center; padding: 4px 0; }
+.voce-guida button { justify-content: flex-start; }
+.voce-guida .icona { width: 18px; height: 18px; }
+.passi-guida li { margin: 6px 0; line-height: 1.5; }
+@media (max-width: 800px) { .voce-guida { grid-template-columns: 1fr; gap: 4px; } }

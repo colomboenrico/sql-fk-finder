@@ -219,6 +219,8 @@ e si apre `http://127.0.0.1:8765`. Con `--cartella percorso/dei/file` carica sub
 
 ### Editor del database
 
+L'interfaccia ha in alto una **barra a schede come Word** (Home, Analisi, Reverse engineering, Diagrammi, Dati, Esporta, Guida), ognuna con i suoi gruppi di pulsanti; la pagina **Come si usa** spiega ogni pulsante.
+
 La pagina **Dati delle tabelle** mostra struttura e righe di ogni tabella popolata e, cliccando una riga, le righe collegate (a cosa punta e chi punta a lei), da seguire da una tabella all'altra; **Peso delle tabelle** elenca tutte le tabelle, anche le vuote, con righe e spazio, per togliere quelle che non servono.
 
 La pagina **Disegno affiancato** mette il diagramma del database accanto a una lavagna bianca: si cliccano le tabelle da copiare (con colonne e collegamenti), si migliora il disegno, lo si scarica in un file `.json` e lo si riapre per continuare.
@@ -264,6 +266,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/web/estensioni.js` | le pagine Chiavi verificate sui dati, Viste e procedure, Codice generato |
 | `sqlfk/web/file.js` | le pagine File della cartella (esplora, ricerca, schemi affiancati) e File XML (albero, riepilogo, tabelle del database) |
 | `sqlfk/web/editor.js` | l'editor del database: entità, relazioni, schema logico e SQL |
+| `sqlfk/web/guida.js` | la pagina Come si usa: il percorso consigliato e cosa fa ogni pulsante della barra a schede |
 | `sqlfk/web/dati.js` | le pagine Dati delle tabelle (struttura, righe e righe collegate) e Peso delle tabelle |
 | `sqlfk/web/lavagna.js` | Disegno affiancato: il diagramma del database accanto a una lavagna dove copiare le tabelle, con il disegno da scaricare e riaprire |
 | `sqlfk/web/diagramma.js` | il diagramma delle tabelle; la disposizione usa dagre (licenza MIT, in `sqlfk/web/vendor/`) |

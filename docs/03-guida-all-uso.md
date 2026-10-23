@@ -14,12 +14,26 @@
 
 ## La barra in alto
 
+In alto c'è una barra a schede come quella di Word: ogni scheda è una funzionalità e mostra i suoi pulsanti, divisi in gruppi. Cliccando una scheda si vedono i pulsanti; aprendo una pagina la barra passa da sola alla scheda che la contiene. I pulsanti grigi si attivano dopo aver caricato i file. La pagina **Come si usa** (schede *Home* e *Guida*) spiega cosa fa ogni pulsante e ha il pulsante per aprirlo.
+
+| Scheda | Gruppi e pulsanti |
+|---|---|
+| **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
+| **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
+| **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia · *La cartella*: File della cartella, File XML |
+| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale · *Disegno*: Editor del database, Disegno affiancato |
+| **Dati** | *Tabelle*: Dati delle tabelle, Peso delle tabelle · *SQL*: Query sui dati |
+| **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
+| **Guida** | *Aiuto*: Come si usa, Regole di progettazione · *App*: Impostazioni |
+
+I comandi per caricare e salvare (scheda *Home*):
+
 | Comando | Cosa fa |
 |---|---|
 | **Carica cartella** | legge tutti i file `.sql` di una cartella |
 | **Carica file .sql** | legge uno o più file scelti |
 | **Apri progetto** | riapre un lavoro salvato (`.sqlfk`) |
-| **Salva progetto** | salva file letti, impostazioni, tabelle tolte, disposizione del diagramma, modello dell'editor e schermate lette del programma |
+| **Salva progetto** | salva file letti, impostazioni, tabelle tolte, disposizione del diagramma, modello dell'editor, lavagna e schermate lette del programma |
 | campo del **percorso** + *Apri* | legge una cartella o un file scrivendone il percorso (utile nel browser per i file grandi) |
 
 Sotto la barra c'è il riepilogo: errori, avvisi, tabelle, aree, gruppi, chiavi primarie composte, chiavi dichiarate e candidate, tabelle isolate.

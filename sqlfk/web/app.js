@@ -365,24 +365,87 @@ $("#form-percorso").addEventListener("submit", async e => {
 
 // ======================================================================= navigazione
 
-document.querySelectorAll("#menu button").forEach(b => b.addEventListener("click", () => mostra(b.dataset.vista)));
+document.querySelectorAll("#menu button[data-vista]").forEach(b => b.addEventListener("click", () => mostra(b.dataset.vista)));
+
+// barra a schede in stile Word: ogni scheda è una funzionalità con i suoi gruppi di pulsanti
+const ICONE = {
+  cartella: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  file: "M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6",
+  apri: "M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1M3 7v10a2 2 0 0 0 2 2h12l3-8H7l-3 8",
+  salva: "M5 3h11l3 3v15H5zM8 3v5h7V3M8 21v-7h8v7",
+  panoramica: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  problemi: "M12 3l9 16H3zM12 10v4M12 17v.5",
+  guida: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17v.5",
+  tabella: "M3 5h18v14H3zM3 10h18M3 15h18M9 5v14",
+  chiave: "M14 10a4 4 0 1 0-1.2 2.8L20 20M17 17l2-2M15 15l2-2",
+  collegamento: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
+  clingo: "M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4",
+  verifica: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12l3 3 5-6",
+  qualita: "M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6zM9 12l2 2 4-4",
+  regole: "M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h10M9 8h5",
+  altri: "M5 12h.5M12 12h.5M19 12h.5",
+  gruppi: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+  togli: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 12h8",
+  reverse: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM16 16l5 5M8 11h6M11 8v6",
+  crud: "M4 6h16M4 12h16M4 18h10M18 16l2 2 3-4",
+  interfaccia: "M3 4h18v12H3zM8 20h8M12 16v4",
+  cartellafile: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM14 15a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM15.5 14.5l2 2",
+  xml: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
+  schemi: "M3 4h7v6H3zM14 14h7v6h-7zM14 4h7v6h-7zM10 7h4M17.5 10v4",
+  modello: "M3 4h8v16H3zM13 4h8v7h-8zM13 13h8v7h-8zM5 8h4M15 8h4",
+  editor: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
+  lavagna: "M3 4h8v16H3zM13 4h8v16h-8zM15 9h4M15 13h3",
+  dati: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
+  peso: "M5 20V10M10 20V4M15 20v-7M20 20v-4M3 20h19",
+  query: "M4 5h16v14H4zM7 10l3 2-3 2M12 15h5",
+  codice: "M9 8l-4 4 4 4M15 8l4 4-4 4",
+  ontologia: "M12 5a2 2 0 1 0 0-.1M5 18a2 2 0 1 0 0-.1M19 18a2 2 0 1 0 0-.1M11 7l-5 9M13 7l5 9M7 18h10",
+  esporta: "M12 4v11M7 10l5 5 5-5M5 20h14",
+  impostazioni: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 12l2-1-1-3-2 .3-1.5-1.6.3-2-3-1-1 2h-2l-1-2-3 1 .3 2L5.3 8.3 3.3 8l-1 3 2 1v1.5l-2 1 1 3 2-.3 1.5 1.6-.3 2 3 1 1-2h2l1 2 3-1-.3-2 1.6-1.5 2 .3 1-3-2-1z",
+};
+document.querySelectorAll("[data-icona]").forEach(b => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", "icona");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", ICONE[b.dataset.icona] || ICONE.altri);
+  svg.append(path);
+  b.prepend(svg);
+});
+let schedaNastro = "home";
+function mostraScheda(id) {
+  schedaNastro = id;
+  document.querySelectorAll(".scheda-nastro").forEach(b => {
+    b.classList.toggle("attiva", b.dataset.scheda === id);
+    b.setAttribute("aria-selected", b.dataset.scheda === id ? "true" : "false");
+  });
+  document.querySelectorAll(".pannello-nastro").forEach(p => { p.hidden = p.dataset.scheda !== id; });
+}
+document.querySelectorAll(".scheda-nastro").forEach(b => b.addEventListener("click", () => mostraScheda(b.dataset.scheda)));
+mostraScheda("home");
 
 function aggiornaMenu() {
   $("#salva-progetto").disabled = !stato.caricato;
-  document.querySelectorAll("#menu button").forEach(b => {
+  document.querySelectorAll("#menu button[data-vista]").forEach(b => {
     b.classList.toggle("attiva", b.dataset.vista === vistaAttuale);
     b.disabled = b.hasAttribute("data-serve-dati") && !stato.caricato;
   });
+  // la scheda della barra segue la pagina aperta (se la pagina non è già nella scheda visibile)
+  const nellaScheda = $(`.pannello-nastro[data-scheda="${schedaNastro}"] button[data-vista="${vistaAttuale}"]`);
+  const pulsante = $(`#menu button[data-vista="${vistaAttuale}"]:not([data-doppio])`);
+  if (!nellaScheda && pulsante) mostraScheda(pulsante.closest(".pannello-nastro").dataset.scheda);
 }
 
 function aggiornaRiepilogo() {
   $("#origine").textContent = stato.caricato ? stato.origine : "";
-  if (!stato.caricato) { $("#riepilogo").textContent = "Nessun file caricato."; $("#voce-problemi").textContent = "Problemi"; return; }
+  const iconaProblemi = $("#voce-problemi .icona");          // l'icona della barra resta
+  if (!stato.caricato) { $("#voce-problemi").replaceChildren(iconaProblemi, "Problemi"); $("#riepilogo").textContent = "Nessun file caricato."; return; }
   const n = (valore, testo) => [el("b", {}, valore), ` ${testo}`];
   const p = stato.problemi;
-  $("#voce-problemi").replaceChildren(...["Problemi",
+  $("#voce-problemi").replaceChildren(iconaProblemi, el("span", {}, "Problemi",
     p.errore ? el("span", { class: "contatore", title: "errori" }, p.errore) : null,
-    p.avviso ? el("span", { class: "contatore giallo", title: "avvisi" }, p.avviso) : null].filter(Boolean));
+    p.avviso ? el("span", { class: "contatore giallo", title: "avvisi" }, p.avviso) : null));
   $("#riepilogo").replaceChildren(
     el("span", { class: p.errore ? "errore" : null }, ...n(p.errore, p.errore === 1 ? "errore" : "errori")), " · ",
     el("span", { class: p.avviso ? "avviso-g" : null }, ...n(p.avviso, p.avviso === 1 ? "avviso" : "avvisi")), " · ",

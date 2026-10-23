@@ -49,9 +49,9 @@ Object.assign(VISTE, {
         "che occupano i loro dati (nel database delle query, costruito dagli INSERT e dai COPY). Le tabelle vuote o quasi spesso " +
         "non servono: si possono togliere dall'analisi (i file non vengono modificati) e rimettere quando vuoi.")];
     const conDati = P.con_dati;
-    const massimo = Math.max(1, ...P.tabelle.map(t => t.byte || 0));
+    const massimo = Math.max(1, ...P.tabelle.map(t => t.righe ? t.byte || 0 : 0));
     const vuote = P.tabelle.filter(t => t.righe === 0);
-    const totale = P.tabelle.reduce((n, t) => n + (t.byte || 0), 0);
+    const totale = P.tabelle.reduce((n, t) => n + (t.righe ? t.byte || 0 : 0), 0);
     const cerca = el("input", { type: "search", value: ricercaPeso, placeholder: "cerca una tabella", "aria-label": "Cerca una tabella" });
     const ordine = el("select", { "aria-label": "Ordine" },
       [["leggere", "Dalle più leggere"], ["pesanti", "Dalle più pesanti"], ["righe", "Per numero di righe"], ["nome", "Per nome"]]
@@ -87,7 +87,7 @@ Object.assign(VISTE, {
           el("td", { class: "numero" }, t.colonne),
           el("td", { class: "numero" }, t.righe === null ? "-" : t.righe.toLocaleString("it-IT")),
           el("td", { class: "numero" }, t.righe === 0 ? el("span", { class: "tenue" }, "vuota") : t.byte === null ? "-" : formattaByte(t.byte)),
-          el("td", { class: "barra-peso" }, t.byte ? el("div", { style: `width: ${Math.max(1, 100 * t.byte / massimo).toFixed(1)}%` }) : null),
+          el("td", { class: "barra-peso" }, t.righe && t.byte ? el("div", { style: `width: ${Math.max(1, 100 * t.byte / massimo).toFixed(1)}%` }) : null),
           el("td", {}, t.tolta ? el("span", { class: "avviso-g" }, "tolta") : ""));
       }));
       conteggio.textContent = `${righe.length} tabelle su ${P.tabelle.length}`;
@@ -120,7 +120,7 @@ Object.assign(VISTE, {
         el("button", { onclick: () => scegli(t => t.righe === 0 && !t.tolta), disabled: !vuote.length }, `Scegli le vuote (${vuote.length})`),
         el("button", { onclick: () => scegli(() => false) }, "Nessuna"), togli, rimetti),
       el("div", { class: "griglia-scorri" }, el("table", { class: "tabella-peso" },
-        el("thead", {}, el("tr", {}, ["", "tabella", "colonne", "righe", "spazio", "", ""].map(x => el("th", {}, x)))), corpo)),
+        el("thead", {}, el("tr", {}, ["", "tabella", "colonne", "righe", "spazio", "", ""].map((x, i) => el("th", { class: i >= 2 && i <= 4 ? "numero" : null }, x)))), corpo)),
     ];
   },
 

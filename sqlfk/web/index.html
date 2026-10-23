@@ -9,64 +9,171 @@
 </head>
 <body>
   <header class="testata">
-    <div class="marchio">
-      <img src="logo.png" alt="" class="logo" width="40" height="40">
+    <div class="barra-titolo">
+      <img src="logo.png" alt="" class="logo" width="28" height="28">
       <h1>SQL FK Finder</h1>
       <span id="origine" class="origine"></span>
     </div>
-    <div class="caricamento">
-      <label class="pulsante primario">Carica cartella
-        <input type="file" id="in-cartella" webkitdirectory multiple hidden>
-      </label>
-      <label class="pulsante">Carica file .sql
-        <input type="file" id="in-file" accept=".sql" multiple hidden>
-      </label>
-      <label class="pulsante" title="Riapre un lavoro salvato (.sqlfk)">Apri progetto
-        <input type="file" id="in-progetto" accept=".sqlfk,.json" hidden>
-      </label>
-      <button class="pulsante" id="salva-progetto" type="button" title="Salva file, impostazioni, tabelle tolte e disposizione del diagramma" disabled>Salva progetto</button>
-      <form id="form-percorso" class="percorso">
-        <input id="percorso" type="text" placeholder="oppure il percorso di una cartella o di un file .sql" aria-label="Percorso della cartella o del file">
-        <button class="pulsante" type="submit">Apri</button>
-      </form>
+    <div class="schede-nastro" role="tablist" aria-label="Funzionalità">
+      <button class="scheda-nastro" role="tab" data-scheda="home">Home</button>
+      <button class="scheda-nastro" role="tab" data-scheda="analisi">Analisi</button>
+      <button class="scheda-nastro" role="tab" data-scheda="reverse">Reverse engineering</button>
+      <button class="scheda-nastro" role="tab" data-scheda="diagrammi">Diagrammi</button>
+      <button class="scheda-nastro" role="tab" data-scheda="dati">Dati</button>
+      <button class="scheda-nastro" role="tab" data-scheda="esporta">Esporta</button>
+      <button class="scheda-nastro" role="tab" data-scheda="guida">Guida</button>
     </div>
+    <nav id="menu" class="nastro" aria-label="Comandi">
+      <div class="pannello-nastro" data-scheda="home" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <label class="grande primario" data-icona="cartella" title="Legge tutti i file .sql di una cartella">Carica cartella
+            <input type="file" id="in-cartella" webkitdirectory multiple hidden>
+          </label>
+          <label class="grande" data-icona="file" title="Legge uno o più file .sql">Carica file .sql
+            <input type="file" id="in-file" accept=".sql" multiple hidden>
+          </label>
+          <form id="form-percorso" class="percorso percorso-nastro">
+            <input id="percorso" type="text" placeholder="percorso di una cartella o di un file .sql" aria-label="Percorso della cartella o del file">
+            <button class="pulsante" type="submit">Apri</button>
+          </form>
+          </div>
+          <div class="nome-gruppo">Carica</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <label class="grande" data-icona="apri" title="Riapre un lavoro salvato (.sqlfk)">Apri progetto
+            <input type="file" id="in-progetto" accept=".sqlfk,.json" hidden>
+          </label>
+          <button class="grande" id="salva-progetto" type="button" data-icona="salva" title="Salva file, impostazioni, tabelle tolte, disposizione del diagramma, editor e lavagna" disabled>Salva progetto</button>
+          </div>
+          <div class="nome-gruppo">Progetto</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="panoramica" data-icona="panoramica">Panoramica</button>
+          <button data-vista="problemi" data-icona="problemi" data-serve-dati id="voce-problemi">Problemi</button>
+          <button data-vista="guida" data-icona="guida">Come si usa</button>
+          </div>
+          <div class="nome-gruppo">Inizia</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="analisi" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="tabelle" data-icona="tabella" data-serve-dati>Tabelle</button>
+          <button data-vista="pk" data-icona="chiave" data-serve-dati>PK composte</button>
+          <button data-vista="fk" data-icona="collegamento" data-serve-dati>FK candidate</button>
+          <button data-vista="asp" data-icona="clingo" data-serve-dati>Scelta con clingo</button>
+          <button data-vista="dativerifica" data-icona="verifica" data-serve-dati>Verificate sui dati</button>
+          </div>
+          <div class="nome-gruppo">Chiavi</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="qualita" data-icona="qualita" data-serve-dati>Qualità schema</button>
+          <button data-vista="regole" data-icona="regole">Regole</button>
+          <button data-vista="altri" data-icona="altri" data-serve-dati>Altri risultati</button>
+          </div>
+          <div class="nome-gruppo">Qualità</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="gruppi" data-icona="gruppi" data-serve-dati>Aree e gruppi</button>
+          <button data-vista="togli" data-icona="togli" data-serve-dati>Togli entità</button>
+          </div>
+          <div class="nome-gruppo">Struttura</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="reverse" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="reverse" data-icona="reverse" data-serve-dati>Reverse engineering</button>
+          <button data-vista="crud" data-icona="crud" data-serve-dati>Viste e procedure</button>
+          </div>
+          <div class="nome-gruppo">Capire il database</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="interfaccia" data-icona="interfaccia" data-serve-dati>Verifica con l'interfaccia</button>
+          </div>
+          <div class="nome-gruppo">Il programma</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="file" data-icona="cartellafile">File della cartella</button>
+          <button data-vista="xml" data-icona="xml">File XML</button>
+          </div>
+          <div class="nome-gruppo">La cartella</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="diagrammi" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="schemi" data-icona="schemi" data-serve-dati>Schemi grafici</button>
+          <button data-vista="modello" data-icona="modello" data-serve-dati>Modello relazionale</button>
+          </div>
+          <div class="nome-gruppo">Schemi</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="editor" data-icona="editor">Editor del database</button>
+          <button data-vista="lavagna" data-icona="lavagna">Disegno affiancato</button>
+          </div>
+          <div class="nome-gruppo">Disegno</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="dati" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="datitabelle" data-icona="dati" data-serve-dati>Dati delle tabelle</button>
+          <button data-vista="peso" data-icona="peso" data-serve-dati>Peso delle tabelle</button>
+          </div>
+          <div class="nome-gruppo">Tabelle</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="query" data-icona="query" data-serve-dati>Query sui dati</button>
+          </div>
+          <div class="nome-gruppo">SQL</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="esporta" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="codice" data-icona="codice" data-serve-dati>Codice generato</button>
+          <button data-vista="ontologia" data-icona="ontologia" data-serve-dati>Ontologia</button>
+          </div>
+          <div class="nome-gruppo">Genera</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="salva" data-icona="esporta" data-serve-dati>Salva risultati</button>
+          </div>
+          <div class="nome-gruppo">Salva</div>
+        </div>
+      </div>
+      <div class="pannello-nastro" data-scheda="guida" role="tabpanel">
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="guida" data-icona="guida" data-doppio>Come si usa</button>
+          <button data-vista="regole" data-icona="regole" data-doppio>Regole di progettazione</button>
+          </div>
+          <div class="nome-gruppo">Aiuto</div>
+        </div>
+        <div class="gruppo-nastro">
+          <div class="comandi-nastro">
+          <button data-vista="impostazioni" data-icona="impostazioni">Impostazioni</button>
+          </div>
+          <div class="nome-gruppo">App</div>
+        </div>
+      </div>
+    </nav>
   </header>
 
   <div id="riepilogo" class="riepilogo">Nessun file caricato.</div>
 
   <div class="corpo">
-    <nav id="menu" class="menu" aria-label="Sezioni">
-      <button data-vista="panoramica">Panoramica</button>
-      <button data-vista="editor">Editor del database</button>
-      <button data-vista="lavagna">Disegno affiancato</button>
-      <button data-vista="problemi" data-serve-dati id="voce-problemi">Problemi</button>
-      <button data-vista="reverse" data-serve-dati>Reverse engineering</button>
-      <button data-vista="file">File della cartella</button>
-      <button data-vista="xml">File XML</button>
-      <button data-vista="gruppi" data-serve-dati>Aree e gruppi</button>
-      <button data-vista="schemi" data-serve-dati>Schemi grafici</button>
-      <button data-vista="modello" data-serve-dati>Modello relazionale</button>
-      <button data-vista="togli" data-serve-dati>Togli entità</button>
-      <button data-vista="datitabelle" data-serve-dati>Dati delle tabelle</button>
-      <button data-vista="peso" data-serve-dati>Peso delle tabelle</button>
-      <button data-vista="query" data-serve-dati>Query sui dati</button>
-      <button data-vista="interfaccia" data-serve-dati>Verifica con l'interfaccia</button>
-      <div class="separatore">Analisi</div>
-      <button data-vista="tabelle" data-serve-dati>Tabelle</button>
-      <button data-vista="pk" data-serve-dati>PK composte</button>
-      <button data-vista="fk" data-serve-dati>FK candidate</button>
-      <button data-vista="asp" data-serve-dati>Scelta con clingo</button>
-      <button data-vista="dativerifica" data-serve-dati>Chiavi verificate sui dati</button>
-      <button data-vista="crud" data-serve-dati>Viste e procedure</button>
-      <button data-vista="qualita" data-serve-dati>Qualità schema</button>
-      <button data-vista="regole">Regole di progettazione</button>
-      <button data-vista="altri" data-serve-dati>Altri risultati</button>
-      <div class="separatore">File</div>
-      <button data-vista="codice" data-serve-dati>Codice generato</button>
-      <button data-vista="ontologia" data-serve-dati>Ontologia</button>
-      <button data-vista="salva" data-serve-dati>Salva risultati</button>
-      <button data-vista="impostazioni">Impostazioni</button>
-    </nav>
     <main id="vista" class="vista"></main>
   </div>
 
@@ -81,5 +188,6 @@
   <script src="estensioni.js"></script>
   <script src="lavagna.js"></script>
   <script src="dati.js"></script>
+  <script src="guida.js"></script>
 </body>
 </html>
