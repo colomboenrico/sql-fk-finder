@@ -44,6 +44,7 @@ Gli eseguibili si creano dal terminale, nella cartella del progetto:
 - Da un **Mac** crea quelli per Mac (Apple Silicon e Intel), Windows e Linux; da **Linux** quelli per Linux e Windows. Si possono scegliere: `./crea_eseguibili.sh mac`, `./crea_eseguibili.sh win linux`.
 - Su **Windows** c'è `crea_eseguibili.bat` (doppio clic): crea quelli per Windows.
 - Servono **Node.js** (da nodejs.org), un **Python 3 con pip** e **internet**, ma solo su questo computer e solo per crearli: si scaricano Electron, electron-builder e un Python completo con tutte le librerie per ogni sistema (`app/prepara_python.py`, con versioni fisse). Gli eseguibili creati **non usano mai la rete**.
+- Su Mac e Linux lo script si apre con la scritta **SQL FK FINDER** in grande e mostra ogni passo numerato (`[2/6] ...`): l'uscita degli strumenti rientrata in grigio, un `[ OK ]` per ogni cosa pronta (Node.js, Python, Electron, il Python di ogni sistema, ogni file creato, ogni copia) con il tempo del passo, e alla fine il riquadro **L'APPLICAZIONE È PRONTA** con la cartella, i file e le dimensioni. Se un passo non riesce lo dice (`[ERRORE]`) e si ferma.
 - Il risultato va nella cartella **SQL FK Finder - eseguibili** sul Desktop, con un file `LEGGIMI.txt`. Le dimensioni sono di circa 170 MB per Windows, 200 MB per Mac e 220 MB per Linux (Python, pandas, scipy e clingo inclusi).
 
 ## B. App dai sorgenti (per sviluppare)
