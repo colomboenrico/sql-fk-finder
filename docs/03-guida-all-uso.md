@@ -100,6 +100,16 @@ Lo schema logico, una riga per tabella (`Fatture(numero, data, id_cliente → Cl
 ### Togli entità
 Scrivi il nome di una tabella, anche completo (`piatto_ingredienti`), o di un'entità (`piatto`): mentre scrivi compaiono le tabelle **con lo stesso nome**, quelle **che lo contengono** nel nome e quelle **della stessa entità** (riconosce plurali, accenti, prefissi, sinonimi). Nessuna è spuntata: scegli tu quali togliere (o *Seleziona tutte*) e premi *Togli*. Le tabelle tolte sono escluse da tutte le analisi e la ricerca resta, per continuare; si rimettono quando vuoi (*Rimetti selezionate*, *Rimetti tutte*). Utile per concentrarsi su una parte del database.
 
+### Dati delle tabelle
+Le tabelle popolate dai file (`INSERT`, `COPY`): a sinistra l'elenco con il numero di righe (con *anche le vuote* compaiono anche quelle senza dati), a destra la tabella scelta.
+
+- **Struttura**: colonne, tipi, chiave primaria, colonne obbligatorie e a quale tabella è collegata ogni chiave esterna (dichiarata o trovata).
+- **Dati**: 100 righe per pagina (*Precedente*, *Successiva*), con la ricerca di un valore in tutte le colonne (Invio).
+- **Righe collegate**: cliccando una riga si vedono le righe a cui punta (per esempio il cliente di un ordine) e quelle che puntano a lei (le righe dell'ordine), seguendo gli stessi collegamenti del diagramma. Se un valore non esiste nella tabella collegata la riga è segnalata come **orfana**. *Apri* porta alla tabella collegata con il filtro su quei valori; così si va da una tabella all'altra, e *Indietro* torna al passo prima.
+
+### Peso delle tabelle
+Tutte le tabelle dei file, **anche le più leggere e quelle vuote**, con colonne, righe e **spazio** occupato dai dati (nel database delle query). Si ordinano dalle più leggere, dalle più pesanti, per righe o per nome, e si cercano per nome. Spunta le tabelle (*Scegli le vuote* le prende tutte) e premi **Togli dall'analisi**: spariscono da tutte le analisi e dagli schemi; con *mostra anche le tolte* si vedono ancora e si rimettono con **Rimetti nell'analisi**. I file `.sql` non vengono mai modificati. Cliccando il nome di una tabella se ne vedono i dati.
+
 ### Query sui dati
 Un database SQLite costruito dai dati dei file (`INSERT`, `COPY ... FROM stdin`).
 - A sinistra le tabelle con il numero di righe e le colonne. Si cercano con due campi, come nel diagramma: **tabella / entità** e **attributo / colonna** (insieme restringono la ricerca; le colonne trovate sono in giallo). Clic sul nome: prime 100 righe; clic su una colonna: la inserisce nella query.

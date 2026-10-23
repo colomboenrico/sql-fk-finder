@@ -369,6 +369,116 @@ class Sessione:
         return {"pronta": True, "superata": V["R"] is not self.R, "medie": V["medie"], "secondi": V["secondi"],
                 "chiavi": tabella(V["chiavi"]), "valori": tabella(V["valori"]), "profilo": tabella(V["profilo"])}
 
+    # ------------------------------------------------------------ peso delle tabelle e dati delle tabelle
+    def peso_tabelle(self):
+        """Tutte le tabelle dei file (anche quelle tolte e quelle vuote) con colonne, righe e spazio occupato dai dati.
+        Senza il database delle query (dati da costruire) si danno solo le colonne."""
+        self.richiedi_dati()
+        colonne = self.df_schema.drop_duplicates(["tabella", "colonna"]).groupby("tabella")["colonna"].count().to_dict()
+        try:
+            db, motivo = self.database(), None
+        except Errore as e:
+            db, motivo = None, str(e)
+        righe, byte = {}, {}
+        if db is not None:
+            with self.lock_db:
+                c = db.conn
+                tabella_di = {n: t for (n, t) in c.execute("SELECT name, tbl_name FROM sqlite_master WHERE type IN ('table', 'index')")}
+                try:                          # spazio vero nel file SQLite (tabella più i suoi indici)
+                    for nome, dimensione in c.execute("SELECT name, SUM(pgsize) FROM dbstat GROUP BY name"):
+                        t = tabella_di.get(nome)
+                        if t:
+                            byte[t] = byte.get(t, 0) + dimensione
+                except Exception:             # SQLite senza dbstat: la somma delle lunghezze dei valori
+                    for t in db.nomi_tabelle_db():
+                        cols = [r[1] for r in c.execute(f"PRAGMA table_info({QY.q(t)})")]
+                        somma = " + ".join(f"COALESCE(LENGTH({QY.q(x)}), 0)" for x in cols) or "0"
+                        byte[t] = c.execute(f"SELECT COALESCE(SUM({somma}), 0) FROM {QY.q(t)}").fetchone()[0]
+                for t in db.nomi_tabelle_db():
+                    righe[t] = c.execute(f"SELECT COUNT(*) FROM {QY.q(t)}").fetchone()[0]
+        elenco = []
+        for t in sorted(colonne):
+            nel_db = db.tabella_di(t) if db is not None else None
+            elenco.append({"tabella": t, "colonne": int(colonne[t]), "righe": righe.get(nel_db) if nel_db else None,
+                           "byte": byte.get(nel_db) if nel_db else None, "tolta": t in self.rimosse})
+        return {"tabelle": elenco, "con_dati": db is not None, "motivo": motivo}
+
+    def righe_tabella(self, tabella_, da=0, quanti=100, cerca="", dove=None):
+        """Struttura e righe di una tabella del database delle query: a pagine, con una ricerca in tutte le colonne
+        o con valori precisi (dove = {colonna: valore}, per seguire un collegamento)."""
+        db = self.database()
+        t = db.tabella_di(tabella_)
+        if not t:
+            raise Errore(f"Tabella non trovata nei dati: {tabella_}")
+        with self.lock_db:
+            c = db.conn
+            info = [(r[1], r[2]) for r in c.execute(f"PRAGMA table_info({QY.q(t)})")]
+            nomi = [n for n, _ in info]
+            condizioni, valori = [], []
+            for col, val in (dove or {}).items():
+                if col not in nomi:
+                    raise Errore(f"Colonna non trovata: {t}.{col}")
+                condizioni.append(f"{QY.q(col)} IS ?")
+                valori.append(val)
+            if cerca:
+                condizioni.append("(" + " OR ".join(f"CAST({QY.q(n)} AS TEXT) LIKE ?" for n in nomi) + ")")
+                valori += [f"%{cerca}%"] * len(nomi)
+            where = f" WHERE {' AND '.join(condizioni)}" if condizioni else ""
+            totale = c.execute(f"SELECT COUNT(*) FROM {QY.q(t)}{where}", valori).fetchone()[0]
+            righe = c.execute(f"SELECT * FROM {QY.q(t)}{where} LIMIT ? OFFSET ?", valori + [int(quanti), int(da)]).fetchall()
+        S = self.R.S
+        nome_analisi = next((x for x in S.col_per_tab if db.tabella_di(x) == t), tabella_)
+        pk = S.pk.get(nome_analisi, [])
+        struttura = self.struttura_collegamenti()
+        verso = {}
+        for l in struttura["collegamenti"]:
+            if l["da"] == nome_analisi:
+                for x, y in zip(l["colonne_da"], l["colonne_a"]):
+                    verso.setdefault(x, []).append(f"{l['a']}.{y}")
+        return {"tabella": nome_analisi, "nel_db": t, "da": int(da), "totale": totale,
+                "colonne": [{"nome": n, "tipo": S.tipi.get((nome_analisi, n)) or tipo, "pk": n in pk,
+                             "not_null": (nome_analisi, n) in S.not_null, "verso": verso.get(n, [])} for n, tipo in info],
+                "righe": [[v if not isinstance(v, bytes) else v.hex() for v in riga] for riga in righe]}
+
+    def struttura_collegamenti(self):
+        """Il diagramma dei collegamenti (dichiarati e trovati), calcolato una volta per ogni analisi."""
+        if getattr(self, "_struttura", (None,))[0] is not self.R:
+            self._struttura = (self.R, self.diagramma("collegamenti"))
+        return self._struttura[1]
+
+    def collegate(self, tabella_, riga):
+        """Per una riga: le righe delle tabelle a cui punta (padri) e quelle che puntano a lei (figlie),
+        seguendo le chiavi esterne dichiarate e quelle trovate (come nel diagramma)."""
+        db = self.database()
+        struttura = self.struttura_collegamenti()
+        risultato = {"padri": [], "figlie": []}
+        with self.lock_db:
+            c = db.conn
+
+            def cerca(tabella, colonne, valori, quante):
+                t = db.tabella_di(tabella)
+                if not t or any(v is None for v in valori):
+                    return None
+                where = " AND ".join(f"{QY.q(x)} = ?" for x in colonne)
+                try:
+                    totale = c.execute(f"SELECT COUNT(*) FROM {QY.q(t)} WHERE {where}", valori).fetchone()[0]
+                    cur = c.execute(f"SELECT * FROM {QY.q(t)} WHERE {where} LIMIT {quante}", valori)
+                except Exception:
+                    return None
+                return {"tabella": tabella, "dove": dict(zip(colonne, valori)), "totale": totale,
+                        "colonne": [d[0] for d in cur.description], "righe": [list(r) for r in cur.fetchall()]}
+
+            for l in struttura["collegamenti"]:
+                if l["da"] == tabella_ and all(x in riga for x in l["colonne_da"]):
+                    trovate = cerca(l["a"], l["colonne_a"], [riga[x] for x in l["colonne_da"]], 5)
+                    if trovate:
+                        risultato["padri"].append({**trovate, "tramite": l["colonne_da"], "tipo": l["tipo"]})
+                if l["a"] == tabella_ and all(x in riga for x in l["colonne_a"]):
+                    trovate = cerca(l["da"], l["colonne_da"], [riga[x] for x in l["colonne_a"]], 20)
+                    if trovate:
+                        risultato["figlie"].append({**trovate, "tramite": l["colonne_a"], "tipo": l["tipo"]})
+        return risultato
+
     def valori_colonna(self, tabella_, colonna, quanti=50):
         """I valori più frequenti di una colonna (per capire i codici di un possibile ENUM)."""
         db = self.database()
@@ -743,6 +853,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/interfaccia": s.interfaccia_elenco,
             "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
             "/api/verifica_dati": s.risultato_verifica,
+            "/api/peso_tabelle": s.peso_tabelle,
             "/api/crud": s.analisi_crud,
             "/api/scarica/verifica_dati": self.scarica_verifica_dati,
             "/api/scarica/crud": self.scarica_crud,
@@ -837,6 +948,16 @@ class Gestore(BaseHTTPRequestHandler):
                 nome, tipo = ("modelli_sqlalchemy.py", "text/x-python") if quale == "modelli" else ("normalizzazione.sql", "application/sql")
                 return (testo.encode("utf-8"), f"{tipo}; charset=utf-8", {"Content-Disposition": f'attachment; filename="{nome}"'})
             return self.esegui(codice)
+        if percorso in ("/api/dati/righe", "/api/dati/collegate"):
+            q = parse_qs(url.query)
+            voce = lambda nome, predefinito="": q.get(nome, [predefinito])[0]
+
+            def dati_tabella():
+                if percorso.endswith("collegate"):
+                    return s.collegate(voce("tabella"), json.loads(voce("riga", "{}") or "{}"))
+                return s.righe_tabella(voce("tabella"), int(voce("da", "0") or 0), min(int(voce("quanti", "100") or 100), 1000),
+                                       voce("cerca"), json.loads(voce("dove", "{}") or "{}"))
+            return self.esegui(dati_tabella, blocca=False)
         if percorso == "/api/valori":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.valori_colonna(q.get("tabella", [""])[0], q.get("colonna", [""])[0]), blocca=False)

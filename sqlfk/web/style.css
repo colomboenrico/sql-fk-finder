@@ -323,3 +323,20 @@ ul.controlli li { margin: 5px 0; }
 .lavagna-dettagli .pannello { margin: 0; }
 .lavagna-dettagli summary { cursor: pointer; font-weight: 600; }
 @media (max-width: 1100px) { .lavagna-griglia, .lavagna-dettagli { grid-template-columns: 1fr; } }
+
+/* peso delle tabelle e dati delle tabelle */
+.tabella-peso { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tabella-peso th, .tabella-peso td { border-bottom: 1px solid var(--bordo); padding: 4px 8px; text-align: left; }
+.tabella-peso td.numero { text-align: right; font-variant-numeric: tabular-nums; }
+.tabella-peso tr.tolta td { color: var(--tenue); }
+.barra-peso { width: 28%; }
+.barra-peso div { height: 10px; background: var(--primario); border-radius: 3px; opacity: .75; }
+.tabella-dati { border-collapse: collapse; font-size: 12.5px; }
+.tabella-dati th, .tabella-dati td { border-bottom: 1px solid var(--bordo); padding: 3px 8px; text-align: left; white-space: nowrap;
+  max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.tabella-dati th { background: var(--riga-alt); position: sticky; top: 0; }
+.tabella-dati tr.cliccabile { cursor: pointer; }
+.tabella-dati tr.cliccabile:hover, .tabella-dati tr.scelta { background: var(--primario-chiaro); }
+.tabella-dati td.nullo { color: var(--tenue); font-style: italic; }
+.collegata { margin: 8px 0; padding: 10px; }
+.collegata .griglia-scorri { max-height: 260px; }
