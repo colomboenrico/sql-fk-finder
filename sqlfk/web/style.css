@@ -54,6 +54,15 @@ pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius
 .scheda-nastro:hover { background: var(--primario-chiaro); border-color: transparent; }
 .scheda-nastro.attiva { background: var(--sfondo); border-color: var(--bordo); color: var(--primario); font-weight: 600; }
 .nastro { display: block; background: var(--sfondo); overflow-x: auto; }
+.testata { position: relative; z-index: 10; }
+.comprimi-nastro { margin-left: auto; align-self: center; border: 1px solid transparent; background: none; padding: 2px 10px; color: var(--tenue); font-size: 12px; white-space: nowrap; }
+.comprimi-nastro:hover { background: var(--primario-chiaro); border-color: var(--bordo); }
+/* barra compressa: solo le schede; la scheda cliccata scende sopra la pagina */
+.nastro-compresso .nastro { display: none; }
+.nastro-compresso.nastro-aperto .nastro { display: block; position: absolute; left: 0; right: 0; top: 100%;
+  border-bottom: 1px solid var(--bordo); box-shadow: 0 8px 18px rgba(0, 0, 0, .16); }
+.nastro-compresso .scheda-nastro.attiva { background: none; border-color: transparent; }
+.nastro-compresso.nastro-aperto .scheda-nastro.attiva { background: var(--sfondo); border-color: var(--bordo); }
 .pannello-nastro { display: flex; align-items: stretch; padding: 6px 8px; min-height: 96px; }
 .pannello-nastro[hidden] { display: none; }
 .gruppo-nastro { display: flex; flex-direction: column; justify-content: space-between; padding: 0 10px; border-right: 1px solid var(--bordo); flex-shrink: 0; }

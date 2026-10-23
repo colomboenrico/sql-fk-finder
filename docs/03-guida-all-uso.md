@@ -14,7 +14,7 @@
 
 ## La barra in alto
 
-In alto c'è una barra a schede come quella di Word: ogni scheda è una funzionalità e mostra i suoi pulsanti, divisi in gruppi. Cliccando una scheda si vedono i pulsanti; aprendo una pagina la barra passa da sola alla scheda che la contiene. I pulsanti grigi si attivano dopo aver caricato i file. La pagina **Come si usa** (schede *Home* e *Guida*) spiega cosa fa ogni pulsante e ha il pulsante per aprirlo.
+In alto c'è una barra a schede come quella di Word: ogni scheda è una funzionalità e mostra i suoi pulsanti, divisi in gruppi. Cliccando una scheda si vedono i pulsanti; aprendo una pagina la barra passa da sola alla scheda che la contiene. I pulsanti grigi si attivano dopo aver caricato i file. Con **Nascondi pulsanti ▴** (a destra delle schede, oppure doppio clic su una scheda o Ctrl+F1) la barra si richiude e restano solo i nomi delle schede: cliccandone una i pulsanti scendono sopra la pagina e si richiudono scegliendo un comando, cliccando fuori o con Esc; **Mostra pulsanti ▾** la riapre. La scelta resta anche riaprendo l'app. La pagina **Come si usa** (schede *Home* e *Guida*) spiega cosa fa ogni pulsante e ha il pulsante per aprirlo.
 
 | Scheda | Gruppi e pulsanti |
 |---|---|

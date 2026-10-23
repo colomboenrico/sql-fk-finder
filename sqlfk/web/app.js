@@ -422,8 +422,39 @@ function mostraScheda(id) {
   });
   document.querySelectorAll(".pannello-nastro").forEach(p => { p.hidden = p.dataset.scheda !== id; });
 }
-document.querySelectorAll(".scheda-nastro").forEach(b => b.addEventListener("click", () => mostraScheda(b.dataset.scheda)));
+// barra richiudibile (come "Comprimi barra multifunzione" di Word): restano solo le schede; cliccandone una i pulsanti
+// scendono sopra la pagina e si richiudono scegliendo un comando, cliccando fuori o con Esc
+let nastroCompresso = false;
+try { nastroCompresso = localStorage.getItem("sqlfk-nastro-compresso") === "1"; } catch { /* senza memoria del browser */ }
+const nastroAperto = aperto => document.body.classList.toggle("nastro-aperto", aperto && nastroCompresso);
+function comprimiNastro(compresso) {
+  nastroCompresso = compresso;
+  try { localStorage.setItem("sqlfk-nastro-compresso", compresso ? "1" : "0"); } catch { /* niente */ }
+  document.body.classList.toggle("nastro-compresso", compresso);
+  nastroAperto(false);
+  const pulsante = $("#comprimi-nastro");
+  pulsante.textContent = compresso ? "Mostra pulsanti ▾" : "Nascondi pulsanti ▴";
+  pulsante.title = compresso ? "Mostra sempre i pulsanti (Ctrl+F1)" : "Nascondi i pulsanti e lascia solo le schede (Ctrl+F1)";
+  pulsante.setAttribute("aria-expanded", compresso ? "false" : "true");
+}
+document.querySelectorAll(".scheda-nastro").forEach(b => {
+  b.addEventListener("click", () => {
+    const giaAperta = document.body.classList.contains("nastro-aperto") && schedaNastro === b.dataset.scheda;
+    mostraScheda(b.dataset.scheda);
+    nastroAperto(!giaAperta);
+  });
+  b.addEventListener("dblclick", () => comprimiNastro(!nastroCompresso));      // doppio clic su una scheda, come in Word
+});
+$("#comprimi-nastro").addEventListener("click", () => comprimiNastro(!nastroCompresso));
+$("#menu").addEventListener("click", e => { if (e.target.closest("button[data-vista]")) nastroAperto(false); });
+$("#menu").addEventListener("change", () => nastroAperto(false));            // file scelto con Carica
+document.addEventListener("click", e => { if (!e.target.closest(".testata")) nastroAperto(false); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") nastroAperto(false);
+  if (e.key === "F1" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); comprimiNastro(!nastroCompresso); }
+});
 mostraScheda("home");
+comprimiNastro(nastroCompresso);
 
 function aggiornaMenu() {
   $("#salva-progetto").disabled = !stato.caricato;
