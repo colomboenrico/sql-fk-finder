@@ -64,6 +64,60 @@ def istruzioni(testo, dialetto="mysql"):
     return [(riga, frase) for tipo, riga, frase, _ in L.istruzioni(testo, dialetto) if tipo == "istruzione"]
 
 
+# corpo di procedure, funzioni e trigger: le sue istruzioni (INSERT, DELETE...) non sono dati da caricare
+RE_ROUTINE = re.compile(r"(?:DELIMITER\s+\S+\s+)?CREATE\s+(?:OR\s+(?:REPLACE|ALTER)\s+)?(?:DEFINER\s*=\s*\S+\s+)?"
+                        r"(?:(?:NON)?EDITIONABLE\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER|EVENT|PACKAGE)\b", re.I)
+RE_BLOCCO = re.compile(r"\b(?:BEGIN(?!\s+(?:TRAN|TRANSACTION|WORK|DISTRIBUTED)\b)|CASE|END(?:\s+(?:IF|LOOP|WHILE|REPEAT|FOR|CASE)\b)?)\b", re.I)
+RE_STRINGA = re.compile(r"'(?:[^'\\]|\\.|'')*'")
+RE_GO_RIGA = re.compile(r"^[ \t]*GO[ \t]*$", re.I | re.M)
+
+
+class CorpoRoutine:
+    """Riconosce le istruzioni che stanno nel corpo di una procedura, funzione o trigger.
+
+    Il file si divide sui ";" (anche dentro BEGIN ... END con DELIMITER di MySQL o nelle procedure di SQL Server):
+    si contano BEGIN e CASE aperti e gli END che li chiudono (END IF, END LOOP... chiudono blocchi non contati);
+    in SQL Server una procedura senza BEGIN finisce con GO."""
+
+    def __init__(self, dialetto):
+        self.dialetto = dialetto
+        self.profondita = 0
+        self.fino_a_go = False
+
+    def _conta(self, frase):
+        senza_stringhe = RE_STRINGA.sub("''", frase)
+        for m in RE_BLOCCO.finditer(senza_stringhe):
+            parole = m.group().upper().split()
+            if parole[0] in ("BEGIN", "CASE"):
+                self.profondita += 1
+            elif len(parole) == 1 or parole[1] == "CASE":
+                self.profondita -= 1
+
+    def salta(self, frase, grezzo=""):
+        """True se l'istruzione è (o fa parte di) una procedura, funzione o trigger.
+        grezzo: il testo prima dell'istruzione (dal terminatore precedente), dove stanno le righe GO."""
+        testo = senza_commenti_iniziali(frase)
+        if self.fino_a_go or (self.dialetto == "tsql" and self.profondita > 0):
+            if RE_GO_RIGA.search(grezzo or "") or RE_GO_RIGA.match(testo):
+                self.fino_a_go, self.profondita = False, 0       # GO chiude il batch e la procedura
+            elif self.fino_a_go:
+                return True
+        if self.profondita > 0:
+            self._conta(testo)
+            self.profondita = max(self.profondita, 0)
+            return True
+        if not RE_ROUTINE.match(testo):
+            return False
+        if self.dialetto in ("postgres", "postgresql") and "$" in testo:
+            return True                        # il corpo $$ ... $$ è già dentro l'istruzione
+        self._conta(testo)
+        if self.profondita <= 0:
+            self.profondita = 0
+            # SQL Server: CREATE PROCEDURE ... AS istruzioni, fino a GO
+            self.fino_a_go = self.dialetto == "tsql" and re.search(r"\bAS\b", RE_STRINGA.sub("''", testo), re.I) is not None
+        return True
+
+
 def senza_commenti_iniziali(frase):
     return frase[L.RE_INIZIO.match(frase).end():]
 
@@ -228,7 +282,8 @@ class Database:
                 self._problema(nome_file, 0, "", f"file originale non trovato ({percorso}): i suoi dati non sono caricati")
                 fatti += dimensione
                 continue
-            for tipo, riga, frase, _ in L.istruzioni(testo, self.dialetto, passo):
+            corpo = CorpoRoutine(self.dialetto)
+            for tipo, riga, frase, grezzo in L.istruzioni(testo, self.dialetto, passo):
                 if self.fermo is not None and self.fermo.is_set():
                     raise Interrotto()
                 try:
@@ -237,6 +292,10 @@ class Database:
                             self._righe_copy(copy, frase)
                         continue
                     copy = None
+                    if corpo.salta(frase, grezzo):  # INSERT dentro una procedura: non sono dati
+                        continue
+                    if self.dialetto == "oracle":   # la riga "/" che chiude un blocco PL/SQL
+                        frase = re.sub(r"^\s*/[ \t]*(?:\n|$)", "", frase)
                     prima = parola_iniziale(frase)
                     if prima == "COPY":
                         copy = self._inizia_copy(frase)

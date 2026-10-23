@@ -199,4 +199,5 @@ Dai file si costruisce un database **SQLite**: le tabelle dei CREATE TABLE (più
 
 - Fino a 256 MB di dati il database sta **in memoria**; oltre, è un **file su disco** in `~/.sqlfk/cache` (o nella cartella della variabile `SQLFK_CACHE`), costruito una volta e riaperto subito le volte dopo se file, schema e dialetto non sono cambiati (impronta SHA-1).
 - La costruzione richiede circa 30 secondi per GB per i dump PostgreSQL e 70 per quelli MySQL; si può interrompere.
+- Le istruzioni nel **corpo di procedure, funzioni e trigger** (`INSERT`, `DELETE`... tra `BEGIN` ed `END`, anche con `DELIMITER` di MySQL, fino a `GO` in SQL Server, fino a `/` in Oracle) non sono dati e non si caricano: si contano i blocchi `BEGIN`/`CASE` aperti e chiusi; i corpi `$$ ... $$` di PostgreSQL restano interi.
 - Le query dell'utente si eseguono così come sono; se SQLite non le capisce si traducono dal dialetto dei file. I nomi con lo schema si riportano alle tabelle.
