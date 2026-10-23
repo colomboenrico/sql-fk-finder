@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>SQL FK Finder</title>
+  <!-- antenne -->
+  <path d="M215 112 L184 58" stroke="#5aa832" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <circle cx="181" cy="50" r="14" fill="#5aa832"/>
+  <path d="M297 112 L328 58" stroke="#5aa832" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <circle cx="331" cy="50" r="14" fill="#5aa832"/>
+  <!-- testa che sbircia da dietro il quadrato -->
+  <ellipse cx="256" cy="160" rx="92" ry="80" fill="#7cc243"/>
+  <ellipse cx="222" cy="160" rx="24" ry="34" fill="#1d2330" transform="rotate(-20 222 160)"/>
+  <ellipse cx="290" cy="160" rx="24" ry="34" fill="#1d2330" transform="rotate(20 290 160)"/>
+  <circle cx="215" cy="147" r="7.5" fill="#ffffff"/>
+  <circle cx="283" cy="147" r="7.5" fill="#ffffff"/>
+  <!-- quadrato FK -->
+  <rect x="104" y="200" width="304" height="296" rx="66" fill="#d12d35"/>
+  <!-- mani appoggiate sul bordo -->
+  <ellipse cx="182" cy="204" rx="28" ry="18" fill="#7cc243"/>
+  <ellipse cx="330" cy="204" rx="28" ry="18" fill="#7cc243"/>
+  <path d="M166 204 v8 M182 202 v10 M198 204 v8 M314 204 v8 M330 202 v10 M346 204 v8" stroke="#5aa832" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <text x="256" y="414" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="160" font-weight="700" fill="#ffffff" letter-spacing="-4">FK</text>
+</svg>
