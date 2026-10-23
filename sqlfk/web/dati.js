@@ -127,10 +127,10 @@ Object.assign(VISTE, {
 
   async datitabelle() {
     const P = await api("/api/peso_tabelle");
-    const intestazione = [el("h2", {}, "Dati delle tabelle"),
-      el("p", { class: "tenue" }, "Le tabelle popolate dai file della cartella: per ognuna la struttura (colonne, tipi, chiavi, a cosa è collegata) " +
-        "e i dati. Clicca una riga per vedere le righe collegate: quelle a cui punta (per esempio il cliente di un ordine) e quelle " +
-        "che puntano a lei (le righe dell'ordine), e seguile da una tabella all'altra.")];
+    const intestazione = [intestazioneRichiudibile("datitabelle", "Dati delle tabelle",
+      el("p", { class: "tenue" }, "Le tabelle popolate dai file della cartella: per ognuna la struttura (colonne, tipi, chiavi, a cosa è collegata), " +
+        "i dati e i grafici. Clicca una riga per vedere le righe collegate: quelle a cui punta (per esempio il cliente di un ordine) e quelle " +
+        "che puntano a lei (le righe dell'ordine), e seguile da una tabella all'altra."))];
     if (!P.con_dati) return [...intestazione, serveDatabase(P.motivo)];
     const analizzate = P.tabelle.filter(t => !t.tolta && t.righe !== null);
     const vuote = el("input", { type: "checkbox" });

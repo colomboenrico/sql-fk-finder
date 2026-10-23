@@ -87,10 +87,10 @@ Object.assign(VISTE, {
         "La lavagna si può usare anche da sola, o riaprendo un disegno salvato."));
     return [
       el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
-      el("h2", {}, "Disegno affiancato"),
-      el("p", { class: "tenue" }, "A sinistra il diagramma del database caricato, a destra una lavagna bianca. Clicca le tabelle a sinistra per " +
-        "sceglierle e copiale nella lavagna con le loro colonne e i collegamenti; poi spostale, rinominale, aggiungi o togli attributi, " +
-        "entità e relazioni. Scarica il disegno per riaprirlo e continuarlo più tardi (si salva anche con Salva progetto)."),
+      intestazioneRichiudibile("lavagna", "Disegno affiancato",
+        el("p", { class: "tenue" }, "A sinistra il diagramma del database caricato, a destra una lavagna bianca. Clicca le tabelle a sinistra per " +
+          "sceglierle e copiale nella lavagna con le loro colonne e i collegamenti; poi spostale, rinominale, aggiungi o togli attributi, " +
+          "entità e relazioni. Scarica il disegno per riaprirlo e continuarlo più tardi (si salva anche con Salva progetto).")),
       el("div", { class: "lavagna-griglia" }, sinistra, lavagna),
       dettagli,
     ];

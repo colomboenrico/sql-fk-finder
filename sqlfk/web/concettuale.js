@@ -177,7 +177,7 @@ Object.assign(VISTE, {
     else setTimeout(() => { E.ridisegna(); disegnaRiepilogo(); }, 0);
     return [
       el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
-      el("h2", {}, "Schema E-R"),
+      intestazioneRichiudibile("er", "Schema E-R",
       el("p", { class: "tenue" }, "Lo schema concettuale ricostruito dal database: le tabelle ponte diventano relazioni N:M, le chiavi esterne relazioni " +
         "1:N e 1:1 con un rombo e un nome proposto, le tabelle che hanno la stessa chiave del padre diventano gerarchie (è un), le colonne ripetute " +
         "attributi multivalore. Si modifica come nell'Editor (clicca entità e rombi, Collega due tabelle) e si porta nell'Editor del database o nella lavagna."),
@@ -197,7 +197,8 @@ Object.assign(VISTE, {
           if (STATO_LAVAGNA.modello.entita.length && !confirm("La lavagna contiene già un disegno: sostituirlo con lo schema E-R?")) return;
           E.ridisegna(); STATO_LAVAGNA.modello = copia(); STATO_LAVAGNA.selezione = null; STATO_LAVAGNA.vista = null; mostra("lavagna");
         } }, "Apri nella lavagna")),
-      E.statoCollega, riepilogo, E.avvisiBox,
+        riepilogo),
+      E.statoCollega, E.avvisiBox,
       el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
     ];
   },

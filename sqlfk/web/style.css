@@ -406,3 +406,16 @@ ul.controlli li { margin: 5px 0; }
 .valori-frequenti .riempita { display: block; height: 100%; min-width: 2px; background: var(--primario); border-radius: 0 4px 4px 0; }
 .valori-frequenti .conto { font-variant-numeric: tabular-nums; color: var(--tenue); text-align: right; }
 .valori-frequenti .altri { color: var(--tenue); font-style: italic; }
+
+/* intestazione delle pagine con i diagrammi: si richiude e il disegno prende lo spazio */
+.intestazione-pagina .riga-titolo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.intestazione-pagina .riga-titolo h2 { margin: 0; }
+.comprimi-intestazione { margin-left: auto; font-size: 12px; padding: 3px 10px; color: var(--tenue); white-space: nowrap; }
+.intestazione-corpo[hidden] { display: none; }
+.comandi-nascosti .er-cornice { height: calc(100vh - 170px); }
+.comandi-nascosti .editor-griglia .er-cornice { height: calc(100vh - 175px); }
+.comandi-nascosti .lavagna-lato .er-cornice { height: calc(100vh - 290px); }
+/* schermo intero di un diagramma */
+.er-intero-pulsante { position: absolute; top: 8px; right: 8px; z-index: 2; font-size: 12px; padding: 3px 10px; opacity: .85; }
+.er-cornice.er-intero { position: fixed; inset: 10px; height: auto !important; min-height: 0; z-index: 60; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+.er-cornice .er-nota { right: 140px; }

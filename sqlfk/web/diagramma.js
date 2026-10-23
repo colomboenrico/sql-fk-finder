@@ -198,6 +198,32 @@ const DiagrammaER = (() => {
     mondo.append(strCornici, strLinee, strTabelle, strEtichette);
     svg.append(mondo);
     contenitore.replaceChildren(svg);
+    // schermo intero: il diagramma riempie la finestra (Esc per uscire)
+    if (!opzioni.senzaSchermoIntero) {
+      const intero = document.createElement("button");
+      intero.type = "button";
+      intero.className = "er-intero-pulsante";
+      const aggiornaIntero = () => {
+        const attivo = contenitore.classList.contains("er-intero");
+        intero.textContent = attivo ? "Esci (Esc)" : "Schermo intero";
+        intero.title = attivo ? "Torna alla pagina" : "Il diagramma riempie la finestra";
+      };
+      const esci = e => { if (e.key === "Escape" && contenitore.classList.contains("er-intero")) alterna(); };
+      const alterna = () => {
+        const prima = contenitore.getBoundingClientRect();
+        const attivo = contenitore.classList.toggle("er-intero");
+        // il punto al centro resta al centro anche con la nuova grandezza
+        const dopo = contenitore.getBoundingClientRect();
+        vista.x += (dopo.width - prima.width) / 2;
+        vista.y += (dopo.height - prima.height) / 2;
+        applica();
+        if (attivo) document.addEventListener("keydown", esci); else document.removeEventListener("keydown", esci);
+        aggiornaIntero();
+      };
+      intero.addEventListener("click", alterna);
+      aggiornaIntero();
+      contenitore.append(intero);
+    }
 
     let vista = opzioni.vista ? { ...opzioni.vista } : { x: 0, y: 0, s: 1 };
     const applica = () => mondo.setAttribute("transform", `translate(${vista.x} ${vista.y}) scale(${vista.s})`);
@@ -429,9 +455,14 @@ const DiagrammaER = (() => {
         vista.x = (r.width - (b.x1 - b.x0) * vista.s) / 2 - b.x0 * vista.s;
         vista.y = (r.height - (b.y1 - b.y0) * vista.s) / 2 - b.y0 * vista.s;
       } else {
-        // diagramma troppo grande per stare tutto: si parte leggibili dall'angolo in alto a sinistra
-        vista.x = MARGINE * 3 - b.x0 * vista.s;
-        vista.y = MARGINE * 3 - b.y0 * vista.s;
+        // diagramma troppo grande per stare tutto: si parte leggibili, centrati sulla tabella più collegata
+        // (l'angolo in alto a sinistra di un diagramma enorme è spesso vuoto, attraversato solo da linee)
+        const gradi = {};
+        collegamenti.forEach(l => { gradi[l.da] = (gradi[l.da] || 0) + 1; gradi[l.a] = (gradi[l.a] || 0) + 1; });
+        const elencoUsato = elenco || tabelle;
+        const cuore = elencoUsato.reduce((m, t) => (gradi[t.nome] || 0) > (gradi[m.nome] || 0) ? t : m, elencoUsato[0]);
+        vista.x = r.width / 2 - (cuore.x + cuore.larghezza / 2) * vista.s;
+        vista.y = r.height / 2 - (cuore.y + cuore.altezza / 2) * vista.s;
       }
       applica();
       return s >= minimo;
@@ -446,8 +477,8 @@ const DiagrammaER = (() => {
       if (adatta(undefined, tabelle.length > 60 ? LEGGIBILE : 0.05) !== false || !tabelle.length) return;
       const nota = document.createElement("div");
       nota.className = "er-nota";
-      nota.textContent = `${tabelle.length} tabelle: il diagramma è grande e si vede una parte. Trascina per spostarti, ` +
-        "usa la rotellina per lo zoom, cerca una tabella, oppure Adatta alla finestra per vederlo tutto (piccolo).";
+      nota.textContent = `${tabelle.length} tabelle: il diagramma è grande e si vede la parte intorno alla tabella più collegata. ` +
+        "Trascina per spostarti, usa la rotellina per lo zoom, cerca una tabella, oppure Adatta alla finestra per vederlo tutto (piccolo).";
       const chiudi = document.createElement("button");
       chiudi.textContent = "Chiudi";
       chiudi.addEventListener("click", () => nota.remove());

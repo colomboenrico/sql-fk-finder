@@ -139,6 +139,28 @@ function avviso(testo, errore = false) {
   setTimeout(() => nodo.remove(), errore ? 8000 : 4000);
 }
 
+/** Titolo della pagina con la parte sopra (descrizione, comandi, riepilogo) che si richiude con un pulsante, per lasciare
+    lo spazio al disegno nelle pagine con i diagrammi. La scelta resta salvata per ogni pagina. */
+function intestazioneRichiudibile(chiave, titolo, ...contenuto) {
+  let chiusa = false;
+  try { chiusa = localStorage.getItem(`sqlfk-intestazione-${chiave}`) === "1"; } catch { /* senza memoria del browser */ }
+  const corpo = el("div", { class: "intestazione-corpo" }, contenuto);
+  const pulsante = el("button", { class: "comprimi-intestazione", type: "button" });
+  const applica = () => {
+    corpo.hidden = chiusa;
+    pulsante.textContent = chiusa ? "Mostra comandi ▾" : "Nascondi comandi ▴";
+    pulsante.title = chiusa ? "Mostra descrizione, comandi e riepilogo" : "Nascondi descrizione, comandi e riepilogo: il disegno prende lo spazio";
+    vista.classList.toggle("comandi-nascosti", chiusa);
+  };
+  pulsante.addEventListener("click", () => {
+    chiusa = !chiusa;
+    try { localStorage.setItem(`sqlfk-intestazione-${chiave}`, chiusa ? "1" : "0"); } catch { /* niente */ }
+    applica();
+  });
+  applica();
+  return el("div", { class: "intestazione-pagina" }, el("div", { class: "riga-titolo" }, el("h2", {}, titolo), pulsante), corpo);
+}
+
 /** Salvare il database senza le tabelle tolte in un nuovo file .sql (con il nome scelto): i file originali non cambiano. */
 function salvaSenzaTolte() {
   const base = String(stato.origine || "database").split(/[\\/]/).pop().replace(/^cartella /, "").replace(/\.sql$/i, "") || "database";
@@ -175,7 +197,7 @@ async function diagrammaInPng(dati, nome, posizioni) {
   const scatola = el("div", { style: "position: fixed; left: -20000px; top: 0; width: 1600px; height: 1000px" });
   document.body.append(scatola);
   try {
-    const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni });
+    const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni, senzaSchermoIntero: true });
     scaricaBlob(await d.png(), nome);
   } finally {
     scatola.remove();
@@ -521,6 +543,7 @@ async function dopoModifica(messaggio) {
 
 async function mostra(nome) {
   vistaAttuale = nome;
+  vista.classList.remove("comandi-nascosti");
   aggiornaMenu();
   const funzione = VISTE[nome];
   if (!stato.caricato && $(`#menu button[data-vista="${nome}"]`).hasAttribute("data-serve-dati")) {
@@ -1500,7 +1523,7 @@ const VISTE = {
     setTimeout(E.ridisegna, 0);
     return [
       el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
-      el("h2", {}, "Editor del database"),
+      intestazioneRichiudibile("editor", "Editor del database",
       el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
       el("div", { class: "riga-comandi" },
         E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"), E.pulsanteCollega,
@@ -1509,7 +1532,7 @@ const VISTE = {
         el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta alla finestra"),
         el("button", { onclick: () => conAttesa(E.analizza) }, "Analizza questo schema"),
         el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), E.regole(), E.dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
-        el("button", { onclick: () => E.diagramma && conAttesa(async () => scaricaBlob(await E.diagramma.png(), "database.png")) }, "Scarica PNG")),
+        el("button", { onclick: () => E.diagramma && conAttesa(async () => scaricaBlob(await E.diagramma.png(), "database.png")) }, "Scarica PNG"))),
       E.statoCollega, E.avvisiBox,
       el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
       el("h3", {}, "Codice SQL generato"),
@@ -1944,7 +1967,7 @@ const VISTE = {
             const scatola = el("div", { style: "position: fixed; left: -20000px; top: 0; width: 1600px; height: 1000px" });
             document.body.append(scatola);
             try {
-              const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni: layoutER[tipo] });
+              const d = DiagrammaER.crea(scatola, dati, { tipi: true, posizioni: layoutER[tipo], senzaSchermoIntero: true });
               scaricaBlob(new Blob([d.esporta()], { type: "image/svg+xml" }), "modello_relazionale.svg");
             } finally { scatola.remove(); }
           } }, "SVG")),
@@ -2276,7 +2299,7 @@ async function contenutoER(quale) {
   });
   setTimeout(async () => { await aggiornaEntita(); disegna(); }, 0);
   return [
-    el("h2", {}, "Diagramma delle tabelle"),
+    intestazioneRichiudibile("schemi", "Diagramma delle tabelle",
     el("div", { class: "riga-comandi" },
       scheda("iniziale", "Solo FK dichiarate"),
       scheda("collegamenti", "FK dichiarate e trovate"),
@@ -2305,7 +2328,7 @@ async function contenutoER(quale) {
       quale === "collegamenti" && erMedie ? el("span", {}, el("span", { class: "campione tratteggio", style: "border-color:#c25e00" }), "FK trovata (media)") : null,
       el("span", {}, "1 / N: cardinalità · trascina le tabelle, rotellina per lo zoom, passa il mouse per evidenziare i collegamenti")),
     stato.rimosse.length ? el("div", { class: "messaggio" },
-      `Le ${stato.rimosse.length} tabelle tolte non compaiono. Si rimettono da Togli entità.`) : null,
+      `Le ${stato.rimosse.length} tabelle tolte non compaiono. Si rimettono da Togli entità.`) : null),
     cornice,
   ];
 }
