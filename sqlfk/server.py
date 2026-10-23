@@ -853,8 +853,13 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(file[percorso], blocca=False)
         if percorso == "/api/cerca_entita":
             parola = parse_qs(url.query).get("parola", [""])[0]
-            return self.esegui(lambda: (s.richiedi_dati(), {"tabelle": A.tabelle_entita(
-                [t for t in s.df_schema["tabella"].unique() if t not in s.rimosse], parola, s.imp.sinonimi)})[1])
+
+            def cerca():
+                s.richiedi_dati()
+                tutte = [t for t in s.df_schema["tabella"].unique() if t not in s.rimosse]
+                uguali, contengono = A.tabelle_per_testo(tutte, parola)
+                return {"tabelle": A.tabelle_entita(tutte, parola, s.imp.sinonimi), "uguali": uguali, "contengono": contengono}
+            return self.esegui(cerca)
         self.statico(percorso)
 
     def schema(self, quale):

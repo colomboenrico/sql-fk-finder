@@ -192,5 +192,45 @@ const Editor = (() => {
     return M;
   }
 
-  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, entitaDi };
+  /**
+   * Copia alcune tabelle di un diagramma (stesso formato di /api/diagramma) nel modello M, con le colonne e i
+   * collegamenti tra le tabelle copiate e quelle già presenti. Le tabelle con un nome già presente non si copiano.
+   * posizioni: quelle del diagramma di partenza; il gruppo copiato mantiene la sua forma e va a destra del disegno.
+   * Restituisce {copiate, saltate, relazioni}.
+   */
+  function copiaTabelle(M, dati, nomi, posizioni = {}) {
+    const presenti = new Map(M.entita.map(e => [e.nome.toLowerCase(), e]));
+    const daCopiare = dati.tabelle.filter(t => nomi.includes(t.nome));
+    const saltate = daCopiare.filter(t => presenti.has(t.nome.toLowerCase())).map(t => t.nome);
+    const nuove = daCopiare.filter(t => !presenti.has(t.nome.toLowerCase()));
+    // posizione: a destra di quello che c'è già, mantenendo la disposizione del diagramma di partenza
+    const xs = M.entita.filter(e => isFinite(e.x)).map(e => e.x), ys = M.entita.filter(e => isFinite(e.y)).map(e => e.y);
+    const origine = nuove.map(t => posizioni[t.nome]).filter(p => Array.isArray(p));
+    const minX = origine.length ? Math.min(...origine.map(p => p[0])) : 0, minY = origine.length ? Math.min(...origine.map(p => p[1])) : 0;
+    const baseX = xs.length ? Math.max(...xs) + 420 : 40, baseY = ys.length ? Math.min(...ys) : 40;
+    nuove.forEach((t, i) => {
+      const p = posizioni[t.nome];
+      const e = { id: id(M), nome: t.nome,
+                  x: p ? baseX + p[0] - minX : baseX + (i % 4) * 360, y: p ? baseY + p[1] - minY : baseY + Math.floor(i / 4) * 300,
+                  attributi: t.colonne.filter(c => !String(c.nome).startsWith("… "))
+                    .map(c => ({ nome: c.nome, tipo: c.tipo || "INT", pk: !!c.pk, nn: !!c.not_null && !c.pk, uq: !!c.unique && !c.pk })) };
+      M.entita.push(e);
+      presenti.set(e.nome.toLowerCase(), e);
+    });
+    // collegamenti con almeno una tabella appena copiata e l'altra presente nel disegno
+    const nuoviNomi = new Set(nuove.map(t => t.nome.toLowerCase()));
+    let relazioni = 0;
+    for (const l of dati.collegamenti) {
+      const figlia = presenti.get(l.da.toLowerCase()), padre = presenti.get(l.a.toLowerCase());
+      if (!figlia || !padre || !(nuoviNomi.has(l.da.toLowerCase()) || nuoviNomi.has(l.a.toLowerCase()))) continue;
+      const doppia = M.relazioni.some(r => r.da === figlia.id && r.a === padre.id && String(r.colonne_da) === String(l.colonne_da));
+      if (doppia) continue;
+      M.relazioni.push({ id: id(M), da: figlia.id, a: padre.id, tipo: l.relazione === "1:1" ? "1:1" : "1:N",
+                         obbligatoria: !!l.obbligatoria, colonne_da: l.colonne_da, colonne_a: l.colonne_a });
+      relazioni++;
+    }
+    return { copiate: nuove.map(t => t.nome), saltate, relazioni };
+  }
+
+  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi };
 })();

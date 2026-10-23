@@ -33,6 +33,7 @@ SQL FK Finder legge i file `.sql` (i `CREATE TABLE`) e **ricostruisce le relazio
 | **Codice generato** | I modelli SQLAlchemy (Python) di tutto il database e una bozza di script SQL che corregge i problemi di normalizzazione |
 | **Ontologia** | Genera un'ontologia OWL e il mapping R2RML dallo schema |
 | **Editor** | Disegna entità e relazioni da zero (o parte dal database caricato) e ottiene lo schema logico e l'SQL |
+| **Disegno affiancato** | Il diagramma del database accanto a una lavagna bianca: copi le tabelle, migliori il disegno, lo scarichi e lo riapri per continuare |
 | **Progetti** | Salva e riapre il lavoro (file `.sqlfk`) |
 
 ## Cosa non fa

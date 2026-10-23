@@ -219,6 +219,8 @@ e si apre `http://127.0.0.1:8765`. Con `--cartella percorso/dei/file` carica sub
 
 ### Editor del database
 
+La pagina **Disegno affiancato** mette il diagramma del database accanto a una lavagna bianca: si cliccano le tabelle da copiare (con colonne e collegamenti), si migliora il disegno, lo si scarica in un file `.json` e lo si riapre per continuare.
+
 Nella pagina **Editor del database** si disegna un database da zero, oppure si importa quello caricato per correggerlo:
 
 - **entità** con i loro attributi (nome, tipo, chiave primaria, NOT NULL, UNIQUE);
@@ -260,6 +262,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/web/estensioni.js` | le pagine Chiavi verificate sui dati, Viste e procedure, Codice generato |
 | `sqlfk/web/file.js` | le pagine File della cartella (esplora, ricerca, schemi affiancati) e File XML (albero, riepilogo, tabelle del database) |
 | `sqlfk/web/editor.js` | l'editor del database: entità, relazioni, schema logico e SQL |
+| `sqlfk/web/lavagna.js` | Disegno affiancato: il diagramma del database accanto a una lavagna dove copiare le tabelle, con il disegno da scaricare e riaprire |
 | `sqlfk/web/diagramma.js` | il diagramma delle tabelle; la disposizione usa dagre (licenza MIT, in `sqlfk/web/vendor/`) |
 | `app/` | l'app Electron, che avvia il server e mostra l'interfaccia |
 | `avvia_app.command`, `avvia_app.bat` | avvio dell'app con un doppio clic (Mac, Windows) |

@@ -34,6 +34,14 @@ Il database com'è nei file, prima dell'analisi: tabelle, colonne, chiavi primar
 ### Editor del database
 Per disegnare un database da zero o modificarne uno: aggiungi entità con attributi (tipo, chiave primaria, obbligatorio), collegale con relazioni 1:N, 1:1 o N:M (per le N:M crea da solo la tabella ponte, anche con attributi propri). Mostra lo schema logico, gli avvisi e l'SQL (`CREATE TABLE` in ordine giusto, con le chiavi esterne). *Importa il database caricato* parte dalle tabelle caricate; *Analizza questo schema* lo passa a tutte le altre pagine come se fossero file caricati.
 
+### Disegno affiancato
+A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca** (lo stesso editor della pagina *Editor del database*).
+
+- A sinistra cerchi per tabella/entità e per attributo (con *anche le collegate*) e **clicchi le tabelle** da copiare: diventano colorate. *Scegli le visibili* prende tutte quelle mostrate dalla ricerca, *Nessuna* toglie la scelta.
+- **Copia nella lavagna** porta le tabelle scelte (con *con le tabelle collegate* anche quelle collegate) con tutte le colonne e i collegamenti tra loro e con le tabelle già nella lavagna; mantengono la disposizione del diagramma e vanno a destra di quello che c'è già. Una tabella già presente non si copia due volte.
+- Nella lavagna **migliori il disegno**: sposti le tabelle, clicchi un'entità per cambiarne nome e attributi (riquadro *Entità scelta nella lavagna* sotto), aggiungi entità e relazioni, elimini. Sotto c'è anche l'SQL del disegno.
+- **Scarica il disegno** salva un file `.json`; **Apri un disegno** lo riapre per continuare (anche un file di progetto `.sqlfk`). Il disegno si salva anche con *Salva progetto*. *Scarica SQL* e *Scarica PNG* esportano il disegno; *Porta nell'Editor* lo copia nella pagina *Editor del database*, per analizzarlo come un database caricato.
+
 ### Problemi
 La diagnostica come un compilatore: ogni riga ha gravità (errore, avviso, info), codice, file e riga, tabella e colonna, messaggio e suggerimento. Si filtra per gravità e per regola; cliccando una riga si vede il **pezzo di file** con la riga evidenziata e la **regola di progettazione** violata, con esempio sbagliato e corretto. Elenco completo dei codici: [Diagnostica](05-diagnostica.md).
 
@@ -90,7 +98,7 @@ Anche qui si possono **affiancare** la scheda di una tabella, lo schema delle ta
 Lo schema logico, una riga per tabella (`Fatture(numero, data, id_cliente → Clienti)`), con esportazione in testo, Markdown, Mermaid, PlantUML, Graphviz DOT, DBML, JSON e come immagine.
 
 ### Togli entità
-Scrivi un'entità (per esempio `piatto`) e vedi tutte le sue tabelle (riconosce plurali, accenti, prefissi, sinonimi). *Togli entità dall'analisi* le esclude da tutte le analisi; si rimettono quando vuoi (*Rimetti selezionate*, *Rimetti tutte*). Utile per concentrarsi su una parte del database.
+Scrivi il nome di una tabella, anche completo (`piatto_ingredienti`), o di un'entità (`piatto`): mentre scrivi compaiono le tabelle **con lo stesso nome**, quelle **che lo contengono** nel nome e quelle **della stessa entità** (riconosce plurali, accenti, prefissi, sinonimi). Nessuna è spuntata: scegli tu quali togliere (o *Seleziona tutte*) e premi *Togli*. Le tabelle tolte sono escluse da tutte le analisi e la ricerca resta, per continuare; si rimettono quando vuoi (*Rimetti selezionate*, *Rimetti tutte*). Utile per concentrarsi su una parte del database.
 
 ### Query sui dati
 Un database SQLite costruito dai dati dei file (`INSERT`, `COPY ... FROM stdin`).

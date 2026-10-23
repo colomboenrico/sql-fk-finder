@@ -529,6 +529,22 @@ def tabelle_entita(tabelle, parola, sinonimi=None):
                          for p in parti_nome(senza_accenti(t))))
 
 
+def tabelle_per_testo(tabelle, testo):
+    """(con lo stesso nome, che contengono il testo nel nome): senza maiuscole, schema, virgolette e trattini bassi.
+    'piatto_ingredienti' trova piatto_ingredienti; 'ingredienti' anche piatto_ingredienti e tbl_ingredienti."""
+    cercato = normalizza(senza_accenti(pulisci(str(testo or "").strip())))
+    if not cercato:
+        return [], []
+    uguali, contengono = [], []
+    for t in sorted(tabelle):
+        nomi = {normalizza(senza_accenti(t)), normalizza(senza_accenti(t.split(".")[-1]))}
+        if cercato in nomi:
+            uguali.append(t)
+        elif any(cercato in n for n in nomi):
+            contengono.append(t)
+    return uguali, contengono
+
+
 def filtra_schema(df_schema, pk_dichiarate, rimosse):
     """Toglie dallo schema le tabelle rimosse."""
     rimosse = set(rimosse)

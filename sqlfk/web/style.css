@@ -313,3 +313,13 @@ ul.controlli li { margin: 5px 0; }
 /* codice generato */
 .codice-generato { background: var(--pannello); border: 1px solid var(--bordo); border-radius: 6px; padding: 12px; max-height: 70vh; overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; }
+
+/* disegno affiancato: database a sinistra, lavagna a destra */
+.lavagna-griglia { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.lavagna-lato { margin: 0; padding: 12px; min-width: 0; }
+.lavagna-lato .er-cornice { height: calc(100vh - 330px); min-height: 460px; }
+.lavagna-lato input[type=search] { width: 170px; }
+.lavagna-dettagli { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; align-items: start; }
+.lavagna-dettagli .pannello { margin: 0; }
+.lavagna-dettagli summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 1100px) { .lavagna-griglia, .lavagna-dettagli { grid-template-columns: 1fr; } }

@@ -12,7 +12,8 @@ let selezioneEditor = null;
 let vistaEditor = null;
 // disposizione del diagramma: tabella -> [x, y], per le due viste; si salva nel file di progetto
 let layoutER = { iniziale: {}, collegamenti: {} };
-let testoQuery = "";             // il testo dell'editor delle query resta quando si cambia pagina
+let testoQuery = "";
+let ricercaTogli = "";           // la ricerca della pagina Togli entità resta dopo aver tolto delle tabelle             // il testo dell'editor delle query resta quando si cambia pagina
 let ultimiRisultati = null;
 let regoleCache = null;
 
@@ -329,6 +330,7 @@ $("#salva-progetto").addEventListener("click", () => conAttesa(async () => {
   const progetto = await api("/api/progetto");
   progetto.layout = layoutER;
   progetto.editor = modelloEditor;
+  progetto.lavagna = STATO_LAVAGNA.modello;
   scaricaBlob(new Blob([JSON.stringify(progetto, null, 1)], { type: "application/json" }), nomeProgetto());
   avviso("Progetto salvato: riaprilo con Apri progetto per continuare il lavoro.");
 }));
@@ -345,6 +347,8 @@ $("#in-progetto").addEventListener("change", async e => {
     layoutER = { ...l, iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
     modelloEditor = progetto.editor && progetto.editor.entita ? progetto.editor : Editor.nuovoModello();
     selezioneEditor = null; vistaEditor = null;
+    STATO_LAVAGNA.modello = progetto.lavagna ? leggiLavagna(JSON.stringify({ formato: FORMATO_LAVAGNA, modello: progetto.lavagna })) : Editor.nuovoModello();
+    STATO_LAVAGNA.selezione = STATO_LAVAGNA.vista = null;
     regoleCache = null;
     avviso(`Progetto ${file.name} aperto: ${stato.tabelle_totali} tabelle, ${stato.rimosse.length} tolte.`);
     aggiornaTutto("panoramica");
@@ -698,6 +702,205 @@ function schedaReverse(R, t, apri, { altezza = 380 } = {}) {
     griglia({ colonne: ["colonna", "tipo", "ruolo", "significato probabile"], righe: T.colonne.map(c => [c.colonna, c.tipo, c.ruolo, c.significato]) },
       { titolo: "Colonne" }));
 }
+
+/** L'editor del database (tela, pannello dell'entità scelta, avvisi, SQL) su uno stato {modello, selezione, vista}:
+    lo usano la pagina Editor del database e la lavagna della pagina Disegno affiancato. */
+function creaEditor(S) {
+  const M = () => S.modello;
+  const cornice = el("div", { class: "er-cornice" });
+  const pannello = el("div", { class: "pannello editor-pannello" });
+  const avvisiBox = el("div", { class: "editor-avvisi" });
+  const anteprima = el("pre", { style: "max-height: 320px" });
+  const nomeNuova = el("input", { type: "text", placeholder: "nome della nuova entità", "aria-label": "Nome della nuova entità" });
+  const tipoImport = el("select", { "aria-label": "Chiavi esterne da importare" },
+    el("option", { value: "iniziale" }, "solo FK dichiarate"), el("option", { value: "collegamenti" }, "FK dichiarate e trovate"));
+  let diagramma = null;
+  const regole = () => ({ on_delete: stato.impostazioni?.on_delete || "", on_update: stato.impostazioni?.on_update || "" });
+  const dialetto = () => stato.impostazioni?.dialetto || "mysql";
+
+  function posizioniModello() {
+    const p = {};
+    M().entita.forEach(e => { if (isFinite(e.x) && isFinite(e.y)) p[e.nome] = [e.x, e.y]; });
+    M().relazioni.forEach(r => { if (r.tipo === "N:M" && isFinite(r.x) && isFinite(r.y)) p[r.nome] = [r.x, r.y]; });
+    return p;
+  }
+  function elementoDaNome(nome) {
+    return M().entita.find(e => e.nome === nome) || M().relazioni.find(r => r.tipo === "N:M" && r.nome === nome) || null;
+  }
+  function salvaPosizioni(pos) {
+    M().entita.forEach(e => { if (pos[e.nome]) [e.x, e.y] = pos[e.nome]; });
+    M().relazioni.forEach(r => { if (r.tipo === "N:M" && pos[r.nome]) [r.x, r.y] = pos[r.nome]; });
+  }
+
+  function ridisegna() {
+    if (diagramma) { S.vista = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
+    const schema = Editor.schemaLogico(M());
+    const scelto = S.selezione && (Editor.entitaDi(M(), S.selezione)?.nome || M().relazioni.find(r => r.id === S.selezione)?.nome);
+    if (schema.tabelle.length) {
+      diagramma = DiagrammaER.crea(cornice, schema, {
+        tipi: true, posizioni: posizioniModello(), vista: S.vista, selezionata: scelto,
+        onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
+        onClic: nome => { S.selezione = nome ? elementoDaNome(nome)?.id || null : null; ridisegna(); },
+      });
+      salvaPosizioni(diagramma.posizioni());
+    } else {
+      diagramma = null;
+      cornice.replaceChildren(el("div", { class: "messaggio", style: "margin: 16px" },
+        "Tela vuota: scrivi il nome di un'entità (per esempio Clienti) e premi Nuova entità, oppure importa il database caricato."));
+    }
+    avvisiBox.replaceChildren(...schema.avvisi.map(a => el("div", {}, `Avviso: ${a}`)));
+    anteprima.textContent = Editor.sql(M(), regole(), dialetto());
+    disegnaPannello();
+  }
+
+  function riga(attributo, eliminabile, alCambio) {
+    const nome = el("input", { type: "text", value: attributo.nome, "aria-label": "Nome dell'attributo" });
+    const tipo = el("input", { type: "text", value: attributo.tipo, list: "tipi-sql", "aria-label": "Tipo" });
+    const spunta = (chiave, titolo) => {
+      const c = el("input", { type: "checkbox", checked: !!attributo[chiave], title: titolo, "aria-label": titolo });
+      c.addEventListener("change", () => { attributo[chiave] = c.checked; alCambio(); });
+      return el("td", { class: "stretto" }, c);
+    };
+    nome.addEventListener("change", () => { attributo.nome = Editor.pulisciNome(nome.value); alCambio(); });
+    tipo.addEventListener("change", () => { attributo.tipo = tipo.value.trim().toUpperCase() || "INT"; alCambio(); });
+    return el("tr", {}, el("td", {}, nome), el("td", {}, tipo),
+      "pk" in attributo ? spunta("pk", "chiave primaria") : el("td"), spunta("nn", "NOT NULL (obbligatorio)"),
+      "uq" in attributo ? spunta("uq", "UNIQUE") : el("td"),
+      el("td", { class: "stretto" }, eliminabile ? el("button", { title: "Elimina l'attributo", onclick: eliminabile }, "x") : null));
+  }
+
+  function formRelazione() {
+    const opzioni = () => M().entita.map(e => el("option", { value: e.id }, e.nome));
+    const da = el("select", { "aria-label": "Entità figlia" }, opzioni());
+    const a = el("select", { "aria-label": "Entità padre" }, opzioni());
+    if (M().entita.length > 1) a.selectedIndex = 1;
+    if (S.selezione && Editor.entitaDi(M(), S.selezione)) da.value = S.selezione;
+    const tipo = el("select", { "aria-label": "Cardinalità" },
+      el("option", { value: "1:N" }, "1:N  molte righe della prima per una della seconda"),
+      el("option", { value: "1:1" }, "1:1  una per una"),
+      el("option", { value: "N:M" }, "N:M  molte per molte (tabella ponte)"));
+    const obbl = el("input", { type: "checkbox", checked: true });
+    const nomePonte = el("input", { type: "text", class: "largo", placeholder: "nome della tabella ponte (facoltativo)" });
+    return [
+      el("h3", {}, "Nuova relazione"),
+      el("label", { class: "campo" }, "Prima entità (per 1:N: quella dal lato molti, che riceve la chiave esterna)", da),
+      el("label", { class: "campo" }, "Seconda entità (per 1:N: quella dal lato uno)", a),
+      el("label", { class: "campo" }, "Cardinalità", tipo),
+      el("label", {}, obbl, " obbligatoria (la chiave esterna è NOT NULL)"), el("br"), el("br"),
+      nomePonte, el("br"), el("br"),
+      el("button", { class: "primario", onclick: () => {
+        if (!da.value || !a.value) return avviso("Servono almeno due entità (o una per una relazione con se stessa).", true);
+        if (tipo.value === "N:M" && da.value === a.value) return avviso("Una relazione N:M deve collegare due entità diverse.", true);
+        const r = Editor.aggiungiRelazione(M(), { da: da.value, a: a.value, tipo: tipo.value, obbligatoria: obbl.checked, nome: nomePonte.value });
+        if (r.tipo === "N:M") {                 // la tabella ponte sotto, a metà tra le due entità
+          const e1 = Editor.entitaDi(M(), r.da), e2 = Editor.entitaDi(M(), r.a);
+          if (isFinite(e1.x) && isFinite(e2.x)) { r.x = Math.round((e1.x + e2.x) / 2); r.y = Math.max(e1.y, e2.y) + 260; }
+        }
+        S.selezione = r.tipo === "N:M" ? r.id : da.value;
+        ridisegna();
+      } }, "Crea relazione"),
+    ];
+  }
+
+  function disegnaPannello() {
+    const e = S.selezione && Editor.entitaDi(M(), S.selezione);
+    const r = !e && S.selezione && M().relazioni.find(x => x.id === S.selezione);
+    const contenuto = [];
+    const intestazione = el("tr", {}, ["nome", "tipo", "PK", "NN", "UQ", ""].map(x => el("th", {}, x)));
+    if (e) {
+      const nome = el("input", { type: "text", class: "largo", value: e.nome, "aria-label": "Nome dell'entità" });
+      nome.addEventListener("change", () => { e.nome = Editor.pulisciNome(nome.value); ridisegna(); });
+      const relazioni = M().relazioni.filter(x => x.da === e.id || x.a === e.id);
+      contenuto.push(
+        el("h3", {}, `Entità ${e.nome}`), el("label", { class: "campo" }, "Nome", nome),
+        el("table", {}, el("thead", {}, intestazione), el("tbody", {}, e.attributi.map((at, i) =>
+          riga(at, () => { e.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
+        el("div", { class: "riga-comandi", style: "margin-top: 8px" },
+          el("button", { onclick: () => { e.attributi.push({ nome: `attributo${e.attributi.length + 1}`, tipo: "VARCHAR(50)", pk: false, nn: false, uq: false }); ridisegna(); } }, "Aggiungi attributo"),
+          el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); S.selezione = null; ridisegna(); } }, "Elimina entità")),
+        relazioni.length ? el("h3", {}, "Relazioni") : null,
+        relazioni.map(x => el("div", { class: "riga-comandi" },
+          el("span", {}, x.tipo === "N:M" ? `${x.nome}: N:M` : `${Editor.entitaDi(M(), x.da).nome} → ${Editor.entitaDi(M(), x.a).nome} (${x.tipo}${x.obbligatoria ? ", obbligatoria" : ""})`),
+          el("button", { onclick: () => { M().relazioni = M().relazioni.filter(y => y !== x); ridisegna(); } }, "Elimina"))),
+        el("hr"));
+    } else if (r) {
+      const nome = el("input", { type: "text", class: "largo", value: r.nome, "aria-label": "Nome della tabella ponte" });
+      nome.addEventListener("change", () => { r.nome = Editor.pulisciNome(nome.value); ridisegna(); });
+      contenuto.push(
+        el("h3", {}, `Relazione N:M ${r.nome}`),
+        el("p", { class: "tenue" }, `Tra ${Editor.entitaDi(M(), r.da).nome} e ${Editor.entitaDi(M(), r.a).nome}: la tabella ponte ha come chiave primaria le chiavi delle due entità. Qui sotto gli attributi della relazione (per esempio la quantità).`),
+        el("label", { class: "campo" }, "Nome della tabella ponte", nome),
+        el("table", {}, el("thead", {}, el("tr", {}, ["nome", "tipo", "", "NN", "", ""].map(x => el("th", {}, x)))),
+          el("tbody", {}, (r.attributi || []).map((at, i) => riga(at, () => { r.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
+        el("div", { class: "riga-comandi", style: "margin-top: 8px" },
+          el("button", { onclick: () => { (r.attributi ||= []).push({ nome: `attributo${r.attributi.length + 1}`, tipo: "INT", nn: false }); ridisegna(); } }, "Aggiungi attributo"),
+          el("button", { class: "pericolo", onclick: () => { M().relazioni = M().relazioni.filter(y => y !== r); S.selezione = null; ridisegna(); } }, "Elimina relazione")),
+        el("hr"));
+    } else {
+      contenuto.push(el("p", { class: "tenue" }, "Clicca un'entità sulla tela per modificarne nome e attributi; trascinala per spostarla."));
+    }
+    contenuto.push(M().entita.length ? formRelazione() : null);
+    pannello.replaceChildren(...[contenuto].flat(Infinity).filter(Boolean));
+  }
+
+  function nuovaEntita() {
+    const nome = nomeNuova.value.trim();
+    if (!nome) return avviso("Scrivi il nome della nuova entità.", true);
+    if (M().entita.some(e => e.nome.toLowerCase() === Editor.pulisciNome(nome).toLowerCase())) return avviso("Esiste già un'entità con questo nome.", true);
+    const pos = diagramma ? diagramma.posizioni() : {};
+    const xs = Object.values(pos).map(p => p[0]), ys = Object.values(pos).map(p => p[1]);
+    // a destra dell'ultima, andando a capo ogni 4 entità
+    const n = M().entita.length;
+    const e = Editor.aggiungiEntita(M(), nome, xs.length ? 40 + (n % 4) * 360 : 40, ys.length ? 40 + Math.floor(n / 4) * 300 : 40);
+    S.selezione = e.id;
+    nomeNuova.value = "";
+    S.vista = null;                         // la vista si adatta per mostrare tutto
+    if (diagramma) salvaPosizioni(diagramma.posizioni());
+    diagramma = null;
+    ridisegna();
+  }
+  nomeNuova.addEventListener("keydown", ev => { if (ev.key === "Enter") nuovaEntita(); });
+
+  async function importa() {
+    if (M().entita.length && !confirm("L'editor contiene già un database: sostituirlo con quello caricato?")) return;
+    const dati = await api(`/api/diagramma?tipo=${tipoImport.value}`);
+    S.modello = Editor.daDiagramma(dati, layoutER[tipoImport.value] || {});
+    S.selezione = null; S.vista = null; diagramma = null;
+    ridisegna();
+    avviso(`Importate ${S.modello.entita.length} entità e ${S.modello.relazioni.length} relazioni.`);
+  }
+
+  async function analizza() {
+    if (!M().entita.length) return avviso("L'editor è vuoto.", true);
+    if (diagramma) salvaPosizioni(diagramma.posizioni());
+    stato = await api("/api/carica_file", { file: [{ nome: "editor.sql", testo: Editor.sql(M(), regole(), dialetto()) }], origine: "editor" });
+    const pos = posizioniModello();
+    layoutER = { iniziale: { ...pos }, collegamenti: { ...pos } };
+    regoleCache = null;
+    avviso("Schema analizzato: ora Problemi, Regole, Ontologia e Modello relazionale si riferiscono al database dell'editor.");
+    await aggiornaTutto("problemi");
+  }
+
+
+  function azzera() {
+    S.modello = Editor.nuovoModello(); S.selezione = null; S.vista = null; diagramma = null;
+    ridisegna();
+  }
+  /** Il modello è stato sostituito (file riaperto, tabelle copiate): si ridisegna adattando la vista. */
+  function ricarica() {
+    S.selezione = null; S.vista = null; diagramma = null;
+    ridisegna();
+  }
+  return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, analizza, regole, dialetto,
+           azzera, ricarica, posizioniModello, get diagramma() { return diagramma; } };
+}
+
+// lo stato dell'editor della pagina Editor del database: le variabili globali (si salvano nel progetto)
+const STATO_EDITOR = {
+  get modello() { return modelloEditor; }, set modello(m) { modelloEditor = m; },
+  get selezione() { return selezioneEditor; }, set selezione(v) { selezioneEditor = v; },
+  get vista() { return vistaEditor; }, set vista(v) { vistaEditor = v; },
+};
 
 const VISTE = {
   async reverse() {
@@ -1115,198 +1318,25 @@ const VISTE = {
   },
 
   async editor() {
+    const E = creaEditor(STATO_EDITOR);
     const M = () => modelloEditor;
-    const cornice = el("div", { class: "er-cornice" });
-    const pannello = el("div", { class: "pannello editor-pannello" });
-    const avvisiBox = el("div", { class: "editor-avvisi" });
-    const anteprima = el("pre", { style: "max-height: 320px" });
-    const nomeNuova = el("input", { type: "text", placeholder: "nome della nuova entità", "aria-label": "Nome della nuova entità" });
-    const tipoImport = el("select", { "aria-label": "Chiavi esterne da importare" },
-      el("option", { value: "iniziale" }, "solo FK dichiarate"), el("option", { value: "collegamenti" }, "FK dichiarate e trovate"));
-    let diagramma = null;
-    const regole = () => ({ on_delete: stato.impostazioni?.on_delete || "", on_update: stato.impostazioni?.on_update || "" });
-    const dialetto = () => stato.impostazioni?.dialetto || "mysql";
-
-    function posizioniModello() {
-      const p = {};
-      M().entita.forEach(e => { if (isFinite(e.x) && isFinite(e.y)) p[e.nome] = [e.x, e.y]; });
-      M().relazioni.forEach(r => { if (r.tipo === "N:M" && isFinite(r.x) && isFinite(r.y)) p[r.nome] = [r.x, r.y]; });
-      return p;
-    }
-    function elementoDaNome(nome) {
-      return M().entita.find(e => e.nome === nome) || M().relazioni.find(r => r.tipo === "N:M" && r.nome === nome) || null;
-    }
-    function salvaPosizioni(pos) {
-      M().entita.forEach(e => { if (pos[e.nome]) [e.x, e.y] = pos[e.nome]; });
-      M().relazioni.forEach(r => { if (r.tipo === "N:M" && pos[r.nome]) [r.x, r.y] = pos[r.nome]; });
-    }
-
-    function ridisegna() {
-      if (diagramma) { vistaEditor = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
-      const schema = Editor.schemaLogico(M());
-      const scelto = selezioneEditor && (Editor.entitaDi(M(), selezioneEditor)?.nome || M().relazioni.find(r => r.id === selezioneEditor)?.nome);
-      if (schema.tabelle.length) {
-        diagramma = DiagrammaER.crea(cornice, schema, {
-          tipi: true, posizioni: posizioniModello(), vista: vistaEditor, selezionata: scelto,
-          onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
-          onClic: nome => { selezioneEditor = nome ? elementoDaNome(nome)?.id || null : null; ridisegna(); },
-        });
-        salvaPosizioni(diagramma.posizioni());
-      } else {
-        diagramma = null;
-        cornice.replaceChildren(el("div", { class: "messaggio", style: "margin: 16px" },
-          "Tela vuota: scrivi il nome di un'entità (per esempio Clienti) e premi Nuova entità, oppure importa il database caricato."));
-      }
-      avvisiBox.replaceChildren(...schema.avvisi.map(a => el("div", {}, `Avviso: ${a}`)));
-      anteprima.textContent = Editor.sql(M(), regole(), dialetto());
-      disegnaPannello();
-    }
-
-    function riga(attributo, eliminabile, alCambio) {
-      const nome = el("input", { type: "text", value: attributo.nome, "aria-label": "Nome dell'attributo" });
-      const tipo = el("input", { type: "text", value: attributo.tipo, list: "tipi-sql", "aria-label": "Tipo" });
-      const spunta = (chiave, titolo) => {
-        const c = el("input", { type: "checkbox", checked: !!attributo[chiave], title: titolo, "aria-label": titolo });
-        c.addEventListener("change", () => { attributo[chiave] = c.checked; alCambio(); });
-        return el("td", { class: "stretto" }, c);
-      };
-      nome.addEventListener("change", () => { attributo.nome = Editor.pulisciNome(nome.value); alCambio(); });
-      tipo.addEventListener("change", () => { attributo.tipo = tipo.value.trim().toUpperCase() || "INT"; alCambio(); });
-      return el("tr", {}, el("td", {}, nome), el("td", {}, tipo),
-        "pk" in attributo ? spunta("pk", "chiave primaria") : el("td"), spunta("nn", "NOT NULL (obbligatorio)"),
-        "uq" in attributo ? spunta("uq", "UNIQUE") : el("td"),
-        el("td", { class: "stretto" }, eliminabile ? el("button", { title: "Elimina l'attributo", onclick: eliminabile }, "x") : null));
-    }
-
-    function formRelazione() {
-      const opzioni = () => M().entita.map(e => el("option", { value: e.id }, e.nome));
-      const da = el("select", { "aria-label": "Entità figlia" }, opzioni());
-      const a = el("select", { "aria-label": "Entità padre" }, opzioni());
-      if (M().entita.length > 1) a.selectedIndex = 1;
-      if (selezioneEditor && Editor.entitaDi(M(), selezioneEditor)) da.value = selezioneEditor;
-      const tipo = el("select", { "aria-label": "Cardinalità" },
-        el("option", { value: "1:N" }, "1:N  molte righe della prima per una della seconda"),
-        el("option", { value: "1:1" }, "1:1  una per una"),
-        el("option", { value: "N:M" }, "N:M  molte per molte (tabella ponte)"));
-      const obbl = el("input", { type: "checkbox", checked: true });
-      const nomePonte = el("input", { type: "text", class: "largo", placeholder: "nome della tabella ponte (facoltativo)" });
-      return [
-        el("h3", {}, "Nuova relazione"),
-        el("label", { class: "campo" }, "Prima entità (per 1:N: quella dal lato molti, che riceve la chiave esterna)", da),
-        el("label", { class: "campo" }, "Seconda entità (per 1:N: quella dal lato uno)", a),
-        el("label", { class: "campo" }, "Cardinalità", tipo),
-        el("label", {}, obbl, " obbligatoria (la chiave esterna è NOT NULL)"), el("br"), el("br"),
-        nomePonte, el("br"), el("br"),
-        el("button", { class: "primario", onclick: () => {
-          if (!da.value || !a.value) return avviso("Servono almeno due entità (o una per una relazione con se stessa).", true);
-          if (tipo.value === "N:M" && da.value === a.value) return avviso("Una relazione N:M deve collegare due entità diverse.", true);
-          const r = Editor.aggiungiRelazione(M(), { da: da.value, a: a.value, tipo: tipo.value, obbligatoria: obbl.checked, nome: nomePonte.value });
-          if (r.tipo === "N:M") {                 // la tabella ponte sotto, a metà tra le due entità
-            const e1 = Editor.entitaDi(M(), r.da), e2 = Editor.entitaDi(M(), r.a);
-            if (isFinite(e1.x) && isFinite(e2.x)) { r.x = Math.round((e1.x + e2.x) / 2); r.y = Math.max(e1.y, e2.y) + 260; }
-          }
-          selezioneEditor = r.tipo === "N:M" ? r.id : da.value;
-          ridisegna();
-        } }, "Crea relazione"),
-      ];
-    }
-
-    function disegnaPannello() {
-      const e = selezioneEditor && Editor.entitaDi(M(), selezioneEditor);
-      const r = !e && selezioneEditor && M().relazioni.find(x => x.id === selezioneEditor);
-      const contenuto = [];
-      const intestazione = el("tr", {}, ["nome", "tipo", "PK", "NN", "UQ", ""].map(x => el("th", {}, x)));
-      if (e) {
-        const nome = el("input", { type: "text", class: "largo", value: e.nome, "aria-label": "Nome dell'entità" });
-        nome.addEventListener("change", () => { e.nome = Editor.pulisciNome(nome.value); ridisegna(); });
-        const relazioni = M().relazioni.filter(x => x.da === e.id || x.a === e.id);
-        contenuto.push(
-          el("h3", {}, `Entità ${e.nome}`), el("label", { class: "campo" }, "Nome", nome),
-          el("table", {}, el("thead", {}, intestazione), el("tbody", {}, e.attributi.map((at, i) =>
-            riga(at, () => { e.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
-          el("div", { class: "riga-comandi", style: "margin-top: 8px" },
-            el("button", { onclick: () => { e.attributi.push({ nome: `attributo${e.attributi.length + 1}`, tipo: "VARCHAR(50)", pk: false, nn: false, uq: false }); ridisegna(); } }, "Aggiungi attributo"),
-            el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); selezioneEditor = null; ridisegna(); } }, "Elimina entità")),
-          relazioni.length ? el("h3", {}, "Relazioni") : null,
-          relazioni.map(x => el("div", { class: "riga-comandi" },
-            el("span", {}, x.tipo === "N:M" ? `${x.nome}: N:M` : `${Editor.entitaDi(M(), x.da).nome} → ${Editor.entitaDi(M(), x.a).nome} (${x.tipo}${x.obbligatoria ? ", obbligatoria" : ""})`),
-            el("button", { onclick: () => { M().relazioni = M().relazioni.filter(y => y !== x); ridisegna(); } }, "Elimina"))),
-          el("hr"));
-      } else if (r) {
-        const nome = el("input", { type: "text", class: "largo", value: r.nome, "aria-label": "Nome della tabella ponte" });
-        nome.addEventListener("change", () => { r.nome = Editor.pulisciNome(nome.value); ridisegna(); });
-        contenuto.push(
-          el("h3", {}, `Relazione N:M ${r.nome}`),
-          el("p", { class: "tenue" }, `Tra ${Editor.entitaDi(M(), r.da).nome} e ${Editor.entitaDi(M(), r.a).nome}: la tabella ponte ha come chiave primaria le chiavi delle due entità. Qui sotto gli attributi della relazione (per esempio la quantità).`),
-          el("label", { class: "campo" }, "Nome della tabella ponte", nome),
-          el("table", {}, el("thead", {}, el("tr", {}, ["nome", "tipo", "", "NN", "", ""].map(x => el("th", {}, x)))),
-            el("tbody", {}, (r.attributi || []).map((at, i) => riga(at, () => { r.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
-          el("div", { class: "riga-comandi", style: "margin-top: 8px" },
-            el("button", { onclick: () => { (r.attributi ||= []).push({ nome: `attributo${r.attributi.length + 1}`, tipo: "INT", nn: false }); ridisegna(); } }, "Aggiungi attributo"),
-            el("button", { class: "pericolo", onclick: () => { M().relazioni = M().relazioni.filter(y => y !== r); selezioneEditor = null; ridisegna(); } }, "Elimina relazione")),
-          el("hr"));
-      } else {
-        contenuto.push(el("p", { class: "tenue" }, "Clicca un'entità sulla tela per modificarne nome e attributi; trascinala per spostarla."));
-      }
-      contenuto.push(M().entita.length ? formRelazione() : null);
-      pannello.replaceChildren(...[contenuto].flat(Infinity).filter(Boolean));
-    }
-
-    function nuovaEntita() {
-      const nome = nomeNuova.value.trim();
-      if (!nome) return avviso("Scrivi il nome della nuova entità.", true);
-      if (M().entita.some(e => e.nome.toLowerCase() === Editor.pulisciNome(nome).toLowerCase())) return avviso("Esiste già un'entità con questo nome.", true);
-      const pos = diagramma ? diagramma.posizioni() : {};
-      const xs = Object.values(pos).map(p => p[0]), ys = Object.values(pos).map(p => p[1]);
-      // a destra dell'ultima, andando a capo ogni 4 entità
-      const n = M().entita.length;
-      const e = Editor.aggiungiEntita(M(), nome, xs.length ? 40 + (n % 4) * 360 : 40, ys.length ? 40 + Math.floor(n / 4) * 300 : 40);
-      selezioneEditor = e.id;
-      nomeNuova.value = "";
-      vistaEditor = null;                         // la vista si adatta per mostrare tutto
-      if (diagramma) salvaPosizioni(diagramma.posizioni());
-      diagramma = null;
-      ridisegna();
-    }
-    nomeNuova.addEventListener("keydown", ev => { if (ev.key === "Enter") nuovaEntita(); });
-
-    async function importa() {
-      if (M().entita.length && !confirm("L'editor contiene già un database: sostituirlo con quello caricato?")) return;
-      const dati = await api(`/api/diagramma?tipo=${tipoImport.value}`);
-      modelloEditor = Editor.daDiagramma(dati, layoutER[tipoImport.value] || {});
-      selezioneEditor = null; vistaEditor = null; diagramma = null;
-      ridisegna();
-      avviso(`Importate ${modelloEditor.entita.length} entità e ${modelloEditor.relazioni.length} relazioni.`);
-    }
-
-    async function analizza() {
-      if (!M().entita.length) return avviso("L'editor è vuoto.", true);
-      if (diagramma) salvaPosizioni(diagramma.posizioni());
-      stato = await api("/api/carica_file", { file: [{ nome: "editor.sql", testo: Editor.sql(M(), regole(), dialetto()) }], origine: "editor" });
-      const pos = posizioniModello();
-      layoutER = { iniziale: { ...pos }, collegamenti: { ...pos } };
-      regoleCache = null;
-      avviso("Schema analizzato: ora Problemi, Regole, Ontologia e Modello relazionale si riferiscono al database dell'editor.");
-      await aggiornaTutto("problemi");
-    }
-
-    setTimeout(ridisegna, 0);
+    setTimeout(E.ridisegna, 0);
     return [
       el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
       el("h2", {}, "Editor del database"),
       el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
       el("div", { class: "riga-comandi" },
-        nomeNuova, el("button", { class: "primario", onclick: nuovaEntita }, "Nuova entità"),
-        el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) { modelloEditor = Editor.nuovoModello(); selezioneEditor = null; vistaEditor = null; diagramma = null; ridisegna(); } } }, "Nuovo database"),
-        stato.caricato ? [el("button", { onclick: () => conAttesa(importa) }, "Importa il database caricato"), tipoImport] : null,
-        el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
-        el("button", { onclick: () => conAttesa(analizza) }, "Analizza questo schema"),
-        el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), regole(), dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
-        el("button", { onclick: () => diagramma && conAttesa(async () => scaricaBlob(await diagramma.png(), "database.png")) }, "Scarica PNG")),
-      avvisiBox,
-      el("div", { class: "editor-griglia" }, cornice, pannello),
+        E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"),
+        el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) E.azzera(); } }, "Nuovo database"),
+        stato.caricato ? [el("button", { onclick: () => conAttesa(E.importa) }, "Importa il database caricato"), E.tipoImport] : null,
+        el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta alla finestra"),
+        el("button", { onclick: () => conAttesa(E.analizza) }, "Analizza questo schema"),
+        el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), E.regole(), E.dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
+        el("button", { onclick: () => E.diagramma && conAttesa(async () => scaricaBlob(await E.diagramma.png(), "database.png")) }, "Scarica PNG")),
+      E.avvisiBox,
+      el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
       el("h3", {}, "Codice SQL generato"),
-      anteprima,
+      E.anteprima,
     ];
   },
 
@@ -1486,36 +1516,60 @@ const VISTE = {
   },
 
   async togli() {
-    const parola = el("input", { type: "text", placeholder: "es. piatto", "aria-label": "Entità da togliere" });
+    const parola = el("input", { type: "search", class: "largo", value: ricercaTogli,
+      placeholder: "nome di una tabella (anche completo, es. piatto_ingredienti) o di un'entità (es. piatto)", "aria-label": "Tabella o entità da togliere" });
     const trovate = el("div");
     const cerca = async () => {
-      const r = await api(`/api/cerca_entita?parola=${encodeURIComponent(parola.value)}`);
-      if (!r.tabelle.length) {
-        trovate.replaceChildren(el("div", { class: "messaggio" }, "Nessuna tabella trovata (servono almeno 3 lettere)."));
+      ricercaTogli = parola.value;
+      const q = parola.value.trim();
+      if (!q) { trovate.replaceChildren(el("p", { class: "tenue" }, "Scrivi il nome di una tabella o di un'entità: le tabelle trovate compaiono qui, senza spunta.")); return; }
+      const r = await api(`/api/cerca_entita?parola=${encodeURIComponent(q)}`);
+      if (parola.value.trim() !== q) return;                 // nel frattempo è stato scritto altro
+      const entita = r.tabelle.filter(t => !r.uguali.includes(t) && !r.contengono.includes(t));
+      const gruppi = [["Con lo stesso nome", r.uguali], [`Che contengono «${q}» nel nome`, r.contengono], ["Della stessa entità", entita]]
+        .filter(([, t]) => t.length);
+      if (!gruppi.length) {
+        trovate.replaceChildren(el("div", { class: "messaggio" }, "Nessuna tabella trovata (per le entità servono almeno 3 lettere)."));
         return;
       }
-      const spunte = r.tabelle.map(t => el("input", { type: "checkbox", value: t, checked: true }));
+      const spunte = [];
+      const togli = el("button", { class: "pericolo", disabled: true }, "Togli selezionate");
+      const aggiorna = () => {
+        const n = spunte.filter(x => x.checked).length;
+        togli.disabled = !n;
+        togli.textContent = n ? `Togli ${n} ${n === 1 ? "tabella" : "tabelle"}` : "Togli selezionate";
+      };
+      togli.addEventListener("click", async () => {
+        const scelte = spunte.filter(x => x.checked).map(x => x.value);
+        if (!scelte.length) return;
+        await conAttesa(async () => {
+          const esito = await api("/api/togli", { tabelle: scelte });
+          await dopoModifica(`Tolte ${esito.tolte} tabelle.`);
+        });
+      });
+      const spunta = t => { const c = el("input", { type: "checkbox", value: t, onchange: aggiorna }); spunte.push(c); return el("label", {}, c, t); };
+      const tutte = valore => { spunte.forEach(x => { x.checked = valore; }); aggiorna(); };
+      const totale = gruppi.reduce((n, [, t]) => n + t.length, 0);
       trovate.replaceChildren(
-        el("p", {}, `${r.tabelle.length} tabelle trovate per `, el("b", {}, parola.value), ". Togli la spunta a quelle da tenere."),
-        el("div", { class: "elenco-spunte" }, spunte.map(s => el("label", {}, s, s.value))),
-        el("button", { class: "pericolo", onclick: async () => {
-          const scelte = spunte.filter(s => s.checked).map(s => s.value);
-          if (!scelte.length) return avviso("Nessuna tabella selezionata.", true);
-          await conAttesa(async () => {
-            const esito = await api("/api/togli", { tabelle: scelte });
-            await dopoModifica(`Tolte ${esito.tolte} tabelle.`);
-          });
-        } }, "Togli selezionate"));
+        el("p", {}, `${totale} tabelle trovate per `, el("b", {}, q), ". Spunta quelle da togliere."),
+        el("div", { class: "elenco-spunte" }, gruppi.map(([titolo, t]) => [el("div", { class: "reverse-area" }, `${titolo} (${t.length})`), t.map(spunta)])),
+        el("div", { class: "riga-comandi" },
+          el("button", { onclick: () => tutte(true) }, "Seleziona tutte"),
+          el("button", { onclick: () => tutte(false) }, "Deseleziona tutte"),
+          togli));
     };
-    parola.addEventListener("keydown", e => { if (e.key === "Enter") cerca(); });
+    let attesaRicerca = null;
+    parola.addEventListener("input", () => { clearTimeout(attesaRicerca); attesaRicerca = setTimeout(cerca, 250); });
+    parola.addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(attesaRicerca); cerca(); } });
+    setTimeout(cerca, 0);
 
     const spunteTolte = stato.rimosse.map(t => el("input", { type: "checkbox", value: t }));
     return [
       el("h2", {}, "Togli entità dall'analisi"),
-      el("p", { class: "tenue" }, "Scrivi un'entità (per esempio piatto): vengono trovate tutte le sue tabelle (piatti, piatto_ingredienti, tbl_piatti...). Appena le togli l'analisi si aggiorna da sola, senza salvare: le tabelle tolte spariscono dai risultati e dagli schemi grafici. I file non vengono modificati."),
+      el("p", { class: "tenue" }, "Scrivi il nome di una tabella, anche completo (piatto_ingredienti), o di un'entità (piatto: trova piatti, piatto_ingredienti, tbl_piatti...): le tabelle compaiono mentre scrivi, senza spunta, e scegli tu quali togliere. Appena le togli l'analisi si aggiorna da sola, senza salvare: le tabelle tolte spariscono dai risultati e dagli schemi grafici. I file non vengono modificati."),
       pulsantiSchemi(),
       el("div", { class: "pannello" },
-        el("div", { class: "riga-comandi" }, parola, el("button", { class: "primario", onclick: cerca }, "Cerca tabelle")),
+        el("div", { class: "riga-comandi" }, parola, el("button", { class: "primario", onclick: cerca }, "Cerca")),
         trovate),
       el("div", { class: "pannello" },
         el("h3", {}, `Tabelle tolte (${stato.rimosse.length})`),
