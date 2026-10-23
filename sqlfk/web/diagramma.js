@@ -167,7 +167,9 @@ const DiagrammaER = (() => {
     const a = aggancio(figlia, l.colonne_da, latoF), b = aggancio(padre, l.colonne_a, latoP);
     const spinta = Math.max(40, Math.min(160, Math.abs(b.x - a.x) / 2));
     const da = latoF === "destra" ? spinta : -spinta, db = latoP === "destra" ? spinta : -spinta;
-    return { d: `M ${a.x} ${a.y} C ${a.x + da} ${a.y}, ${b.x + db} ${b.y}, ${b.x} ${b.y}`, a, b, latoF, latoP };
+    // punto a metà della curva di Bézier (per il rombo della relazione)
+    const m = { x: (a.x + 3 * (a.x + da) + 3 * (b.x + db) + b.x) / 8, y: (a.y + 3 * a.y + 3 * b.y + b.y) / 8 };
+    return { d: `M ${a.x} ${a.y} C ${a.x + da} ${a.y}, ${b.x + db} ${b.y}, ${b.x} ${b.y}`, a, b, m, latoF, latoP };
   }
 
   function crea(contenitore, dati, opzioni = {}) {
@@ -266,6 +268,22 @@ const DiagrammaER = (() => {
       l.cardP.textContent = l.relazione === "N:M" ? "N" : "1";
       strLinee.append(l.linea);
       strEtichette.append(l.puntoF, l.puntoP, l.cardF, l.cardP);
+      if (opzioni.rombi && l.etichetta !== undefined) {
+        // relazione come nello schema E-R: un rombo a metà del collegamento con il nome (vuoto: piccolo, da cliccare)
+        const testo = String(l.etichetta || "");
+        const w = testo ? Math.max(56, testo.length * 7 + 30) : 30, h = testo ? 30 : 18;
+        const scelta = opzioni.relazioneScelta && opzioni.relazioneScelta === l.id;
+        l.rombo = svgEl("g", { class: "er-rombo", "data-relazione": l.id ?? "", cursor: "pointer" });
+        l.rombo.append(svgEl("polygon", { points: `0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`, fill: "#ffffff",
+          stroke: scelta ? "#ef6c00" : stile.colore, "stroke-width": scelta ? 2.5 : 1.4, "stroke-dasharray": testo ? null : "3 2" }));
+        const t = svgEl("text", { "text-anchor": "middle", y: 4, "font-size": testo ? 11 : 12, "font-weight": testo ? 700 : 400,
+          fill: testo ? "#1d2330" : "#8a94a3", "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
+        t.textContent = testo || "+";
+        const suggerimento = svgEl("title");
+        suggerimento.textContent = testo ? `Relazione «${testo}» (${l.relazione}): clicca per modificarla` : "Clicca per dare un nome alla relazione";
+        l.rombo.append(t, suggerimento);
+        strEtichette.append(l.rombo);
+      }
     }
 
     function aggiornaLinee(solo) {
@@ -277,6 +295,7 @@ const DiagrammaER = (() => {
         l.puntoP.setAttribute("cx", p.b.x); l.puntoP.setAttribute("cy", p.b.y);
         l.cardF.setAttribute("x", p.a.x + (p.latoF === "destra" ? 6 : -14)); l.cardF.setAttribute("y", p.a.y - 4);
         l.cardP.setAttribute("x", p.b.x + (p.latoP === "destra" ? 6 : -12)); l.cardP.setAttribute("y", p.b.y - 4);
+        if (l.rombo) l.rombo.setAttribute("transform", `translate(${p.m.x} ${p.m.y})`);
       }
     }
     function posiziona(t) { t.nodo.setAttribute("transform", `translate(${t.x} ${t.y})`); }
@@ -327,6 +346,12 @@ const DiagrammaER = (() => {
       return { x: (e.clientX - r.left - vista.x) / vista.s, y: (e.clientY - r.top - vista.y) / vista.s };
     };
     svg.addEventListener("pointerdown", e => {
+      const rombo = e.target.closest(".er-rombo");
+      if (rombo) {
+        trascina = { tipo: "rombo", id: rombo.dataset.relazione, x0: e.clientX, y0: e.clientY };
+        svg.setPointerCapture(e.pointerId);
+        return;
+      }
       const nodo = e.target.closest(".er-tabella");
       if (nodo) {
         const t = perNome[nodo.dataset.nome];
@@ -344,6 +369,7 @@ const DiagrammaER = (() => {
         evidenzia(nodo ? nodo.dataset.nome : null);
         return;
       }
+      if (trascina.tipo === "rombo") return;
       if (trascina.tipo === "tabella") {
         const p = puntoMondo(e);
         trascina.t.x = p.x - trascina.dx; trascina.t.y = p.y - trascina.dy;
@@ -357,7 +383,9 @@ const DiagrammaER = (() => {
     });
     const fine = e => {
       const fermo = trascina && e && Math.hypot(e.clientX - trascina.x0, e.clientY - trascina.y0) < 4;
-      if (trascina && fermo && opzioni.onClic) {
+      if (trascina && trascina.tipo === "rombo") {
+        if (fermo && opzioni.onClicRelazione) opzioni.onClicRelazione(trascina.id);
+      } else if (trascina && fermo && opzioni.onClic) {
         opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null);   // clic senza trascinare
       } else if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
         opzioni.onSposta(trascina.t.nome, Math.round(trascina.t.x), Math.round(trascina.t.y));
@@ -391,15 +419,40 @@ const DiagrammaER = (() => {
       return { x0, y0, x1, y1 };
     }
 
-    function adatta(elenco) {
+    function adatta(elenco, minimo = 0.05) {
       if (!tabelle.length) return;
       const r = svg.getBoundingClientRect();
       const b = limiti(elenco);
       const s = Math.min(1.2, (r.width - 2 * MARGINE * 4) / (b.x1 - b.x0), (r.height - 2 * MARGINE * 4) / (b.y1 - b.y0));
-      vista.s = Math.max(0.05, s);
-      vista.x = (r.width - (b.x1 - b.x0) * vista.s) / 2 - b.x0 * vista.s;
-      vista.y = (r.height - (b.y1 - b.y0) * vista.s) / 2 - b.y0 * vista.s;
+      vista.s = Math.max(0.05, minimo, s);
+      if (s >= minimo) {
+        vista.x = (r.width - (b.x1 - b.x0) * vista.s) / 2 - b.x0 * vista.s;
+        vista.y = (r.height - (b.y1 - b.y0) * vista.s) / 2 - b.y0 * vista.s;
+      } else {
+        // diagramma troppo grande per stare tutto: si parte leggibili dall'angolo in alto a sinistra
+        vista.x = MARGINE * 3 - b.x0 * vista.s;
+        vista.y = MARGINE * 3 - b.y0 * vista.s;
+      }
       applica();
+      return s >= minimo;
+    }
+    // all'apertura: tutto il diagramma, ma mai così piccolo da vedere solo le linee
+    const LEGGIBILE = 0.6;
+    function adattaLeggibile(tentativi = 0) {
+      // la cornice non è ancora sulla pagina (o è nascosta): si aspetta che abbia una dimensione
+      const r = svg.getBoundingClientRect();
+      if ((r.width < 50 || r.height < 50) && tentativi < 60) { requestAnimationFrame(() => adattaLeggibile(tentativi + 1)); return; }
+      // fino a 60 tabelle (per esempio il risultato di una ricerca) si vede sempre tutto
+      if (adatta(undefined, tabelle.length > 60 ? LEGGIBILE : 0.05) !== false || !tabelle.length) return;
+      const nota = document.createElement("div");
+      nota.className = "er-nota";
+      nota.textContent = `${tabelle.length} tabelle: il diagramma è grande e si vede una parte. Trascina per spostarti, ` +
+        "usa la rotellina per lo zoom, cerca una tabella, oppure Adatta alla finestra per vederlo tutto (piccolo).";
+      const chiudi = document.createElement("button");
+      chiudi.textContent = "Chiudi";
+      chiudi.addEventListener("click", () => nota.remove());
+      nota.append(" ", chiudi);
+      contenitore.append(nota);
     }
 
     /** Cerca nei nomi delle tabelle e delle colonne (per esempio "name"): evidenzia le tabelle trovate e,
@@ -442,6 +495,8 @@ const DiagrammaER = (() => {
       const copia = svg.cloneNode(true);
       copia.classList.remove("er-focus");
       copia.querySelectorAll(".er-attiva").forEach(n => n.classList.remove("er-attiva"));
+      copia.querySelectorAll(".er-attenuata").forEach(n => n.classList.remove("er-attenuata"));
+      copia.classList.remove("er-solo-focus");
       if (!opzioni.colonne) copia.querySelectorAll('rect[fill="#ffe58a"]').forEach(n => n.setAttribute("visibility", "hidden"));
       copia.querySelector("g").removeAttribute("transform");
       copia.setAttribute("xmlns", NS);
@@ -475,7 +530,7 @@ const DiagrammaER = (() => {
       }
     }
 
-    if (opzioni.vista) applica(); else requestAnimationFrame(() => adatta());
+    if (opzioni.vista) applica(); else requestAnimationFrame(() => adattaLeggibile());
     /** Posizioni attuali di tutte le tabelle: nome -> [x, y]. */
     const posizioni = () => Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y)]]));
     return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, ultimaRicerca: () => ({ ...ricerca }), esporta, png, posizioni, vista: () => ({ ...vista }),

@@ -118,6 +118,86 @@ class CorpoRoutine:
         return True
 
 
+# ====================================================================== database senza le tabelle tolte
+
+NOME_SQL = r"(?:`[^`]+`|\"[^\"]+\"|\[[^\]]+\]|[\w$#@]+)(?:\s*\.\s*(?:`[^`]+`|\"[^\"]+\"|\[[^\]]+\]|[\w$#@]+))*"
+RE_SOGGETTO = re.compile(
+    r"(?:CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:GLOBAL\s+|LOCAL\s+)?TEMP(?:ORARY)?\s+|UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+    r"|ALTER\s+TABLE\s+(?:ONLY\s+)?(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?"
+    r"|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?"
+    r"|INSERT\s+(?:IGNORE\s+)?(?:INTO\s+)?|REPLACE\s+INTO\s+|COPY\s+|LOCK\s+TABLES?\s+|TRUNCATE\s+(?:TABLE\s+)?"
+    r"|CREATE\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:\S+\s+)?ON\s+(?:ONLY\s+)?"
+    r"|COMMENT\s+ON\s+(?:TABLE|COLUMN)\s+|ALTER\s+SEQUENCE\s+\S+\s+OWNED\s+BY\s+|SET\s+IDENTITY_INSERT\s+"
+    rf")(?P<nome>{NOME_SQL})", re.I)
+RE_RIFERIMENTO = re.compile(rf"\bREFERENCES\s+(?P<nome>{NOME_SQL})", re.I)
+
+
+def _tolta(nome, tolte):
+    """Il nome (anche tabella.colonna, per COMMENT ON COLUMN) indica una tabella tolta?"""
+    n = A.nome_qualificato(nome).lower()
+    return n in tolte or n.rsplit(".", 1)[0] in tolte or n.split(".")[-1] in tolte
+
+
+def _senza_riferimenti(frase, tolte):
+    """CREATE TABLE senza i vincoli che puntano a tabelle tolte (la riga CONSTRAINT/FOREIGN KEY, o REFERENCES sulla colonna)."""
+    righe = []
+    for riga in frase.split("\n"):
+        m = RE_RIFERIMENTO.search(riga)
+        if m and _tolta(m.group("nome"), tolte):
+            if re.match(r"\s*(?:CONSTRAINT\b|FOREIGN\s+KEY\b)", riga, re.I):
+                continue                                   # tutto il vincolo
+            riga = re.sub(rf"\s*\bREFERENCES\s+{re.escape(m.group('nome'))}\s*(?:\([^)]*\))?"
+                          r"(?:\s+ON\s+(?:DELETE|UPDATE)\s+(?:NO\s+ACTION|SET\s+NULL|SET\s+DEFAULT|CASCADE|RESTRICT))*", "", riga, flags=re.I)
+        righe.append(riga)
+    # la virgola rimasta prima della parentesi di chiusura
+    return re.sub(r",(\s*\n\s*\))", r"\1", "\n".join(righe))
+
+
+def sql_senza_tabelle(file_sql, tolte, dialetto="mysql", origine=""):
+    """Pezzi (bytes) di un file .sql uguale ai file letti ma senza le tabelle tolte: senza i loro CREATE, ALTER,
+    indici e dati, e senza le chiavi esterne che puntano a loro. Le procedure, le viste e il resto restano come sono.
+    I file si rileggono a blocchi (anche quelli grandi, dal disco): i file letti non si modificano."""
+    tolte = {A.nome_qualificato(t).lower() for t in tolte}
+    yield (f"-- Database senza le tabelle tolte, creato da SQL FK Finder il {time.strftime('%d/%m/%Y %H:%M')}\n"
+           f"-- Origine: {origine}\n-- Tabelle tolte ({len(tolte)}): {', '.join(sorted(tolte))}\n\n").encode("utf-8")
+    for nome_file, testo in file_sql:
+        yield f"\n-- ===================================================== {nome_file}\n\n".encode("utf-8")
+        corpo = CorpoRoutine(dialetto)
+        copia, tenuta = False, False                         # COPY in corso e se i suoi dati si tengono
+        pezzo = []
+        for tipo, _, frase, grezzo in L.istruzioni(testo, dialetto):
+            if tipo == "dati":
+                if copia and tenuta:
+                    pezzo.append("\n".join(frase) + "\n")
+                continue
+            if copia:
+                if tenuta:
+                    pezzo.append("\\.\n\n")
+                copia = False
+            if dialetto == "tsql" and grezzo and RE_GO_RIGA.search(grezzo):
+                pezzo.append("GO\n")
+            if not corpo.salta(frase, grezzo):
+                testo_frase = senza_commenti_iniziali(frase)
+                m = RE_SOGGETTO.match(testo_frase)
+                if m and _tolta(m.group("nome"), tolte):
+                    if parola_iniziale(testo_frase) == "COPY":
+                        copia, tenuta = True, False
+                    continue
+                if parola_iniziale(testo_frase) == "ALTER" and any(_tolta(x.group("nome"), tolte) for x in RE_RIFERIMENTO.finditer(frase)):
+                    continue                                 # chiave esterna verso una tabella tolta
+                if parola_iniziale(testo_frase) == "CREATE" and RE_RIFERIMENTO.search(frase):
+                    frase = _senza_riferimenti(frase, tolte)
+                if parola_iniziale(testo_frase) == "COPY":
+                    copia, tenuta = True, True
+            pezzo.append(frase.strip("\n") + ";\n")
+            if sum(len(x) for x in pezzo) > 1 << 20:
+                yield "".join(pezzo).encode("utf-8")
+                pezzo = []
+        if copia and tenuta:
+            pezzo.append("\\.\n")
+        yield "".join(pezzo).encode("utf-8")
+
+
 def senza_commenti_iniziali(frase):
     return frase[L.RE_INIZIO.match(frase).end():]
 

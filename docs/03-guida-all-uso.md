@@ -46,14 +46,14 @@ Sotto la barra c'è il riepilogo: errori, avvisi, tabelle, aree, gruppi, chiavi 
 Il database com'è nei file, prima dell'analisi: tabelle, colonne, chiavi primarie (semplici, composte, mancanti), chiavi esterne già dichiarate, tabelle collegate e isolate, gruppi. In fondo l'elenco delle chiavi dichiarate e gli eventuali errori di lettura dei file.
 
 ### Editor del database
-Per disegnare un database da zero o modificarne uno: aggiungi entità con attributi (tipo, chiave primaria, obbligatorio), collegale con relazioni 1:N, 1:1 o N:M (per le N:M crea da solo la tabella ponte, anche con attributi propri). Mostra lo schema logico, gli avvisi e l'SQL (`CREATE TABLE` in ordine giusto, con le chiavi esterne). *Importa il database caricato* parte dalle tabelle caricate; *Analizza questo schema* lo passa a tutte le altre pagine come se fossero file caricati.
+Per disegnare un database da zero o modificarne uno: aggiungi entità con attributi (tipo, chiave primaria, obbligatorio), collegale con relazioni 1:N, 1:1 o N:M (per le N:M crea da solo la tabella ponte, anche con attributi propri). Mostra lo schema logico, gli avvisi e l'SQL (`CREATE TABLE` in ordine giusto, con le chiavi esterne). Le relazioni 1:N e 1:1 si vedono come nello **schema E-R**: a metà del collegamento c'è un **rombo** con il nome della relazione (per esempio *emette*); cliccandolo si scrivono il nome, la cardinalità e se è obbligatoria. **Collega due tabelle**: clicca prima la tabella che riceve la chiave esterna (lato molti), poi quella a cui punta; la relazione si crea e si apre il suo riquadro. *Importa il database caricato* parte dalle tabelle caricate; *Analizza questo schema* lo passa a tutte le altre pagine come se fossero file caricati.
 
 ### Disegno affiancato
 A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca** (lo stesso editor della pagina *Editor del database*).
 
 - A sinistra cerchi per tabella/entità e per attributo (con *anche le collegate*) e **clicchi le tabelle** da copiare: diventano colorate. *Scegli le visibili* prende tutte quelle mostrate dalla ricerca, *Nessuna* toglie la scelta.
 - **Copia nella lavagna** porta le tabelle scelte (con *con le tabelle collegate* anche quelle collegate) con tutte le colonne e i collegamenti tra loro e con le tabelle già nella lavagna; mantengono la disposizione del diagramma e vanno a destra di quello che c'è già. Una tabella già presente non si copia due volte.
-- Nella lavagna **migliori il disegno**: sposti le tabelle, clicchi un'entità per cambiarne nome e attributi (riquadro *Entità scelta nella lavagna* sotto), aggiungi entità e relazioni, elimini. Sotto c'è anche l'SQL del disegno.
+- Nella lavagna **migliori il disegno**: colleghi due tabelle con **Collega due tabelle** (clicca la tabella che riceve la chiave esterna, poi quella a cui punta), dai un nome alle relazioni cliccando il **rombo** a metà del collegamento (come nello schema E-R), sposti le tabelle, clicchi un'entità per cambiarne nome e attributi (riquadro *Entità scelta nella lavagna* sotto), aggiungi entità e relazioni, elimini. Sotto c'è anche l'SQL del disegno.
 - **Scarica il disegno** salva un file `.json`; **Apri un disegno** lo riapre per continuare (anche un file di progetto `.sqlfk`). Il disegno si salva anche con *Salva progetto*. *Scarica SQL* e *Scarica PNG* esportano il disegno; *Porta nell'Editor* lo copia nella pagina *Editor del database*, per analizzarlo come un database caricato.
 
 ### Problemi
@@ -104,6 +104,8 @@ Anche qui si possono **affiancare** la scheda di una tabella, lo schema delle ta
   - **attributo / colonna**: restano solo le tabelle che hanno una colonna con quel nome, evidenziata in giallo;
   - **insieme**: se più tabelle hanno lo stesso nome, l'attributo le distingue (per esempio `taxa` + `species` lascia solo le tabelle `taxa` che hanno la colonna `species`);
   - *anche le collegate* aggiunge, più chiare, le tabelle collegate direttamente a quelle trovate; *Mostra tutte* toglie la ricerca.
+- **Scarica il risultato (PNG)** (accanto alla ricerca): un'immagine nitida con le tabelle e i collegamenti che vedi, cioè il risultato della ricerca o il gruppo scelto, con il nome di quello che hai cercato (per esempio `diagramma_ordini.png`).
+- Con molte tabelle (oltre 60) il diagramma si apre a una grandezza leggibile, mostrandone una parte: si sposta trascinando, la rotellina fa lo zoom, *Adatta alla finestra* lo mostra tutto.
 - Filtri per area o gruppo e colori per gruppo, area o categoria.
 - *Linee solo della tabella sotto il mouse*: le linee restano nascoste e compaiono solo per la tabella su cui passi il mouse, così il diagramma non diventa un groviglio.
 - **Vista a grafo**: grafo interattivo (pyvis), anche in una finestra a parte.
@@ -112,7 +114,7 @@ Anche qui si possono **affiancare** la scheda di una tabella, lo schema delle ta
 Lo schema logico, una riga per tabella (`Fatture(numero, data, id_cliente → Clienti)`), con esportazione in testo, Markdown, Mermaid, PlantUML, Graphviz DOT, DBML, JSON e come immagine.
 
 ### Togli entità
-Scrivi il nome di una tabella, anche completo (`piatto_ingredienti`), o di un'entità (`piatto`): mentre scrivi compaiono le tabelle **con lo stesso nome**, quelle **che lo contengono** nel nome e quelle **della stessa entità** (riconosce plurali, accenti, prefissi, sinonimi). Nessuna è spuntata: scegli tu quali togliere (o *Seleziona tutte*) e premi *Togli*. Le tabelle tolte sono escluse da tutte le analisi e la ricerca resta, per continuare; si rimettono quando vuoi (*Rimetti selezionate*, *Rimetti tutte*). Utile per concentrarsi su una parte del database.
+Scrivi il nome di una tabella, anche completo (`piatto_ingredienti`), o di un'entità (`piatto`): mentre scrivi compaiono le tabelle **con lo stesso nome**, quelle **che lo contengono** nel nome e quelle **della stessa entità** (riconosce plurali, accenti, prefissi, sinonimi). Nessuna è spuntata: scegli tu quali togliere (o *Seleziona tutte*) e premi *Togli*. Le tabelle tolte sono escluse da tutte le analisi e la ricerca resta, per continuare; si rimettono quando vuoi (*Rimetti selezionate*, *Rimetti tutte*). Utile per concentrarsi su una parte del database. **Salva il database senza le tabelle tolte** scrive un nuovo file `.sql` con il nome che scegli: uguale ai file letti (struttura, dati, indici, procedure) ma senza le tabelle tolte e senza le chiavi esterne che puntano a loro. I file originali non vengono toccati.
 
 ### Dati delle tabelle
 Le tabelle popolate dai file (`INSERT`, `COPY`): a sinistra l'elenco con il numero di righe (con *anche le vuote* compaiono anche quelle senza dati), a destra la tabella scelta.

@@ -121,6 +121,7 @@ Object.assign(VISTE, {
         el("button", { onclick: () => scegli(() => false) }, "Nessuna"), togli, rimetti),
       el("div", { class: "griglia-scorri" }, el("table", { class: "tabella-peso" },
         el("thead", {}, el("tr", {}, ["", "tabella", "colonne", "righe", "spazio", "", ""].map((x, i) => el("th", { class: i >= 2 && i <= 4 ? "numero" : null }, x)))), corpo)),
+      P.tabelle.some(t => t.tolta) ? salvaSenzaTolte() : null,
     ];
   },
 

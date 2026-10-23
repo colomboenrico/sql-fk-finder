@@ -13,6 +13,7 @@ import shutil
 import time
 import io
 import json
+import re
 import os
 import sys
 import threading
@@ -854,6 +855,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
             "/api/verifica_dati": s.risultato_verifica,
             "/api/peso_tabelle": s.peso_tabelle,
+            "/api/scarica/sql_senza_tolte": self.scarica_sql_senza_tolte,
             "/api/crud": s.analisi_crud,
             "/api/scarica/verifica_dati": self.scarica_verifica_dati,
             "/api/scarica/crud": self.scarica_crud,
@@ -1009,6 +1011,19 @@ class Gestore(BaseHTTPRequestHandler):
                 df.to_excel(xls, sheet_name=nome, index=False)
         return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 {"Content-Disposition": 'attachment; filename="verifica_interfaccia.xlsx"'})
+
+    def scarica_sql_senza_tolte(self):
+        """Il database (file .sql) senza le tabelle tolte, con il nome scelto: i file originali restano come sono."""
+        s = SESSIONE
+        s.richiedi_dati()
+        if not s.rimosse:
+            raise Errore("Non hai tolto nessuna tabella: il database è uguale all'originale.")
+        nome = parse_qs(urlparse(self.path).query).get("nome", [""])[0].strip() or "database_ridotto.sql"
+        nome = re.sub(r'[\\/:*?"<>|]+', "_", nome)
+        if not nome.lower().endswith(".sql"):
+            nome += ".sql"
+        return (QY.sql_senza_tabelle(list(s.file_sql), set(s.rimosse), s.imp.dialetto, s.origine),
+                "application/sql; charset=utf-8", {"Content-Disposition": f'attachment; filename="{nome}"'})
 
     def scarica_verifica_dati(self):
         SESSIONE.richiedi_dati()

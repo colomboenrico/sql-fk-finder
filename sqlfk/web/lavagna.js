@@ -58,7 +58,7 @@ Object.assign(VISTE, {
       el("div", { class: "riga-comandi" }, el("h3", { class: "titolo-file" }, "Lavagna"),
         el("span", { class: "tenue" }, "clicca un'entità per modificarla, trascinala per spostarla")),
       el("div", { class: "riga-comandi" },
-        E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"),
+        E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"), E.pulsanteCollega,
         el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta"),
         el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il disegno della lavagna?")) E.azzera(); } }, "Svuota")),
       el("div", { class: "riga-comandi" },
@@ -74,7 +74,7 @@ Object.assign(VISTE, {
           selezioneEditor = null; vistaEditor = null;
           avviso("Disegno copiato nell'Editor del database.");
         } }, "Porta nell'Editor")),
-      E.avvisiBox, E.cornice);
+      E.statoCollega, E.avvisiBox, E.cornice);
 
     const sinistra = el("div", { class: "pannello lavagna-lato" });
     const dettagli = el("div", { class: "lavagna-dettagli" },

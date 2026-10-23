@@ -139,6 +139,23 @@ function avviso(testo, errore = false) {
   setTimeout(() => nodo.remove(), errore ? 8000 : 4000);
 }
 
+/** Salvare il database senza le tabelle tolte in un nuovo file .sql (con il nome scelto): i file originali non cambiano. */
+function salvaSenzaTolte() {
+  const base = String(stato.origine || "database").split(/[\\/]/).pop().replace(/^cartella /, "").replace(/\.sql$/i, "") || "database";
+  const nome = el("input", { type: "text", class: "largo", value: `${base}_senza_tolte.sql`, "aria-label": "Nome del nuovo file" });
+  return el("div", { class: "pannello" },
+    el("h3", { class: "titolo-file" }, "Salva il database senza le tabelle tolte"),
+    el("p", { class: "tenue" }, "Un nuovo file .sql uguale a quelli letti (struttura, dati, indici, procedure) ma senza le tabelle tolte e senza le chiavi " +
+      "esterne che puntano a loro. I file originali non vengono toccati: scegli un nome diverso." +
+      (window.sqlfkApp ? " Nell'app si apre la finestra per scegliere anche la cartella." : "")),
+    el("div", { class: "riga-comandi" }, nome,
+      el("button", { class: "primario", disabled: !stato.rimosse.length, onclick: () => {
+        let n = nome.value.trim() || `${base}_senza_tolte.sql`;
+        if (!/\.sql$/i.test(n)) n += ".sql";
+        el("a", { href: `/api/scarica/sql_senza_tolte?nome=${encodeURIComponent(n)}`, download: n }).click();
+      } }, stato.rimosse.length ? `Salva senza le ${stato.rimosse.length} tabelle tolte` : "Togli prima delle tabelle")));
+}
+
 /** I due pulsanti per aprire gli schemi grafici, aggiornati con le tabelle tolte. */
 function pulsantiSchemi() {
   return el("div", { class: "riga-comandi" },
@@ -826,6 +843,30 @@ function creaEditor(S) {
     M().relazioni.forEach(r => { if (r.tipo === "N:M" && pos[r.nome]) [r.x, r.y] = pos[r.nome]; });
   }
 
+  // Collega: si clicca la tabella che riceve la chiave esterna (lato molti), poi quella a cui punta
+  let collega = null;                       // null = spento; {} = aspetta la prima tabella; {primo} = aspetta la seconda
+  const statoCollega = el("span", { class: "stato-collega" });
+  const pulsanteCollega = el("button", { title: "Collega due tabelle: clicca prima quella che riceve la chiave esterna (lato molti), poi quella a cui punta" }, "Collega due tabelle");
+  function aggiornaCollega() {
+    pulsanteCollega.classList.toggle("primario", !!collega);
+    pulsanteCollega.textContent = collega ? "Annulla il collegamento" : "Collega due tabelle";
+    statoCollega.textContent = !collega ? "" : collega.primo
+      ? `${Editor.entitaDi(M(), collega.primo)?.nome}: ora clicca la tabella a cui punta (lato uno).`
+      : "Clicca la tabella che riceve la chiave esterna (lato molti).";
+  }
+  pulsanteCollega.addEventListener("click", () => { collega = collega ? null : {}; aggiornaCollega(); });
+  function cliccaPerCollegare(nome) {
+    const e = nome ? M().entita.find(x => x.nome === nome) : null;
+    if (!e) { avviso("Clicca un'entità (non una tabella ponte).", true); return; }
+    if (!collega.primo) { collega.primo = e.id; aggiornaCollega(); return; }
+    const r = Editor.aggiungiRelazione(M(), { da: collega.primo, a: e.id, tipo: "1:N", obbligatoria: false });
+    collega = null;
+    aggiornaCollega();
+    S.selezione = r.id;                       // si apre il riquadro della relazione: nome, cardinalità
+    ridisegna();
+    avviso("Relazione creata: dagli un nome e scegli la cardinalità nel riquadro.");
+  }
+
   function ridisegna() {
     if (diagramma) { S.vista = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
     const schema = Editor.schemaLogico(M());
@@ -833,8 +874,14 @@ function creaEditor(S) {
     if (schema.tabelle.length) {
       diagramma = DiagrammaER.crea(cornice, schema, {
         tipi: true, posizioni: posizioniModello(), vista: S.vista, selezionata: scelto,
+        rombi: true, relazioneScelta: S.selezione,
         onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
-        onClic: nome => { S.selezione = nome ? elementoDaNome(nome)?.id || null : null; ridisegna(); },
+        onClic: nome => {
+          if (collega) return cliccaPerCollegare(nome);
+          S.selezione = nome ? elementoDaNome(nome)?.id || null : null;
+          ridisegna();
+        },
+        onClicRelazione: id => { S.selezione = id; ridisegna(); pannello.scrollIntoView({ behavior: "smooth", block: "nearest" }); },
       });
       salvaPosizioni(diagramma.posizioni());
     } else {
@@ -914,8 +961,41 @@ function creaEditor(S) {
           el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); S.selezione = null; ridisegna(); } }, "Elimina entità")),
         relazioni.length ? el("h3", {}, "Relazioni") : null,
         relazioni.map(x => el("div", { class: "riga-comandi" },
-          el("span", {}, x.tipo === "N:M" ? `${x.nome}: N:M` : `${Editor.entitaDi(M(), x.da).nome} → ${Editor.entitaDi(M(), x.a).nome} (${x.tipo}${x.obbligatoria ? ", obbligatoria" : ""})`),
+          el("a", { href: "#", onclick: ev => { ev.preventDefault(); S.selezione = x.id; ridisegna(); } },
+            x.tipo === "N:M" ? `${x.nome}: N:M` : `${Editor.entitaDi(M(), x.da).nome} → ${Editor.entitaDi(M(), x.a).nome}` +
+            `${x.verbo ? ` «${x.verbo}»` : ""} (${x.tipo}${x.obbligatoria ? ", obbligatoria" : ""})`),
           el("button", { onclick: () => { M().relazioni = M().relazioni.filter(y => y !== x); ridisegna(); } }, "Elimina"))),
+        el("hr"));
+    } else if (r && r.tipo !== "N:M") {
+      const figlia = Editor.entitaDi(M(), r.da), padre = Editor.entitaDi(M(), r.a);
+      const verbo = el("input", { type: "text", class: "largo", value: r.verbo || "", placeholder: "per esempio: emette, appartiene a, contiene",
+                                  "aria-label": "Nome della relazione" });
+      verbo.addEventListener("change", () => { r.verbo = verbo.value.trim(); ridisegna(); });
+      const tipo = el("select", { "aria-label": "Cardinalità" },
+        el("option", { value: "1:N", selected: r.tipo === "1:N" }, `1:N  molti ${figlia.nome} per un ${padre.nome}`),
+        el("option", { value: "1:1", selected: r.tipo === "1:1" }, "1:1  uno per uno"));
+      tipo.addEventListener("change", () => {
+        r.tipo = tipo.value;
+        figlia.attributi.forEach(a => { if (r.colonne_da.includes(a.nome)) a.uq = r.tipo === "1:1"; });
+        ridisegna();
+      });
+      const obbl = el("input", { type: "checkbox", checked: r.obbligatoria });
+      obbl.addEventListener("change", () => {
+        r.obbligatoria = obbl.checked;
+        figlia.attributi.forEach(a => { if (r.colonne_da.includes(a.nome) && !a.pk) a.nn = obbl.checked; });
+        ridisegna();
+      });
+      contenuto.push(
+        el("h3", {}, `Relazione ${figlia.nome} → ${padre.nome}`),
+        el("p", { class: "tenue" }, `Come nello schema E-R: il nome compare nel rombo a metà del collegamento. ` +
+          `Chiave esterna: ${figlia.nome}(${r.colonne_da.join(", ")}) → ${padre.nome}(${r.colonne_a.join(", ")}).`),
+        el("label", { class: "campo" }, "Nome della relazione", verbo),
+        el("label", { class: "campo" }, "Cardinalità", tipo), el("br"),
+        el("label", {}, obbl, " obbligatoria (la chiave esterna è NOT NULL)"), el("br"), el("br"),
+        el("div", { class: "riga-comandi" },
+          el("button", { onclick: () => { S.selezione = r.da; ridisegna(); } }, `Apri ${figlia.nome}`),
+          el("button", { onclick: () => { S.selezione = r.a; ridisegna(); } }, `Apri ${padre.nome}`),
+          el("button", { class: "pericolo", onclick: () => { M().relazioni = M().relazioni.filter(y => y !== r); S.selezione = null; ridisegna(); } }, "Elimina relazione")),
         el("hr"));
     } else if (r) {
       const nome = el("input", { type: "text", class: "largo", value: r.nome, "aria-label": "Nome della tabella ponte" });
@@ -986,6 +1066,7 @@ function creaEditor(S) {
     ridisegna();
   }
   return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, analizza, regole, dialetto,
+           pulsanteCollega, statoCollega,
            azzera, ricarica, posizioniModello, get diagramma() { return diagramma; } };
 }
 
@@ -1420,14 +1501,14 @@ const VISTE = {
       el("h2", {}, "Editor del database"),
       el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
       el("div", { class: "riga-comandi" },
-        E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"),
+        E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"), E.pulsanteCollega,
         el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) E.azzera(); } }, "Nuovo database"),
         stato.caricato ? [el("button", { onclick: () => conAttesa(E.importa) }, "Importa il database caricato"), E.tipoImport] : null,
         el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta alla finestra"),
         el("button", { onclick: () => conAttesa(E.analizza) }, "Analizza questo schema"),
         el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), E.regole(), E.dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
         el("button", { onclick: () => E.diagramma && conAttesa(async () => scaricaBlob(await E.diagramma.png(), "database.png")) }, "Scarica PNG")),
-      E.avvisiBox,
+      E.statoCollega, E.avvisiBox,
       el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
       el("h3", {}, "Codice SQL generato"),
       E.anteprima,
@@ -1679,6 +1760,7 @@ const VISTE = {
                  await conAttesa(async () => { const r = await api("/api/rimetti", { tutte: true }); await dopoModifica(`Rimesse ${r.rimesse} tabelle.`); });
                } }, "Rimetti tutte"))]
           : el("p", { class: "tenue" }, "Nessuna tabella tolta.")),
+      salvaSenzaTolte(),
     ];
   },
 
@@ -2175,10 +2257,21 @@ async function contenutoER(quale) {
   const scarica = () => {
     if (!diagramma) return;
     const url = URL.createObjectURL(new Blob([diagramma.esporta()], { type: "image/svg+xml" }));
-    el("a", { href: url, download: `diagramma_${quale}.svg` }).click();
+    el("a", { href: url, download: nomeImmagine().replace(/\.png$/, ".svg") }).click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
   const scheda = (q, testo) => el("button", { class: q === quale ? "primario" : null, onclick: () => mostraSchema(q, "er") }, testo);
+  // PNG di quello che si vede (il risultato della ricerca, del gruppo o dell'area), con un nome che lo ricorda
+  const nomeImmagine = () => {
+    const parti = ["diagramma", sceltaGruppo.value.slice(2), cercaEntita.value.trim(), cercaAttributo.value.trim()].filter(Boolean);
+    return (parti.length > 1 ? parti.join("_") : `diagramma_${quale}`).replace(/[^\w.-]+/g, "_") + ".png";
+  };
+  const scaricaPng = () => diagramma && conAttesa(async () => {
+    const pochi = diagramma.numeri.tabelle <= 30;              // poche tabelle: immagine più nitida
+    const nome = nomeImmagine();
+    scaricaBlob(await diagramma.png(pochi ? 3 : 2), nome);
+    avviso(`Scaricata ${nome}: ${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti.`);
+  });
   setTimeout(async () => { await aggiornaEntita(); disegna(); }, 0);
   return [
     el("h2", {}, "Diagramma delle tabelle"),
@@ -2189,7 +2282,9 @@ async function contenutoER(quale) {
       el("button", { onclick: () => mostraSchema(quale, "grafo") }, "Vista a grafo")),
     el("div", { class: "riga-comandi ricerca-er" },
       el("b", {}, "Cerca:"), cercaEntita, cercaAttributo, el("label", {}, conCollegate, "anche le collegate"),
-      el("button", { onclick: () => { cercaEntita.value = ""; cercaAttributo.value = ""; cerca(); } }, "Mostra tutte")),
+      el("button", { onclick: () => { cercaEntita.value = ""; cercaAttributo.value = ""; cerca(); } }, "Mostra tutte"),
+      el("button", { class: "primario", title: "Un'immagine PNG con le tabelle e i collegamenti che vedi (il risultato della ricerca o del gruppo scelto)",
+        onclick: scaricaPng }, "Scarica il risultato (PNG)")),
     el("div", { class: "riga-comandi" },
       sceltaDisposizione, sceltaGruppo, sceltaColore,
       el("label", {}, conTipi, "mostra i tipi"),
@@ -2199,7 +2294,7 @@ async function contenutoER(quale) {
       el("button", { onclick: () => diagramma && diagramma.adatta() }, "Adatta alla finestra"),
       el("button", { title: "Dimentica gli spostamenti fatti a mano", onclick: () => { layoutER[quale + (raggruppaER ? `:${raggruppaER}` : "")] = {}; disegna(); } }, "Disposizione automatica"),
       el("button", { onclick: scarica }, "Scarica SVG"),
-      el("button", { onclick: () => diagramma && conAttesa(async () => scaricaBlob(await diagramma.png(), `diagramma_${quale}.png`)) }, "Scarica PNG"),
+      el("button", { onclick: scaricaPng }, "Scarica PNG"),
       info),
     el("div", { class: "legenda" },
       el("span", {}, el("b", {}, "PK"), " chiave primaria · ", el("b", {}, "FK"), " chiave esterna · ", el("b", {}, "UQ"), " unique"),

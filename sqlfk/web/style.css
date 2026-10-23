@@ -375,3 +375,12 @@ ul.controlli li { margin: 5px 0; }
 .voce-guida .icona { width: 18px; height: 18px; }
 .passi-guida li { margin: 6px 0; line-height: 1.5; }
 @media (max-width: 800px) { .voce-guida { grid-template-columns: 1fr; gap: 4px; } }
+
+/* nota sui diagrammi grandi e rombi delle relazioni */
+.er-cornice { position: relative; }
+.er-nota { position: absolute; left: 12px; right: 12px; top: 10px; background: var(--pannello); border: 1px solid var(--bordo);
+  border-left: 4px solid var(--primario); border-radius: 6px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 4px 12px rgba(0, 0, 0, .1); }
+.er-nota button { padding: 2px 10px; margin-left: 6px; }
+.er-rombo:hover polygon { stroke: #ef6c00; stroke-width: 2.5; }
+.stato-collega { display: block; color: var(--medio); font-weight: 600; margin: 0 0 6px; }
+.stato-collega:empty { display: none; }

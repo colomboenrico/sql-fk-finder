@@ -43,9 +43,9 @@ const Editor = (() => {
    * 1:N e 1:1: "da" è l'entità figlia (lato N, contiene la chiave esterna), "a" il padre (lato 1).
    * N:M: diventa una tabella ponte con le chiavi delle due entità come chiave primaria.
    */
-  function aggiungiRelazione(M, { da, a, tipo, obbligatoria, nome, attributi }) {
+  function aggiungiRelazione(M, { da, a, tipo, obbligatoria, nome, attributi, verbo }) {
     const figlia = entitaDi(M, da), padre = entitaDi(M, a);
-    const r = { id: id(M), da, a, tipo, obbligatoria: !!obbligatoria };
+    const r = { id: id(M), da, a, tipo, obbligatoria: !!obbligatoria, verbo: verbo || "" };
     if (tipo === "N:M") {
       r.nome = pulisciNome(nome || `${figlia.nome}_${padre.nome}`);
       r.colonne_da = chiave(figlia).map(k => nomeColonnaFk(figlia, k));
@@ -109,8 +109,9 @@ const Editor = (() => {
                             colonne_a: k2.map(k => k.nome), tipo: "dichiarata", relazione: "1:N", obbligatoria: true });
         if (!k1.length || !k2.length) avvisi.push(`${r.nome}: le due entità devono avere una chiave primaria`);
       } else {
+        // id ed etichetta: il rombo della relazione (schema E-R) a metà del collegamento
         collegamenti.push({ da: figlia.nome, colonne_da: r.colonne_da, a: padre.nome, colonne_a: r.colonne_a,
-                            tipo: "dichiarata", relazione: r.tipo, obbligatoria: r.obbligatoria });
+                            tipo: "dichiarata", relazione: r.tipo, obbligatoria: r.obbligatoria, id: r.id, etichetta: r.verbo || "" });
         const t = tabelle.find(x => x.nome === figlia.nome);
         t.colonne.forEach(c => { if (r.colonne_da.includes(c.nome)) c.verso.push(padre.nome); });
         if (!chiave(padre).length) avvisi.push(`${figlia.nome} → ${padre.nome}: il padre non ha chiave primaria, la chiave esterna non si può creare`);
