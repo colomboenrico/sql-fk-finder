@@ -81,8 +81,9 @@ const Editor = (() => {
 
   // ======================================================================= schema logico
 
-  /** Tabelle e collegamenti (stesso formato del diagramma), più l'elenco degli avvisi del modello. */
-  function schemaLogico(M) {
+  /** Tabelle e collegamenti (stesso formato del diagramma), più l'elenco degli avvisi del modello.
+      concettuale: le relazioni N:M si disegnano come un rombo tra le due entità (schema E-R) invece della tabella ponte. */
+  function schemaLogico(M, { concettuale = false } = {}) {
     const tabelle = [], collegamenti = [], avvisi = [];
     for (const e of M.entita) {
       const fk = new Set(M.relazioni.filter(r => r.tipo !== "N:M" && r.da === e.id).flatMap(r => r.colonne_da.map(c => c.toLowerCase())));
@@ -95,7 +96,12 @@ const Editor = (() => {
     for (const r of M.relazioni) {
       const figlia = perId[r.da], padre = perId[r.a];
       if (!figlia || !padre) continue;
-      if (r.tipo === "N:M") {
+      if (r.tipo === "N:M" && concettuale) {
+        collegamenti.push({ da: figlia.nome, colonne_da: chiave(figlia).map(k => k.nome), a: padre.nome, colonne_a: chiave(padre).map(k => k.nome),
+                            tipo: "dichiarata", relazione: "N:M", obbligatoria: false, id: r.id, etichetta: r.verbo || r.nome,
+                            descrizione: `relazione N:M ${r.nome}` + ((r.attributi || []).length ? ` con ${(r.attributi || []).map(a => a.nome).join(", ")}` : "") });
+        if (!chiave(figlia).length || !chiave(padre).length) avvisi.push(`${r.nome}: le due entità devono avere una chiave primaria`);
+      } else if (r.tipo === "N:M") {
         const k1 = chiave(figlia), k2 = chiave(padre);
         const colonne = [
           ...k1.map((k, i) => ({ nome: r.colonne_da[i] || nomeColonnaFk(figlia, k), tipo: tipoChiaveEsterna(k.tipo), pk: true, fk: true, unique: false, not_null: true, verso: [figlia.nome] })),

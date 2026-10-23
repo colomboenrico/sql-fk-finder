@@ -5,7 +5,7 @@
 // I dati sono quelli degli INSERT e dei COPY dei file, nel database delle query: i file non si modificano mai.
 
 let ordinePeso = "leggere", ricercaPeso = "", mostraTolte = true;
-const DATI = { tabella: null, da: 0, cerca: "", dove: null, storia: [] };
+const DATI = { tabella: null, da: 0, cerca: "", dove: null, storia: [], vista: "dati" };   // vista: "dati" o "grafici"
 const PER_PAGINA_DATI = 100;
 
 /** Avviso (con il pulsante) quando il database delle query va costruito prima. */
@@ -164,7 +164,109 @@ Object.assign(VISTE, {
 });
 
 /** Struttura, righe e collegamenti della tabella in DATI. */
+/** I due pulsanti Dati / Grafici della tabella aperta. */
+function sceltaVistaDati() {
+  return el("div", { class: "riga-comandi" }, ...[["dati", "Dati"], ["grafici", "Grafici"]].map(([v, t]) =>
+    el("button", { class: DATI.vista === v ? "primario" : null, onclick: () => { DATI.vista = v; mostra("datitabelle"); } }, t)));
+}
+
+const numeroBreve = v => {
+  if (v === null || v === undefined) return "-";
+  const a = Math.abs(v);
+  return a >= 1e6 ? `${(v / 1e6).toLocaleString("it-IT", { maximumFractionDigits: 1 })} mln`
+    : a >= 1e4 ? Math.round(v).toLocaleString("it-IT")
+    : Number.isInteger(v) ? v.toLocaleString("it-IT") : v.toLocaleString("it-IT", { maximumFractionDigits: 2 });
+};
+
+/** Barre verticali (istogramma dei numeri o andamento delle date): una sola serie, barre sottili con 2px di stacco,
+    angoli arrotondati solo in cima, valore al passaggio del mouse. */
+function grafoColonne(barre, descrivi, sinistra, destra) {
+  const L = 320, H = 120, basso = H - 18;
+  const massimo = Math.max(1, ...barre.map(b => b[1]));
+  const passo = L / Math.max(1, barre.length), largo = Math.max(1, passo - 2);
+  const svg = svgNodo("svg", { viewBox: `0 0 ${L} ${H}`, class: "grafico-colonne", role: "img" });
+  svg.append(svgNodo("line", { x1: 0, x2: L, y1: basso + 0.5, y2: basso + 0.5, class: "asse" }));
+  barre.forEach(([etichetta, n], i) => {
+    const h = n ? Math.max(2, (basso - 16) * n / massimo) : 0;   // in cima resta lo spazio per "max"
+    const x = i * passo + 1, y = basso - h, r = Math.min(4, largo / 2, h);
+    const gruppo = svgNodo("g", { class: "barra" });
+    gruppo.append(svgNodo("rect", { x: i * passo, y: 0, width: passo, height: basso, fill: "transparent" }));   // area di passaggio del mouse
+    if (h) gruppo.append(svgNodo("path", { d: `M${x},${basso} V${y + r} Q${x},${y} ${x + r},${y} H${x + largo - r} Q${x + largo},${y} ${x + largo},${y + r} V${basso} Z` }));
+    const titolo = svgNodo("title"); titolo.textContent = descrivi(etichetta, n, i);
+    gruppo.append(titolo);
+    svg.append(gruppo);
+  });
+  const testo = (x, ancora, t) => { const n = svgNodo("text", { x, y: H - 4, "text-anchor": ancora, class: "etichetta-asse" }); n.textContent = t; return n; };
+  svg.append(testo(0, "start", sinistra), testo(L, "end", destra));
+  const cima = svgNodo("text", { x: 0, y: 9, class: "etichetta-asse" }); cima.textContent = `max ${numeroBreve(massimo)}`;
+  svg.append(cima);
+  return svg;
+}
+const svgNodo = (tag, attributi = {}) => {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attributi)) n.setAttribute(k, v);
+  return n;
+};
+
+/** Valori più frequenti come barre orizzontali; cliccando un valore si vedono le righe che lo hanno. */
+function grafoValori(C, tabella) {
+  const massimo = Math.max(1, ...C.barre.map(b => b[1]));
+  return el("div", { class: "valori-frequenti" },
+    C.barre.map(([v, n]) => el("a", { href: "#", class: "valore", title: `${v}: ${n.toLocaleString("it-IT")} righe (clicca per vederle)`,
+      onclick: e => { e.preventDefault(); DATI.vista = "dati"; apriDati(tabella, { [C.colonna]: /^-?\d+(\.\d+)?$/.test(v) && C.genere !== "date" && /INT|DEC|NUM|FLOAT|DOUBLE|REAL/i.test(C.tipo) ? Number(v) : v }); } },
+      el("span", { class: "nome-valore" }, v === "" ? "(vuoto)" : v),
+      el("span", { class: "traccia" }, el("span", { class: "riempita", style: `width: ${(100 * n / massimo).toFixed(1)}%` })),
+      el("span", { class: "conto" }, numeroBreve(n)))),
+    C.altri ? el("div", { class: "valore altri" }, el("span", { class: "nome-valore" }, `altri ${numeroBreve(C.diversi - C.barre.length)} valori`),
+      el("span", {}), el("span", { class: "conto" }, numeroBreve(C.altri))) : null);
+}
+
+/** La scheda di una colonna: pieni e vuoti, poi il grafico adatto al tipo. */
+function schedaColonna(C, righe, tabella) {
+  const pieni = righe ? 100 * C.pieni / righe : 0;
+  const S = C.statistiche;
+  let grafico = null, nota = "";
+  if (C.genere === "chiave") nota = "Valori tutti diversi: identifica ogni riga.";
+  else if (C.genere === "vuota") nota = "Sempre vuota (NULL) nei dati caricati.";
+  else if (C.genere === "valori") grafico = grafoValori(C, tabella);
+  else if (C.genere === "numeri") {
+    nota = `da ${numeroBreve(S.minimo)} a ${numeroBreve(S.massimo)}, media ${numeroBreve(S.media)}`;
+    grafico = grafoColonne(C.barre, (da, n) => `da ${numeroBreve(da)} a ${numeroBreve(da + S.larghezza)}: ${n.toLocaleString("it-IT")} righe`,
+      numeroBreve(S.minimo), numeroBreve(S.massimo));
+  } else if (C.genere === "date") {
+    nota = `dal ${S.primo} al ${S.ultimo}, per ${S.per}`;
+    grafico = grafoColonne(C.barre, (d, n) => `${d}: ${n.toLocaleString("it-IT")} righe`, C.barre[0]?.[0] || "", C.barre[C.barre.length - 1]?.[0] || "");
+  }
+  return el("div", { class: "pannello scheda-colonna" },
+    el("div", { class: "testa-colonna" }, el("b", {}, C.colonna), " ", el("span", { class: "tenue" }, C.tipo),
+      C.ruolo ? el("span", { class: "cat" }, C.ruolo) : null),
+    C.verso ? el("div", { class: "tenue" }, `collegata a ${C.verso}`) : null,
+    el("div", { class: "pieni-vuoti", title: `${C.pieni.toLocaleString("it-IT")} pieni, ${C.vuoti.toLocaleString("it-IT")} vuoti` },
+      el("span", { class: "pieni", style: `width: ${pieni.toFixed(1)}%` })),
+    el("div", { class: "tenue piccolo" }, `${pieni.toFixed(pieni % 1 ? 1 : 0)}% pieni · ${numeroBreve(C.vuoti)} vuoti · ${numeroBreve(C.diversi)} valori diversi`),
+    nota ? el("div", { class: "piccolo" }, nota) : null,
+    grafico);
+}
+
+/** Vista Grafici: i dati di ogni colonna della tabella, graficamente. */
+async function disegnaGrafici(box) {
+  box.replaceChildren(el("p", { class: "tenue" }, "Calcolo dei grafici..."));
+  let G;
+  try { G = await api(`/api/dati/grafici?tabella=${encodeURIComponent(DATI.tabella)}`); }
+  catch (e) { box.replaceChildren(el("p", { class: "errore" }, e.message)); return; }
+  const completezza = G.righe && G.colonne.length ? 100 * G.colonne.reduce((n, c) => n + c.pieni, 0) / (G.righe * G.colonne.length) : 0;
+  const vuote = G.colonne.filter(c => c.genere === "vuota").length;
+  box.replaceChildren(el("div", {},
+    el("h3", {}, G.tabella, el("span", { class: "tenue" }, `  ${G.righe.toLocaleString("it-IT")} righe · ${G.colonne.length} colonne`)),
+    sceltaVistaDati(),
+    el("p", { class: "tenue" }, `Completezza dei dati: ${completezza.toFixed(0)}% delle celle è piena` + (vuote ? `; ${vuote} colonne sempre vuote` : "") +
+      ". Passa il mouse sulle barre per i valori; clicca un valore frequente per vedere le righe che lo hanno."),
+    G.righe ? el("div", { class: "griglia-grafici" }, G.colonne.map(C => schedaColonna(C, G.righe, G.tabella)))
+      : el("p", {}, "La tabella non ha righe nei dati caricati.")));
+}
+
 async function disegnaTabella(box) {
+  if (DATI.vista === "grafici") return disegnaGrafici(box);
   const parametri = new URLSearchParams({ tabella: DATI.tabella, da: DATI.da, quanti: PER_PAGINA_DATI, cerca: DATI.cerca,
                                           dove: DATI.dove ? JSON.stringify(DATI.dove) : "" });
   let T;
@@ -205,6 +307,7 @@ async function disegnaTabella(box) {
       el("button", { onclick: () => { Object.assign(DATI, DATI.storia.pop()); mostra("datitabelle"); } }, "Indietro"),
       el("span", { class: "tenue" }, [...DATI.storia.map(s => s.tabella), T.tabella].join(" → "))) : null,
     el("h3", {}, T.tabella, el("span", { class: "tenue" }, `  ${T.totale.toLocaleString("it-IT")} righe` + (DATI.dove || DATI.cerca ? " trovate" : ""))),
+    sceltaVistaDati(),
     DATI.dove ? el("div", { class: "chips" }, el("span", { class: "tenue" }, "Filtro:"),
       el("a", { href: "#", class: "chip", title: "Togli il filtro", onclick: e => { e.preventDefault(); DATI.dove = null; DATI.da = 0; mostra("datitabelle"); } },
         Object.entries(DATI.dove).map(([k, v]) => `${k} = ${formattaValore(v)}`).join(", "), "  ×")) : null,

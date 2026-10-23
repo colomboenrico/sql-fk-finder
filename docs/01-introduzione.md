@@ -25,7 +25,8 @@ SQL FK Finder legge i file `.sql` (i `CREATE TABLE`) e **ricostruisce le relazio
 | **Reverse engineering** | Per ogni tabella cosa rappresenta probabilmente e il significato delle colonne; il filo logico per leggere il database; il dizionario dei dati da scaricare |
 | **File della cartella e XML** | Cerca tutti i file della cartella per nome (`ordini.sql`, `*.xml`) o per contenuto, li mostra come in un esplora risorse affiancati agli schemi del reverse engineering; apre i file XML come albero e trova le tabelle e le colonne del database che vi compaiono |
 | **Diagrammi** | Diagramma delle tabelle in stile DBeaver, grafo interattivo, modello relazionale esportabile (PNG, SVG, Mermaid, PlantUML, Graphviz, DBML, JSON) |
-| **Dati e peso delle tabelle** | Struttura e righe di ogni tabella popolata, seguendo i collegamenti riga per riga; peso di tutte le tabelle (anche le vuote) per togliere quelle che non servono |
+| **Schema E-R** | Lo schema concettuale ricostruito dal database: entità, relazioni con rombo e nome, N:M, gerarchie ISA, attributi multivalore |
+| **Dati e peso delle tabelle** | Struttura, righe e grafici dei dati di ogni tabella popolata, seguendo i collegamenti riga per riga; peso di tutte le tabelle (anche le vuote) per togliere quelle che non servono |
 | **Query sui dati** | Interroga i dati degli `INSERT` e dei `COPY` dei file con SQL, anche per dump da decine di GB |
 | **Verifica con l'interfaccia** | Legge le finestre del programma Windows che usa il database, ne ricava le entità e controlla se le chiavi previste corrispondono a quello che il programma mostra |
 | **Scelta con clingo** | Un risolutore logico (Answer Set Programming) sceglie l'insieme di chiavi esterne più coerente e spiega ogni scarto |

@@ -384,3 +384,25 @@ ul.controlli li { margin: 5px 0; }
 .er-rombo:hover polygon { stroke: #ef6c00; stroke-width: 2.5; }
 .stato-collega { display: block; color: var(--medio); font-weight: 600; margin: 0 0 6px; }
 .stato-collega:empty { display: none; }
+
+/* grafici dei dati di una tabella: una serie per grafico, colore principale; i vuoti in grigio */
+.griglia-grafici { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.scheda-colonna { margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 5px; }
+.testa-colonna { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.piccolo { font-size: 12px; }
+.pieni-vuoti { height: 8px; border-radius: 4px; background: var(--bordo); overflow: hidden; }
+.pieni-vuoti .pieni { display: block; height: 100%; background: var(--primario); }
+.grafico-colonne { width: 100%; height: auto; margin-top: 4px; }
+.grafico-colonne .barra path { fill: var(--primario); }
+.grafico-colonne .barra:hover path { fill: var(--medio); }
+.grafico-colonne .asse { stroke: var(--bordo); stroke-width: 1; }
+.grafico-colonne .etichetta-asse { font-size: 9px; fill: var(--tenue); font-family: inherit; }
+.valori-frequenti { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.valori-frequenti .valore { display: grid; grid-template-columns: minmax(0, 1fr) 42% auto; gap: 8px; align-items: center;
+  font-size: 12px; color: var(--testo); text-decoration: none; border-radius: 4px; padding: 1px 3px; }
+.valori-frequenti a.valore:hover { background: var(--primario-chiaro); }
+.valori-frequenti .nome-valore { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.valori-frequenti .traccia { height: 9px; }
+.valori-frequenti .riempita { display: block; height: 100%; min-width: 2px; background: var(--primario); border-radius: 0 4px 4px 0; }
+.valori-frequenti .conto { font-variant-numeric: tabular-nums; color: var(--tenue); text-align: right; }
+.valori-frequenti .altri { color: var(--tenue); font-style: italic; }

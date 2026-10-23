@@ -412,6 +412,7 @@ const ICONE = {
   modello: "M3 4h8v16H3zM13 4h8v7h-8zM13 13h8v7h-8zM5 8h4M15 8h4",
   editor: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   lavagna: "M3 4h8v16H3zM13 4h8v16h-8zM15 9h4M15 13h3",
+  er: "M3 5h6v4H3zM15 15h6v4h-6zM12 8l4 4-4 4-4-4zM9 7h3v1M12 16v1h3",
   dati: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   peso: "M5 20V10M10 20V4M15 20v-7M20 20v-4M3 20h19",
   query: "M4 5h16v14H4zM7 10l3 2-3 2M12 15h5",
@@ -869,7 +870,7 @@ function creaEditor(S) {
 
   function ridisegna() {
     if (diagramma) { S.vista = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
-    const schema = Editor.schemaLogico(M());
+    const schema = Editor.schemaLogico(M(), { concettuale: !!S.concettuale });
     const scelto = S.selezione && (Editor.entitaDi(M(), S.selezione)?.nome || M().relazioni.find(r => r.id === S.selezione)?.nome);
     if (schema.tabelle.length) {
       diagramma = DiagrammaER.crea(cornice, schema, {
@@ -1131,7 +1132,8 @@ const VISTE = {
         "Le stesse schede si possono affiancare ai file nelle pagine File della cartella e File XML."),
       el("div", { class: "riga-comandi" },
         el("button", { class: "primario", onclick: () => scaricaBlob(new Blob([dizionarioDati(D, stato.origine)], { type: "text/html;charset=utf-8" }),
-          "dizionario_dei_dati.html") }, "Scarica il dizionario dei dati (HTML)")),
+          "dizionario_dei_dati.html") }, "Scarica il dizionario dei dati (HTML)"),
+        el("button", { onclick: () => mostra("er") }, "Schema E-R concettuale")),
       el("div", { class: "reverse-griglia" },
         el("div", { class: "pannello reverse-laterale" }, el("h3", {}, "Tabelle"), cercaE, cercaA, contatore, elenco),
         destra),

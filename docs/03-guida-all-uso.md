@@ -56,6 +56,16 @@ A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca
 - Nella lavagna **migliori il disegno**: colleghi due tabelle con **Collega due tabelle** (clicca la tabella che riceve la chiave esterna, poi quella a cui punta), dai un nome alle relazioni cliccando il **rombo** a metà del collegamento (come nello schema E-R), sposti le tabelle, clicchi un'entità per cambiarne nome e attributi (riquadro *Entità scelta nella lavagna* sotto), aggiungi entità e relazioni, elimini. Sotto c'è anche l'SQL del disegno.
 - **Scarica il disegno** salva un file `.json`; **Apri un disegno** lo riapre per continuare (anche un file di progetto `.sqlfk`). Il disegno si salva anche con *Salva progetto*. *Scarica SQL* e *Scarica PNG* esportano il disegno; *Porta nell'Editor* lo copia nella pagina *Editor del database*, per analizzarlo come un database caricato.
 
+### Schema E-R
+Lo **schema concettuale** (Entità-Relazione) ricostruito dal database, cioè il passaggio inverso dalle tabelle al modello E-R:
+
+- le **tabelle ponte** (chiave fatta dalle chiavi esterne verso due tabelle) diventano **relazioni N:M**, disegnate come rombo tra le due entità, con gli attributi della relazione (per esempio `voto` in `iscrizioni`);
+- le **chiavi esterne** diventano relazioni **1:N** e **1:1** con un **rombo** e un **nome proposto** dalle categorie delle tabelle: *fa parte di* (righe di dettaglio), *è di tipo* (tabelle di tipi e categorie), *riguarda* (movimenti verso anagrafiche), *registra* (storici), altrimenti *appartiene a*;
+- una tabella che ha come chiave primaria la chiave esterna verso un'altra è una **gerarchia (ISA)**: *dipendenti è un persone*; due tabelle con la stessa chiave che si puntano a vicenda diventano una relazione 1:1 *corrisponde a*, da decidere a mano;
+- le colonne ripetute numerate (`telefono1`, `telefono2`...) sono segnalate come **attributi multivalore**; le tabelle che collegano più di due entità come relazioni di grado maggiore.
+
+Sopra il disegno il riepilogo (entità, relazioni per tipo, gerarchie) e l'elenco di ogni scelta. Con molte tabelle si lavora **un'area alla volta** (menu in alto). Lo schema si modifica come nell'Editor (clicca le entità e i rombi, *Collega due tabelle*), *N:M come rombo* mostra o nasconde le tabelle ponte, *Scarica PNG* salva l'immagine, *Porta nell'Editor* e *Apri nella lavagna* lo copiano per continuare. Si apre anche dalla pagina *Reverse engineering* (*Schema E-R concettuale*).
+
 ### Problemi
 La diagnostica come un compilatore: ogni riga ha gravità (errore, avviso, info), codice, file e riga, tabella e colonna, messaggio e suggerimento. Si filtra per gravità e per regola; cliccando una riga si vede il **pezzo di file** con la riga evidenziata e la **regola di progettazione** violata, con esempio sbagliato e corretto. Elenco completo dei codici: [Diagnostica](05-diagnostica.md).
 
@@ -121,6 +131,7 @@ Le tabelle popolate dai file (`INSERT`, `COPY`): a sinistra l'elenco con il nume
 
 - **Struttura**: colonne, tipi, chiave primaria, colonne obbligatorie e a quale tabella è collegata ogni chiave esterna (dichiarata o trovata).
 - **Dati**: 100 righe per pagina (*Precedente*, *Successiva*), con la ricerca di un valore in tutte le colonne (Invio).
+- **Grafici**: con il pulsante *Grafici* ogni colonna ha la sua scheda con i dati che la compongono: la barra dei valori pieni e vuoti, quanti valori diversi, e il grafico adatto al tipo: l'**istogramma** dei numeri (con minimo, massimo e media), l'**andamento nel tempo** delle date (per anno, mese o giorno), i **valori più frequenti** di testi, codici e chiavi esterne (cliccandone uno si vedono le righe che lo hanno). Passando il mouse sulle barre si leggono i valori. Su due milioni di righe i grafici sono pronti in pochi secondi.
 - **Righe collegate**: cliccando una riga si vedono le righe a cui punta (per esempio il cliente di un ordine) e quelle che puntano a lei (le righe dell'ordine), seguendo gli stessi collegamenti del diagramma. Se un valore non esiste nella tabella collegata la riga è segnalata come **orfana**. *Apri* porta alla tabella collegata con il filtro su quei valori; così si va da una tabella all'altra, e *Indietro* torna al passo prima.
 
 ### Peso delle tabelle

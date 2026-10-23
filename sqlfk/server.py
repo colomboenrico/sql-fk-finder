@@ -441,6 +441,71 @@ class Sessione:
                              "not_null": (nome_analisi, n) in S.not_null, "verso": verso.get(n, [])} for n, tipo in info],
                 "righe": [[v if not isinstance(v, bytes) else v.hex() for v in riga] for riga in righe]}
 
+    NUMERICI = {"INT", "BIGINT", "SMALLINT", "TINYINT", "MEDIUMINT", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "REAL", "MONEY", "NUMBER"}
+    DATE = {"DATE", "DATETIME", "TIMESTAMP", "TIMESTAMPTZ", "DATETIME2", "SMALLDATETIME"}
+
+    def grafici_tabella(self, tabella_):
+        """Per ogni colonna i dati che la compongono, pronti per un grafico: quanti vuoti e quanti valori diversi,
+        poi la distribuzione dei numeri (istogramma), l'andamento delle date (per anno, mese o giorno)
+        o i valori più frequenti dei testi e dei codici."""
+        db = self.database()
+        t = db.tabella_di(tabella_)
+        if not t:
+            raise Errore(f"Tabella non trovata nei dati: {tabella_}")
+        S = self.R.S
+        nome = next((x for x in S.col_per_tab if db.tabella_di(x) == t), tabella_)
+        pk = set(S.pk.get(nome, []))
+        fk = {}
+        for l in self.struttura_collegamenti()["collegamenti"]:
+            if l["da"] == nome:
+                for x, y in zip(l["colonne_da"], l["colonne_a"]):
+                    fk[x] = f"{l['a']}.{y}"
+        risultato = []
+        with self.lock_db:
+            c = db.conn
+            q = QY.q
+            righe = c.execute(f"SELECT COUNT(*) FROM {q(t)}").fetchone()[0]
+            for colonna, tipo_sqlite in ((r[1], r[2]) for r in c.execute(f"PRAGMA table_info({q(t)})")):
+                col = q(colonna)
+                dichiarato = S.tipi.get((nome, colonna)) or tipo_sqlite
+                base = A.tipo_base(dichiarato)
+                pieni, diversi = c.execute(f"SELECT COUNT({col}), COUNT(DISTINCT {col}) FROM {q(t)}").fetchone()
+                voce = {"colonna": colonna, "tipo": dichiarato, "ruolo": "PK" if colonna in pk else "FK" if colonna in fk else "",
+                        "verso": fk.get(colonna), "pieni": pieni, "vuoti": righe - pieni, "diversi": diversi,
+                        "genere": "vuota", "barre": [], "altri": 0, "statistiche": {}}
+                if pieni:
+                    esempio = c.execute(f"SELECT {col} FROM {q(t)} WHERE {col} IS NOT NULL LIMIT 1").fetchone()[0]
+                    data = base in self.DATE or (isinstance(esempio, str) and re.match(r"\d{4}-\d{2}-\d{2}", esempio) is not None)
+                    numero = base in self.NUMERICI and not data
+                    if colonna in pk and diversi == pieni:
+                        voce["genere"] = "chiave"
+                    elif diversi <= 12 or colonna in fk or not (numero or data):
+                        # pochi valori, testi, codici e chiavi esterne (le righe collegate più usate): i più frequenti
+                        voce["genere"] = "valori"
+                        valori = c.execute(f"SELECT {col}, COUNT(*) FROM {q(t)} WHERE {col} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12").fetchall()
+                        voce["barre"] = [[str(v), n] for v, n in valori]
+                        voce["altri"] = pieni - sum(n for _, n in valori)
+                    elif numero:
+                        voce["genere"] = "numeri"
+                        valore = f"CAST({col} AS REAL)"
+                        minimo, massimo, media = c.execute(f"SELECT MIN({valore}), MAX({valore}), AVG({valore}) FROM {q(t)} WHERE {col} IS NOT NULL").fetchone()
+                        voce["statistiche"] = {"minimo": minimo, "massimo": massimo, "media": media}
+                        larghezza = (massimo - minimo) / 20 or 1
+                        conti = dict(c.execute(f"SELECT MIN(19, CAST(({valore} - ?) / ? AS INTEGER)), COUNT(*) FROM {q(t)} "
+                                               f"WHERE {col} IS NOT NULL GROUP BY 1", (minimo, larghezza)).fetchall())
+                        voce["barre"] = [[minimo + i * larghezza, conti.get(i, 0)] for i in range(20)]
+                        voce["statistiche"]["larghezza"] = larghezza
+                    else:
+                        voce["genere"] = "date"
+                        primo, ultimo = c.execute(f"SELECT MIN(SUBSTR({col}, 1, 10)), MAX(SUBSTR({col}, 1, 10)) FROM {q(t)} WHERE {col} IS NOT NULL").fetchone()
+                        anni = int(str(ultimo)[:4]) - int(str(primo)[:4]) if str(primo)[:4].isdigit() and str(ultimo)[:4].isdigit() else 0
+                        lunghezza = 4 if anni > 3 else 7 if anni > 0 or str(primo)[:7] != str(ultimo)[:7] else 10
+                        voce["statistiche"] = {"primo": primo, "ultimo": ultimo, "per": {4: "anno", 7: "mese", 10: "giorno"}[lunghezza]}
+                        voce["barre"] = [list(r) for r in c.execute(f"SELECT SUBSTR({col}, 1, {lunghezza}), COUNT(*) FROM {q(t)} "
+                                                                       f"WHERE {col} IS NOT NULL GROUP BY 1 ORDER BY 1 LIMIT 400")]
+                risultato.append(voce)
+        return {"tabella": nome, "righe": righe, "colonne": risultato}
+
     def struttura_collegamenti(self):
         """Il diagramma dei collegamenti (dichiarati e trovati), calcolato una volta per ogni analisi."""
         if getattr(self, "_struttura", (None,))[0] is not self.R:
@@ -950,11 +1015,13 @@ class Gestore(BaseHTTPRequestHandler):
                 nome, tipo = ("modelli_sqlalchemy.py", "text/x-python") if quale == "modelli" else ("normalizzazione.sql", "application/sql")
                 return (testo.encode("utf-8"), f"{tipo}; charset=utf-8", {"Content-Disposition": f'attachment; filename="{nome}"'})
             return self.esegui(codice)
-        if percorso in ("/api/dati/righe", "/api/dati/collegate"):
+        if percorso in ("/api/dati/righe", "/api/dati/collegate", "/api/dati/grafici"):
             q = parse_qs(url.query)
             voce = lambda nome, predefinito="": q.get(nome, [predefinito])[0]
 
             def dati_tabella():
+                if percorso.endswith("grafici"):
+                    return s.grafici_tabella(voce("tabella"))
                 if percorso.endswith("collegate"):
                     return s.collegate(voce("tabella"), json.loads(voce("riga", "{}") or "{}"))
                 return s.righe_tabella(voce("tabella"), int(voce("da", "0") or 0), min(int(voce("quanti", "100") or 100), 1000),
