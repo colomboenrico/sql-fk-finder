@@ -2,6 +2,8 @@
 
 SQL FK Finder legge i file `.sql` di un database e trova i **collegamenti mancanti tra le tabelle** (le chiavi esterne che non sono state dichiarate). Controlla anche la qualità della progettazione, permette di interrogare i dati e verifica le previsioni guardando l'**interfaccia grafica del programma** che usa il database. Gira **tutto sul tuo computer**: niente internet, niente servizi esterni, niente intelligenza artificiale.
 
+**Manuale d'uso in PDF**: [Manuale_SQL_FK_Finder.pdf](Manuale_SQL_FK_Finder.pdf) (29 pagine, con gli screenshot di ogni pagina dell'app): da stampare o consegnare a chi usa il programma.
+
 ## Indice
 
 | | Capitolo | Cosa trovi |

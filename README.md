@@ -6,6 +6,8 @@ App desktop e notebook Jupyter per **trovare i collegamenti mancanti tra tabelle
 
 Utile quando un database è stato creato senza chiavi esterne (`FOREIGN KEY`) e bisogna ricostruire le relazioni tra le tabelle guardando solo i nomi e i tipi delle colonne.
 
+> **Manuale d'uso in PDF: [docs/Manuale_SQL_FK_Finder.pdf](docs/Manuale_SQL_FK_Finder.pdf)** — come si installa e si usa l'app, scheda per scheda, con gli screenshot.
+>
 > **Documentazione completa: [docs/](docs/README.md)** — introduzione, installazione e avvio, guida a tutte le pagine dell'app, come funzionano regole e algoritmi, codici della diagnostica, architettura (come comunicano le parti, perché l'app non usa la rete), riga di comando, domande frequenti.
 
 ## Cosa fa
