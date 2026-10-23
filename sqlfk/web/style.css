@@ -4,8 +4,10 @@
   --testo: #1d2330;
   --tenue: #5f6b7a;
   --bordo: #dde1e7;
-  --primario: #1f4e79;
-  --primario-chiaro: #e7eef6;
+  --primario: #d12d35;              /* colore principale: pulsanti, scheda attiva, icone, link */
+  --primario-pieno: #d12d35;        /* sfondo dei pulsanti principali (testo bianco) */
+  --primario-chiaro: #fdeff0;
+  --grafico: #1f4e79;               /* barre dei grafici dei dati: restano blu, il rosso sembrerebbe un errore */
   --pericolo: #b42318;
   --ok: #2e7d32;
   --medio: #c25e00;
@@ -23,8 +25,10 @@
     --testo: #e6e8eb;
     --tenue: #9aa3ae;
     --bordo: #333945;
-    --primario: #6ea8de;
-    --primario-chiaro: #24364a;
+    --primario: #f0656b;
+    --primario-pieno: #d12d35;
+    --primario-chiaro: #472024;
+    --grafico: #6ea8de;
     --pericolo: #f0766b;
     --ok: #79c37d;
     --medio: #f0a35e;
@@ -73,7 +77,7 @@ pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius
   padding: 6px 4px; border: 1px solid transparent; background: none; font-size: 12px; line-height: 1.2; text-align: center; border-radius: 6px; }
 .nastro button[data-vista]:hover:not(:disabled), .nastro .grande:hover { background: var(--primario-chiaro); border-color: var(--bordo); }
 .nastro button[data-vista].attiva { background: var(--primario-chiaro); border-color: var(--primario); color: var(--primario); font-weight: 600; }
-.nastro .grande.primario { background: var(--primario); color: #fff; border-color: var(--primario); }
+.nastro .grande.primario { background: var(--primario-pieno); color: #fff; border-color: var(--primario-pieno); }
 .nastro .grande.primario .icona { stroke: #fff; }
 .icona { width: 26px; height: 26px; flex-shrink: 0; fill: none; stroke: var(--primario); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .nastro button[data-vista] .contatore { margin-left: 2px; }
@@ -93,7 +97,7 @@ pre { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius
 .pulsante, button { font: inherit; border: 1px solid var(--bordo); background: var(--pannello); color: var(--testo);
   padding: 6px 12px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .pulsante:hover, button:hover { border-color: var(--primario); }
-.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
+.primario { background: var(--primario-pieno); border-color: var(--primario-pieno); color: #fff; }
 .primario:hover { filter: brightness(1.1); }
 .pericolo { color: var(--pericolo); border-color: var(--pericolo); }
 button:disabled { opacity: .5; cursor: default; }
@@ -356,7 +360,7 @@ ul.controlli li { margin: 5px 0; }
 .tabella-peso td.numero, .tabella-peso th.numero { text-align: right; font-variant-numeric: tabular-nums; }
 .tabella-peso tr.tolta td { color: var(--tenue); }
 .barra-peso { width: 28%; }
-.barra-peso div { height: 10px; background: var(--primario); border-radius: 3px; opacity: .75; }
+.barra-peso div { height: 10px; background: var(--grafico); border-radius: 3px; opacity: .75; }
 .tabella-dati { border-collapse: collapse; font-size: 12.5px; }
 .tabella-dati th, .tabella-dati td { border-bottom: 1px solid var(--bordo); padding: 3px 8px; text-align: left; white-space: nowrap;
   max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
@@ -391,9 +395,9 @@ ul.controlli li { margin: 5px 0; }
 .testa-colonna { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
 .piccolo { font-size: 12px; }
 .pieni-vuoti { height: 8px; border-radius: 4px; background: var(--bordo); overflow: hidden; }
-.pieni-vuoti .pieni { display: block; height: 100%; background: var(--primario); }
+.pieni-vuoti .pieni { display: block; height: 100%; background: var(--grafico); }
 .grafico-colonne { width: 100%; height: auto; margin-top: 4px; }
-.grafico-colonne .barra path { fill: var(--primario); }
+.grafico-colonne .barra path { fill: var(--grafico); }
 .grafico-colonne .barra:hover path { fill: var(--medio); }
 .grafico-colonne .asse { stroke: var(--bordo); stroke-width: 1; }
 .grafico-colonne .etichetta-asse { font-size: 9px; fill: var(--tenue); font-family: inherit; }
@@ -403,7 +407,7 @@ ul.controlli li { margin: 5px 0; }
 .valori-frequenti a.valore:hover { background: var(--primario-chiaro); }
 .valori-frequenti .nome-valore { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .valori-frequenti .traccia { height: 9px; }
-.valori-frequenti .riempita { display: block; height: 100%; min-width: 2px; background: var(--primario); border-radius: 0 4px 4px 0; }
+.valori-frequenti .riempita { display: block; height: 100%; min-width: 2px; background: var(--grafico); border-radius: 0 4px 4px 0; }
 .valori-frequenti .conto { font-variant-numeric: tabular-nums; color: var(--tenue); text-align: right; }
 .valori-frequenti .altri { color: var(--tenue); font-style: italic; }
 
