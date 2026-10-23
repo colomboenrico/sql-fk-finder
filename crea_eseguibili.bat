@@ -17,6 +17,7 @@ if errorlevel 1 (
 echo == Preparazione ^(la prima volta scarica gli strumenti, qualche minuto^)
 call npm install --no-audit --no-fund
 if errorlevel 1 goto errore
+echo [ OK ] strumenti pronti
 if exist dist rmdir /s /q dist
 
 set "PY=python"
@@ -24,10 +25,12 @@ where python >nul 2>nul || set "PY=py -3"
 echo == Python da includere
 call %PY% prepara_python.py win-x64
 if errorlevel 1 goto errore
+echo [ OK ] Python con le librerie pronto
 
 echo == Windows
 call npx electron-builder --win --x64
 if errorlevel 1 goto errore
+echo [ OK ] installazione e versione portatile create
 
 for /f "usebackq delims=" %%d in (`powershell -NoProfile -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%d"
 set "DEST=%DESKTOP%\SQL FK Finder - eseguibili"
@@ -47,13 +50,21 @@ copy /y "dist\*.exe" "%DEST%\" >nul
   echo Per controllarla avviala con SQLFK_AUTOVERIFICA=1: scrive sqlfk_autoverifica.txt nella cartella temporanea.
 ) > "%DEST%\LEGGIMI.txt"
 
+echo [ OK ] copiati sul Desktop
 echo.
-echo Fatto. Eseguibili in: %DEST%
+echo ============================================================
+echo   OK - FINE INSTALLAZIONE: PROGRAMMA PRONTO ALL'AVVIO
+echo ============================================================
+echo.
+echo Cartella: %DEST%
 dir /b "%DEST%"
+echo.
+echo Avvia SQL-FK-Finder-...-portatile.exe con doppio clic, oppure installa con SQL-FK-Finder-...-win-x64.exe.
 pause
 exit /b 0
 
 :errore
-echo Creazione non riuscita: guarda i messaggi qui sopra.
+echo.
+echo [ERRORE] Creazione non riuscita: guarda i messaggi qui sopra.
 pause
 exit /b 1
