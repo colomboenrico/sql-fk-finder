@@ -36,19 +36,45 @@ function istruzioniMysql(file) {
       "le query con lo schema (chiavi esterne dichiarate e trovate)."));
 }
 
-/** Campo per il percorso del log, con il pulsante per sceglierlo (nell'app il percorso si legge dal file scelto). */
-function campoPercorso(valore, alFile) {
+/** Campo per il percorso del log, con il pulsante per sceglierlo (nell'app il percorso si legge dal file scelto).
+    Con multipli si scelgono più file insieme (log ruotati): i percorsi vanno nel campo separati da ";". */
+function campoPercorso(valore, alFile, multipli = false) {
   const campo = el("input", { type: "text", size: 60, value: valore || "", placeholder: "/var/lib/mysql/query.log  oppure  C:\\ProgramData\\MySQL\\query.log",
     "aria-label": "Percorso del general log" });
-  const scelta = el("input", { type: "file", hidden: true });
+  const scelta = el("input", { type: "file", hidden: true, multiple: multipli });
   scelta.addEventListener("change", () => {
-    const f = scelta.files[0];
-    if (!f) return;
-    const percorso = window.sqlfkApp && window.sqlfkApp.percorso(f);
-    if (percorso) campo.value = percorso;
-    alFile && alFile(f, percorso);
+    const lista = [...scelta.files].sort((a, b) => a.name.localeCompare(b.name, "it", { numeric: true }));
+    if (!lista.length) return;
+    const percorsi = window.sqlfkApp ? lista.map(f => window.sqlfkApp.percorso(f)).filter(Boolean) : [];
+    const conPercorsi = percorsi.length === lista.length;
+    campo.value = conPercorsi ? percorsi.join("; ") : "";
+    if (!conPercorsi && !alFile) avviso("Nel browser il percorso del file non si legge: scrivilo nel campo (nell'app si riempie da solo).", true);
+    campo.placeholder = conPercorsi ? campo.placeholder : `${lista.length} file scelti: ${lista.map(f => f.name).join(", ")}`;
+    alFile && alFile(lista, conPercorsi);
+    scelta.value = "";
   });
-  return { campo, scelta, pulsante: el("button", { onclick: () => scelta.click() }, "Scegli il file...") };
+  return { campo, scelta, pulsante: el("button", { onclick: () => scelta.click() }, multipli ? "Scegli i file..." : "Scegli il file...") };
+}
+
+/** Il database del programma (i file .sql, anche una cartella intera): serve a confrontare le query con lo schema. */
+function pannelloDatabase() {
+  const campo = el("input", { type: "text", size: 60, placeholder: "percorso della cartella con i file .sql", "aria-label": "Cartella del database" });
+  const apri = async () => {
+    if (!campo.value.trim()) return;
+    ricordaFileScelti([]);
+    await caricaDaServer("/api/carica_cartella", { cartella: campo.value.trim() });
+  };
+  campo.addEventListener("keydown", e => { if (e.key === "Enter") apri(); });
+  return el("div", { class: "pannello" }, el("h3", {}, "Il database del programma"),
+    el("p", { class: stato.caricato ? null : "tenue" }, stato.caricato
+      ? [el("b", {}, `${stato.tabelle_totali} tabelle`), ` da ${stato.origine}: i collegamenti usati dal programma si confrontano con le sue chiavi.`]
+      : "Nessun database caricato. Carica la cartella con tutti i file .sql del dump (struttura e dati): serve a confrontare " +
+        "le query con le chiavi dichiarate e trovate, e a leggere gli INSERT senza l'elenco delle colonne. Si può anche fare dopo."),
+    el("div", { class: "riga-comandi" },
+      el("button", { class: stato.caricato ? null : "primario", onclick: () => $("#in-cartella").click() },
+        stato.caricato ? "Carica un'altra cartella..." : "Carica la cartella del database..."),
+      el("button", { onclick: () => $("#in-file").click() }, "Scegli i file .sql..."),
+      el("span", { class: "tenue" }, "oppure"), campo, el("button", { onclick: apri }, "Apri")));
 }
 
 function dettaglioAzione(A, ridisegna) {
@@ -204,14 +230,17 @@ Object.assign(VISTE, {
     }
 
     // ---- importazione di un log già registrato
-    const I = campoPercorso("", (f, percorso) => { if (!percorso) fileScelto = f; });
-    let fileScelto = null;
+    let fileScelti = null;                                 // nel browser, senza percorsi: i file scelti
+    const I = campoPercorso("", (lista, conPercorsi) => { fileScelti = conPercorsi ? null : lista; if (!conPercorsi) I.campo.value = ""; }, true);
+    I.campo.setAttribute("aria-label", "Percorsi dei log da importare");
+    I.campo.addEventListener("input", () => { fileScelti = null; });
     const pausaSecondi = el("input", { type: "number", min: 0.5, step: 0.5, value: 2, style: "width: 5em", "aria-label": "Secondi di pausa" });
     const importa = async () => {
       try {
         const dati = { pausa: Number(pausaSecondi.value) || 2 };
-        if (fileScelto && !I.campo.value.trim()) dati.testo = await fileScelto.text();
-        else dati.percorso = I.campo.value.trim();
+        if (fileScelti && !I.campo.value.trim()) dati.testo = await Promise.all(fileScelti.map(f => f.text()));
+        else dati.percorsi = I.campo.value.split(";").map(x => x.trim()).filter(Boolean);
+        if (!dati.testo && !dati.percorsi.length) throw new Error("Scegli il log da importare (anche più file, per esempio i log ruotati).");
         const r = await conAttesa(() => api("/api/ascolto/importa", dati));
         avviso(`${r.azioni} azioni con ${r.query} query` + (r.rumore.length ? `; tolte come rumore: ${r.rumore.join(" · ")}` : "") + ".");
         azioneAperta = S.elenco ? S.elenco.length : 0;
@@ -220,7 +249,8 @@ Object.assign(VISTE, {
     };
     const boxImporta = el("details", { class: "pannello" }, el("summary", {}, el("b", {}, "Oppure importa un log già registrato")),
       el("p", { class: "tenue" }, "Se hai già registrato il log usando il programma, l'app lo divide in azioni: una nuova azione dopo ogni pausa " +
-        "senza query. Le query che si ripetono a intervalli regolari (timer) e quelle tecniche si tolgono da sole. Poi dai un nome a ogni azione."),
+        "senza query. Le query che si ripetono a intervalli regolari (timer) e quelle tecniche si tolgono da sole. Poi dai un nome a ogni azione. " +
+        "Si possono scegliere più file insieme (query.log, query.log.1...): si leggono in ordine di nome."),
       el("div", { class: "riga-comandi" }, I.campo, I.pulsante, I.scelta),
       el("div", { class: "riga-comandi" }, el("label", {}, "Nuova azione dopo ", pausaSecondi, " secondi di pausa"),
         el("button", { class: "primario", onclick: importa }, "Importa")));
@@ -236,7 +266,7 @@ Object.assign(VISTE, {
       } catch { /* il server risponde al prossimo giro */ }
     }, 1000);
 
-    return [intestazione, boxFile,
+    return [intestazione, pannelloDatabase(), boxFile,
       el("div", { class: "pannello" }, el("h3", {}, "2. Registra un'azione"), comandi, statoRegistrazione,
         el("details", { open: true }, el("summary", {}, "Ultime query lette"), flusso)),
       boxImporta,

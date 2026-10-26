@@ -574,11 +574,18 @@ class Sessione:
                 X.annulla()
             elif comando == "importa":
                 testo = dati.get("testo")
+                if isinstance(testo, list):                        # più log scelti dal browser, già in ordine
+                    testo = "\n".join(str(t) for t in testo)
                 if testo is None:
-                    percorso = Path(str(dati.get("percorso", "")).strip().strip('"')).expanduser()
-                    if not percorso.is_file():
-                        raise Errore(f"Il file del log non esiste: {percorso}")
-                    testo = percorso.read_text(encoding="utf-8", errors="replace")
+                    # uno o più file (per esempio i log ruotati: query.log, query.log.1...), letti in ordine di nome
+                    percorsi = dati.get("percorsi") or [dati.get("percorso", "")]
+                    testi = []
+                    for voce in sorted(percorsi, key=str):
+                        percorso = Path(str(voce).strip().strip('"')).expanduser()
+                        if not percorso.is_file():
+                            raise Errore(f"Il file del log non esiste: {percorso}")
+                        testi.append(percorso.read_text(encoding="utf-8", errors="replace"))
+                    testo = "\n".join(testi)
                 esito = X.importa(str(testo), float(dati.get("pausa") or 2), "mysql", bool(dati.get("rumore_automatico", True)), self.colonne_di())
                 return {**esito, **self.ascolto_stato()}
             elif comando == "rinomina":

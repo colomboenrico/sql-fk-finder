@@ -295,6 +295,11 @@ function classiStandard(colonna, valore) {
 const LIMITE_BROWSER = 64 * 1024 * 1024;     // oltre, il file si legge dal disco (percorso), non dal browser
 
 /** Fa leggere al server file o cartelle dal disco, in background (anche file da decine di GB). */
+/** Dopo un caricamento si va alla Home, tranne dalle pagine che caricano il database per usarlo lì (Ascolta il database). */
+function paginaDopoCaricamento() {
+  return ["ascolto"].includes(vistaAttuale) ? vistaAttuale : "panoramica";
+}
+
 async function caricaDaServer(percorso, dati) {
   try {
     await api(percorso, dati);
@@ -305,7 +310,7 @@ async function caricaDaServer(percorso, dati) {
       const grandi = stato.file_ridotti && stato.file_ridotti.length;
       avviso(`Letti ${formattaByte(lavoro?.totale || stato.dimensione_file || 0)} in ${formattaDurata(lavoro?.secondi || 1)}` +
         (grandi ? ": dei file grandi è stata letta la struttura, i dati si usano nella pagina Query." : "."));
-      aggiornaTutto("panoramica");
+      aggiornaTutto(paginaDopoCaricamento());
     });
   } catch (e) {
     avviso(e.message, true);
@@ -333,7 +338,7 @@ async function leggiFile(lista, origine) {
     stato = await api("/api/carica_file", { file: contenuti, origine });
     layoutER = { iniziale: {}, collegamenti: {} };
     avviso(`Caricati ${file.length} file .sql.`);
-    aggiornaTutto("panoramica");
+    aggiornaTutto(paginaDopoCaricamento());
   });
 }
 
