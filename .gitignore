@@ -38,3 +38,4 @@ scelta_fk.lp
 # Demo del gestionale ordini: MySQL privato e log
 demo/gestionale_ordini/.mysql/
 demo/gestionale_ordini/query.log
+demo/gestionale_ordini/database/

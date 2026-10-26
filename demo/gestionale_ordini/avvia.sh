@@ -52,11 +52,11 @@ if ! "$BIN/mysqladmin" --socket="$SOCKET" -uroot ping >/dev/null 2>&1; then
 fi
 
 export DEMO_MYSQL="$BIN/mysql" DEMO_SOCKET="$SOCKET"
-"$PY" "$CARTELLA/gestionale.py" --prepara "$CARTELLA/negozio_dump.sql" "$BIN/mysqldump"
+"$PY" "$CARTELLA/gestionale.py" --prepara "$CARTELLA/database" "$BIN/mysqldump"
 echo
 echo "Pronto. Nella pagina 'Ascolta il database' di SQL FK Finder usa questo file del log:"
 echo "  $LOG"
-echo "e carica il dump per il confronto con lo schema:"
-echo "  $CARTELLA/negozio_dump.sql"
+echo "e carica la cartella del database (un file .sql per tabella) per il confronto con lo schema:"
+echo "  $CARTELLA/database"
 echo
 "$PY" "$CARTELLA/gestionale.py"

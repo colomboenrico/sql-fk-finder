@@ -225,11 +225,16 @@ def riassunto(azione):
     for q in azione["query"]:
         if q["tecnica"]:
             continue
+        usa_id = False
         for v in q["valori"]:
-            if "last_insert_id" in str(v["valore"]).lower() and ultimo_insert and v["tabella"]:
-                generati.append({"valore": f"id appena creato in {ultimo_insert}",
-                                 "posti": [f"{ultimo_insert} (INSERT)", f"{v['tabella']}.{v['colonna']} (inserito)"]})
-        if q["verbo"] in ("INSERT", "REPLACE") and q["tabelle"]:
+            if "last_insert_id" in str(v["valore"]).lower() and v["tabella"]:
+                usa_id = True
+                nuovo = {"valore": f"id appena creato in {ultimo_insert}",
+                         "posti": [f"{ultimo_insert} (INSERT)", f"{v['tabella']}.{v['colonna']} (inserito)"]}
+                if ultimo_insert and ultimo_insert != v["tabella"] and nuovo not in generati:
+                    generati.append(nuovo)
+        # un INSERT che usa LAST_INSERT_ID() è una riga figlia (per esempio le righe dell'ordine): l'id resta quello del padre
+        if q["verbo"] in ("INSERT", "REPLACE") and q["tabelle"] and not usa_id:
             ultimo_insert = next((t for t, op in q["tabelle"] if op == "CREATE"), ultimo_insert)
         for t, op in q["tabelle"]:
             crud.setdefault(t, set()).add(op[0])

@@ -48,6 +48,15 @@ INSERT INTO ordini (cliente, data_ordine, stato, totale) VALUES (1, '2026-10-20'
 INSERT INTO ordini_righe VALUES (1, 1, 'P01', 300, 0.10), (1, 2, 'U01', 2, 6.50), (1, 3, 'P02', 20, 0.35),
   (2, 1, 'U02', 2, 12.90);
 INSERT INTO notifiche (testo, letta) VALUES ('Ordine 1 spedito', 1);
+CREATE VIEW v_ordini_aperti AS
+  SELECT o.id, o.data_ordine, c.ragione_sociale, o.totale FROM ordini o JOIN clienti c ON c.id = o.cliente WHERE o.stato = 'A';
+DELIMITER //
+CREATE PROCEDURE chiudi_ordine(IN p_ordine INT)
+BEGIN
+  UPDATE ordini SET stato = 'S' WHERE id = p_ordine;
+  INSERT INTO notifiche (testo) VALUES (CONCAT('Ordine ', p_ordine, ' spedito'));
+END //
+DELIMITER ;
 """
 
 
@@ -75,12 +84,24 @@ def s(valore):
     return "'" + str(valore).replace("\\", "\\\\").replace("'", "''") + "'"
 
 
-def prepara(dump, mysqldump):
+def prepara(cartella, mysqldump):
+    """Crea il database se non c'è e scrive il dump come in un progetto vero: una cartella con un file .sql per tabella
+    (struttura e dati), uno per ogni vista e uno con le procedure."""
     if not sql("SHOW DATABASES LIKE 'negozio'", database=None):
         sql(SCHEMA, database=None)
         print("Database 'negozio' creato con i dati di prova.")
-    with open(dump, "w", encoding="utf-8") as f:
-        subprocess.run([mysqldump, f"--socket={SOCKET}", "-uroot", DATABASE], stdout=f, stderr=subprocess.DEVNULL, check=True)
+    os.makedirs(cartella, exist_ok=True)
+    for vecchio in os.listdir(cartella):
+        if vecchio.endswith(".sql"):
+            os.remove(os.path.join(cartella, vecchio))
+    base = [mysqldump, f"--socket={SOCKET}", "-uroot", "--skip-dump-date"]
+    for nome, tipo in sql("SHOW FULL TABLES"):
+        with open(os.path.join(cartella, f"{nome}.sql"), "w", encoding="utf-8") as f:
+            subprocess.run(base + [DATABASE, nome], stdout=f, stderr=subprocess.DEVNULL, check=True)
+    with open(os.path.join(cartella, "procedure.sql"), "w", encoding="utf-8") as f:
+        subprocess.run(base + ["--routines", "--no-create-info", "--no-data", "--skip-triggers", DATABASE],
+                       stdout=f, stderr=subprocess.DEVNULL, check=True)
+    print(f"Dump scritto in {cartella}: {len(os.listdir(cartella))} file .sql")
     log = os.path.join(os.path.dirname(os.path.abspath(__file__)), "query.log")
     if os.path.exists(log):
         open(log, "w").close()            # il log ricomincia: dentro restano solo le query del gestionale
