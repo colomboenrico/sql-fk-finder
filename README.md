@@ -147,6 +147,12 @@ Il risultato si capisce a colpo d'occhio:
 
 Le schermate lette si salvano nel file di progetto. La lettura delle finestre funziona su Windows (modulo `sqlfk/finestre.py`, con `comtypes`); l'analisi (`sqlfk/interfaccia.py`) funziona ovunque.
 
+## Ascolta il database (MySQL)
+
+Per fare reverse engineering di un programma che usa MySQL e ricrearlo: la pagina **Ascolta il database** legge le query che il programma manda a MySQL mentre lo usi, dal file del **general log** (sullo stesso computer, senza collegarsi al database e senza rete). Dai un nome all'azione (*Salva ordine*), premi *Inizia*, fai l'azione nel programma, premi *Fine*; oppure importa un log già registrato, diviso in azioni dalle pause. Le query che il programma manda da solo (timer) si tolgono come rumore.
+
+Per ogni azione: le query in ordine con i valori, le tabelle lette e scritte (C R U D), le JOIN e i valori che passano da una tabella all'altra (anche l'id appena creato usato nell'INSERT dopo). La matrice azioni × tabelle e i collegamenti usati dal programma, confrontati con le chiavi dichiarate e trovate nel dump caricato, si scaricano in Excel; la **specifica in Markdown** descrive il programma tasto per tasto. Modulo `sqlfk/ascolto.py`.
+
 ## Query sui dati
 
 Dai file `.sql` si costruisce un database SQLite (in memoria, o su disco se i dati sono tanti: vedi sopra): le tabelle dei `CREATE TABLE` (più le colonne di `ALTER TABLE ... ADD COLUMN`) e i dati degli `INSERT INTO` e dei blocchi `COPY ... FROM stdin` dei dump di PostgreSQL. Nell'app c'è la pagina **Query sui dati**:
@@ -259,6 +265,7 @@ Con **Salva progetto** l'app crea un file `.sqlfk` con tutto il lavoro: i file `
 | `sqlfk/controllo.py` | il controllo dell'app |
 | `sqlfk/finestre.py` | la lettura delle finestre di un programma Windows (UI Automation) |
 | `sqlfk/interfaccia.py` | classi, collegamenti e verifica dalle schermate lette, con il racconto e la mappa |
+| `sqlfk/ascolto.py` | l'ascolto del database: general log di MySQL, azioni, CRUD, valori, JOIN e collegamenti |
 | `sqlfk/ponte.py` | il collegamento tra l'app e Python con le pipe, senza rete |
 | `app/prepara_python.py` | prepara il Python con le librerie da includere negli eseguibili |
 | `sqlfk/lettura.py` | la lettura a blocchi dei file .sql di qualsiasi dimensione |

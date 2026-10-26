@@ -84,6 +84,20 @@ Alcuni programmi non collegano le etichette ai campi: l'app usa il testo subito 
 **L'app può modificare qualcosa nel programma letto?**
 No: non preme pulsanti, non usa i comandi dei menu, non scrive nei campi. Apre e richiude i menu a tendina solo per leggerne le voci.
 
+## Ascolta il database
+
+**Ascoltare il database non è collegarsi al database?**
+No: l'app legge solo il file di testo in cui MySQL scrive le query (general log), come leggerebbe un file `.sql`. Non apre connessioni e non usa la rete. Per attivare il log serve un utente MySQL con il permesso SUPER (o SYSTEM_VARIABLES_ADMIN), da un client qualsiasi.
+
+**Non vedo arrivare le query.**
+Controlla che il log sia acceso (`SHOW VARIABLES LIKE 'general_log%';`), che il percorso sia lo stesso nella pagina e che il programma usi proprio questo MySQL. Su Linux il file può essere leggibile solo dall'utente `mysql`: scegli un percorso in una cartella tua (per esempio `/tmp/query.log`) o dai il permesso di lettura.
+
+**Nelle azioni ci sono query che non c'entrano.**
+Sono query che il programma manda da solo (timer, notifiche) o di altri programmi collegati allo stesso MySQL: usa *Registra il rumore* prima delle azioni. Nell'importazione le query a intervalli regolari si tolgono da sole; se le azioni risultano unite, abbassa i secondi di pausa.
+
+**Funziona con SQL Server, PostgreSQL, Oracle?**
+Per ora legge il general log di MySQL e MariaDB.
+
 ## Rete e privacy
 
 **L'app manda dati da qualche parte?**

@@ -72,6 +72,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/query.py` | database SQLite costruito dai file (in memoria o su disco, con cache), esecuzione e traduzione delle query, CSV completo |
 | `sqlfk/finestre.py` | lettura delle finestre di un programma Windows con UI Automation; conversione in fotografie |
 | `sqlfk/interfaccia.py` | dalle fotografie: classi, collegamento a tabelle e colonne, relazioni, verifica, racconto e mappa |
+| `sqlfk/ascolto.py` | ascolto del database: lettura del general log di MySQL, forme delle query, rumore, azioni, CRUD, valori, JOIN, collegamenti, specifica in Markdown |
 | `sqlfk/descrizione.py` | reverse engineering: descrizione delle tabelle, significato delle colonne, filo logico |
 | `sqlfk/esplora.py` | file della cartella: elenco, ricerca per nome e nel contenuto, lettura a pezzi con la codifica, file XML (sola lettura, mai fuori dalla cartella) |
 | `sqlfk/estensioni.py` | chiavi verificate sui dati, collegamenti dai valori, profilo, matrice CRUD di viste e procedure, modelli SQLAlchemy, script di normalizzazione |
@@ -106,9 +107,10 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 | schemi | `diagramma`, `modello`, `schema_iniziale`, `schema_collegamenti`, `ontologia` |
 | query | `query/tabelle`, `query`, `query/csv`, `query/interrompi`, `query/costruisci`, `query/ricostruisci`, `query/svuota_cache` |
 | interfaccia | `finestre`, `finestre/leggi`, `finestre/leggi_tutto`, `finestre/registra`, `finestre/ferma`, `interfaccia`, `interfaccia/pagina`, `interfaccia/analisi`, `interfaccia/svuota` |
+| ascolto del database | `ascolto`, `ascolto/segui`, `ascolto/inizia`, `ascolto/fine`, `ascolto/annulla`, `ascolto/importa`, `ascolto/azione`, `ascolto/riepilogo`, `ascolto/rinomina`, `ascolto/elimina`, `ascolto/svuota`, `ascolto/dimentica_rumore` |
 | clingo | `asp` |
 | controllo | `autoverifica` |
-| download | `scarica/excel`, `scarica/sql`, `scarica/create`, `scarica/report`, `scarica/ontologia`, `scarica/r2rml`, `scarica/database_sqlite`, `scarica/database_sql`, `scarica/interfaccia`, `scarica/asp_sql`, `scarica/asp_lp`, `scarica/verifica_dati`, `scarica/crud`, `scarica/modelli`, `scarica/normalizzazione` |
+| download | `scarica/excel`, `scarica/sql`, `scarica/create`, `scarica/report`, `scarica/ontologia`, `scarica/r2rml`, `scarica/database_sqlite`, `scarica/database_sql`, `scarica/interfaccia`, `scarica/asp_sql`, `scarica/asp_lp`, `scarica/verifica_dati`, `scarica/crud`, `scarica/modelli`, `scarica/normalizzazione`, `scarica/ascolto_excel`, `scarica/ascolto_md` |
 
 ## Gli eseguibili
 
@@ -130,7 +132,7 @@ flowchart LR
 
 | Cosa | Dove |
 |---|---|
-| Progetti | dove li salvi tu (`.sqlfk`, JSON con file letti, impostazioni, tabelle tolte, disposizione, modello dell'editor, schermate lette) |
+| Progetti | dove li salvi tu (`.sqlfk`, JSON con file letti, impostazioni, tabelle tolte, disposizione, modello dell'editor, schermate lette, azioni ascoltate dal database) |
 | Rapporti della verifica con l'interfaccia | `Documenti/SQL FK Finder/rapporti/<programma data>/` |
 | Risultato del controllo dell'app | `autoverifica.txt` nella cartella dei dati dell'app |
 | Database delle query su disco | `~/.sqlfk/cache` (o `SQLFK_CACHE`) |

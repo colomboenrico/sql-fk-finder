@@ -99,6 +99,22 @@ def controlla():
                       "profilo e matrice CRUD") if ok else ("errore", f"confermata {confermata}, CRUD {sorted(set(crud['table']))}")
     voce("Estensioni", estensioni)
 
+    def ascolto():
+        from . import ascolto as AS
+        log = "".join(f"2026-10-26T10:00:{i:02d}.000000Z\t    7 Query\tSELECT COUNT(*) FROM notifiche WHERE letta = 0\n" for i in range(0, 20, 2))
+        log += ("2026-10-26T10:00:05.000000Z\t    8 Query\tINSERT INTO ordini (cliente) VALUES (2)\n"
+                "2026-10-26T10:00:05.100000Z\t    8 Query\tINSERT INTO ordini_righe (ordine, prodotto)\nVALUES (LAST_INSERT_ID(), 'P02')\n"
+                "2026-10-26T10:00:13.000000Z\t    8 Query\tSELECT * FROM ordini o JOIN clienti c ON c.id = o.cliente WHERE o.id = 1\n")
+        X = AS.Ascolto()
+        esito = X.importa(log, 2.0)
+        crud = [AS.riassunto(a)["crud"] for a in X.azioni]
+        ok = (esito["rumore"] == ["SELECT COUNT(*) FROM notifiche WHERE letta = ?"]
+              and crud == [{"ordini": "C", "ordini_righe": "C"}, {"clienti": "R", "ordini": "R"}]
+              and ("clienti", "id", "ordini", "cliente") in [tuple(j) for j in AS.riassunto(X.azioni[1])["join"]])
+        return ("ok", "lettura del general log di MySQL: timer tolto come rumore, 2 azioni separate dalle pause, CRUD e JOIN") if ok \
+            else ("errore", f"rumore {esito['rumore']}, CRUD {crud}")
+    voce("Ascolto del database", ascolto)
+
     def finestre():
         from . import finestre as FIN
         if not FIN.SU_WINDOWS:

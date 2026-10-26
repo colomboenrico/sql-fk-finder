@@ -20,7 +20,7 @@ In alto c'è una barra a schede come quella di Word: ogni scheda è una funziona
 |---|---|
 | **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
 | **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
-| **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia · *La cartella*: File della cartella, File XML |
+| **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia, Ascolta il database · *La cartella*: File della cartella, File XML |
 | **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale · *Disegno*: Editor del database, Disegno affiancato |
 | **Dati** | *Tabelle*: Dati delle tabelle, Peso delle tabelle · *SQL*: Query sui dati |
 | **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
@@ -158,6 +158,17 @@ Per il programma che usa il database (per esempio un gestionale scaricato):
    - *Scarica il rapporto (HTML)* e *Scarica i dettagli in Excel*.
 
 Il programma viene solo letto: **non si premono pulsanti, non si usano i comandi dei menu, non si scrive nei campi** (i menu a tendina si aprono e richiudono solo per leggerne le voci). Se il database delle query è pronto, anche i valori mostrati vengono confrontati con i dati e i collegamenti diventano più sicuri. Le schermate lette si salvano nel progetto, quindi l'analisi si può rifare anche su Mac o Linux.
+
+### Ascolta il database (MySQL)
+Per capire cosa fa ogni tasto di un programma che usa MySQL (sullo stesso computer). L'app non si collega al database: legge il file di testo in cui MySQL scrive ogni query che riceve (il *general log*).
+
+1. **Attiva il log in MySQL** (una volta; i comandi sono nella pagina, con *Copia*): `SET GLOBAL log_output = 'FILE'; SET GLOBAL general_log_file = '/percorso/query.log'; SET GLOBAL general_log = 'ON';`. Alla fine spegnilo con `SET GLOBAL general_log = 'OFF';` perché il file cresce a ogni query.
+2. **Il file del log**: scrivi il percorso o *Scegli il file...*, poi *Leggi il file*. Di solito si leggono solo le query nuove; la casella *leggi anche le query già scritte* parte dall'inizio del file.
+3. **Registra il rumore** (consigliato): premilo senza toccare il programma, aspetta qualche secondo, *Fine*. Le query che il programma manda da solo (timer, controllo delle notifiche) non si contano più nelle azioni. *Dimentica il rumore* torna a contarle.
+4. **Registra un'azione**: scrivi il nome (per esempio *Salva ordine*), premi **Inizia**, fai l'azione nel programma, premi **Fine**. Sotto si vedono dal vivo le ultime query lette (in grigio rumore e query tecniche).
+5. **Oppure importa un log già registrato**: l'app lo divide in azioni dopo ogni pausa senza query (2 secondi, si può cambiare) e toglie da sola le query che si ripetono a intervalli regolari. Poi dai un nome a ogni azione.
+
+Per ogni azione: le **query in ordine** con i valori (inserito, nuovo valore, cercato nel WHERE), le tabelle con le lettere **C R U D** (inserisce, legge, modifica, cancella), le **JOIN** e i **valori che passano da una tabella all'altra** (lo stesso codice in due tabelle, l'id appena creato da un INSERT usato nell'INSERT dopo). Sotto, la matrice **Azioni e tabelle** e i **Collegamenti usati dal programma**: se è caricato il dump dello stesso database si vede se ogni collegamento è una chiave *dichiarata*, *candidata* o *non trovata dall'analisi* (un collegamento nuovo da guardare). Si scaricano l'Excel (azioni e tabelle, query, valori, collegamenti) e la **specifica in Markdown**, un documento per ricreare il programma tasto per tasto. Le azioni si salvano nel progetto.
 
 ### Tabelle
 Ogni tabella con numero di colonne, chiave primaria (dichiarata o indovinata) e numero di colonne della chiave.

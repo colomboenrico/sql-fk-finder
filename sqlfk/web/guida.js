@@ -20,6 +20,7 @@ const COSA_FA = {
   reverse: "Cosa rappresenta probabilmente ogni tabella, il significato delle colonne, il filo logico per leggere il database e il dizionario dei dati.",
   crud: "Viste, procedure, funzioni e trigger: quali tabelle leggono, inseriscono, modificano o cancellano.",
   interfaccia: "Legge le finestre del programma Windows che usa il database e controlla se le chiavi previste corrispondono.",
+  ascolto: "Mentre usi il programma legge le query che manda a MySQL (dal general log): per ogni tasto tabelle, valori, JOIN e collegamenti.",
   file: "Tutti i file della cartella: cerca per nome o contenuto, leggili, affiancali agli schemi del reverse engineering.",
   xml: "I file XML come albero, con il riepilogo e le tabelle e colonne del database che vi compaiono.",
   schemi: "Il diagramma delle tabelle (raccolto per gruppi o aree, con ricerca) e i grafi interattivi.",

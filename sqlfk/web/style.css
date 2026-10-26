@@ -423,3 +423,29 @@ ul.controlli li { margin: 5px 0; }
 .er-intero-pulsante { position: absolute; top: 8px; right: 8px; z-index: 2; font-size: 12px; padding: 3px 10px; opacity: .85; }
 .er-cornice.er-intero { position: fixed; inset: 10px; height: auto !important; min-height: 0; z-index: 60; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
 .er-cornice .er-nota { right: 140px; }
+
+/* ---- Ascolta il database */
+.lettere-crud { display: inline-flex; gap: 2px; }
+.lettere-crud b { font-size: 11px; padding: 0 4px; border-radius: 3px; color: #fff; background: var(--tenue); }
+.lettere-crud .crud-C { background: var(--ok); }
+.lettere-crud .crud-U { background: var(--medio); }
+.lettere-crud .crud-D { background: var(--pericolo); }
+td.cella-crud { font-weight: 600; letter-spacing: 1px; }
+.registra { font-weight: 600; color: var(--primario); }
+.registra::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--primario);
+                    margin-right: 6px; animation: lampeggia 1s infinite; }
+@keyframes lampeggia { 50% { opacity: .25; } }
+.flusso-query { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; max-height: 220px; overflow: auto;
+                background: var(--riga-alt); border: 1px solid var(--bordo); border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+.flusso-query > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flusso-query .ora { color: var(--tenue); }
+.azioni-affiancate { display: grid; grid-template-columns: minmax(220px, 1fr) 2.4fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .azioni-affiancate { grid-template-columns: 1fr; } }
+.elenco-azioni { list-style: none; margin: 0; padding: 0; border: 1px solid var(--bordo); border-radius: 8px; background: var(--pannello); }
+.elenco-azioni li { padding: 8px 10px; border-bottom: 1px solid var(--bordo); cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.elenco-azioni li:last-child { border-bottom: 0; }
+.elenco-azioni li.scelta { background: var(--primario-chiaro); box-shadow: inset 3px 0 0 var(--primario); }
+.elenco-azioni li > b { width: 100%; }
+.sequenza-query { padding-left: 24px; }
+.sequenza-query li { margin-bottom: 10px; }
+.sequenza-query pre.sql { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }

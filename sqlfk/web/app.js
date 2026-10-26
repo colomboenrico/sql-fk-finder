@@ -428,6 +428,7 @@ const ICONE = {
   reverse: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM16 16l5 5M8 11h6M11 8v6",
   crud: "M4 6h16M4 12h16M4 18h10M18 16l2 2 3-4",
   interfaccia: "M3 4h18v12H3zM8 20h8M12 16v4",
+  ascolto: "M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H4zM17 14h3v6h-3z",
   cartellafile: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM14 15a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM15.5 14.5l2 2",
   xml: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
   schemi: "M3 4h7v6H3zM14 14h7v6h-7zM14 4h7v6h-7zM10 7h4M17.5 10v4",

@@ -32,6 +32,7 @@ from . import ontologia as O
 from . import asp as ASP
 from . import controllo as CTRL
 from . import descrizione as DESCR
+from . import ascolto as AS
 from . import esplora as ESP
 from . import estensioni as EXT
 from . import finestre as FIN
@@ -102,6 +103,7 @@ class Sessione:
         self.radice_file = None           # cartella scelta nella scheda File (se no, quella caricata)
         self.verifica = None              # l'ultima verifica con i dati (chiavi, collegamenti dai valori, profilo)
         self.crud = None                  # (R, analisi CRUD di viste e procedure)
+        self.ascolto = AS.Ascolto()       # le query del programma lette dal general log di MySQL, divise per azione
         self.porta = None
 
     # ------------------------------------------------------------ lavori in background
@@ -506,6 +508,93 @@ class Sessione:
                 risultato.append(voce)
         return {"tabella": nome, "righe": righe, "colonne": risultato}
 
+    # ------------------------------------------------------------ ascolto delle query del programma (sqlfk.ascolto)
+    def colonne_di(self):
+        if self.df_schema is None:
+            return None
+        S = self.R.S
+        perso = {t.lower(): t for t in S.col_per_tab}
+        return lambda t: S.col_per_tab.get(perso.get(str(t).lower()) or perso.get(str(t).split(".")[-1].lower(), ""), [])
+
+    def ascolto_stato(self):
+        X = self.ascolto
+        stato_ = X.stato()
+        stato_["elenco"] = [{"nome": a["nome"], "inizio": a.get("inizio"), "query": len([q for q in a["query"] if not q["tecnica"]]),
+                             "crud": AS.riassunto(a)["crud"]} for a in X.azioni]
+        return stato_
+
+    def ascolto_azione(self, i):
+        try:
+            a = self.ascolto.azioni[int(i)]
+        except (ValueError, IndexError):
+            raise Errore("Questa azione non c'è più: aggiorna la pagina.")
+        return {**a, "indice": int(i), "riassunto": AS.riassunto(a)}
+
+    def ascolto_riepilogo(self):
+        """Matrice azioni per tabelle e collegamenti usati dal programma, confrontati con lo schema caricato."""
+        X = self.ascolto
+        matrice = [{"azione": a["nome"], **AS.riassunto(a)["crud"]} for a in X.azioni]
+        tabelle = sorted({t for r in matrice for t in r if t != "azione"})
+        dichiarate, candidate = set(), {}
+        if self.df_schema is not None:
+            for r in self.R.fk_dichiarate.to_dict("records"):
+                dichiarate.add(frozenset([(r["tabella"].lower(), r["colonna"].lower()), (r["→ tabella"].lower(), r["→ colonna"].lower())]))
+            for r in self.R.fk.to_dict("records"):
+                candidate[frozenset([(r["tabella"].lower(), r["colonna"].lower()), (r["→ tabella"].lower(), r["→ colonna"].lower())])] = r["affidabilità"]
+        def vera(t, c):                   # "(chiave)": l'id generato da un INSERT è la chiave primaria della tabella, se ha una colonna sola
+            if c == "(chiave)" and self.df_schema is not None:
+                S = self.R.S
+                nome = {x.lower(): x for x in S.pk}.get(t.lower())
+                if nome and len(S.pk[nome]) == 1:
+                    return S.pk[nome][0]
+            return c
+        uniti = {}
+        for ((t1, c1), (t2, c2)), prove in AS.collegamenti_usati(X.azioni).items():
+            coppia = tuple(sorted([(t1, vera(t1, c1)), (t2, vera(t2, c2))]))
+            uniti[coppia] = sorted(set(uniti.get(coppia, []) + prove))
+        collegamenti = []
+        for ((t1, c1), (t2, c2)), prove in uniti.items():
+            chiave = frozenset([(t1.lower(), c1.lower()), (t2.lower(), c2.lower())])
+            nello_schema = ("" if self.df_schema is None else "dichiarata" if chiave in dichiarate
+                            else f"candidata ({candidate[chiave]})" if chiave in candidate else "non trovata dall'analisi")
+            collegamenti.append({"da": f"{t1}.{c1}", "a": f"{t2}.{c2}", "prove": prove, "schema": nello_schema})
+        return {"tabelle": tabelle, "matrice": [[r["azione"]] + [r.get(t, "") for t in tabelle] for r in matrice],
+                "collegamenti": collegamenti, "schema": self.df_schema is not None}
+
+    def ascolto_comando(self, comando, dati):
+        X = self.ascolto
+        try:
+            if comando == "segui":
+                X.segui(dati.get("percorso", ""), bool(dati.get("dall_inizio")))
+            elif comando == "inizia":
+                X.inizia(dati.get("nome", ""), bool(dati.get("rumore")))
+            elif comando == "fine":
+                return {**X.fine("mysql", self.colonne_di()), **self.ascolto_stato()}
+            elif comando == "annulla":
+                X.annulla()
+            elif comando == "importa":
+                testo = dati.get("testo")
+                if testo is None:
+                    percorso = Path(str(dati.get("percorso", "")).strip().strip('"')).expanduser()
+                    if not percorso.is_file():
+                        raise Errore(f"Il file del log non esiste: {percorso}")
+                    testo = percorso.read_text(encoding="utf-8", errors="replace")
+                esito = X.importa(str(testo), float(dati.get("pausa") or 2), "mysql", bool(dati.get("rumore_automatico", True)), self.colonne_di())
+                return {**esito, **self.ascolto_stato()}
+            elif comando == "rinomina":
+                X.azioni[int(dati["indice"])]["nome"] = str(dati.get("nome", "")).strip() or X.azioni[int(dati["indice"])]["nome"]
+            elif comando == "elimina":
+                del X.azioni[int(dati["indice"])]
+            elif comando == "svuota":
+                X.azioni = []
+            elif comando == "dimentica_rumore":
+                X.rumore = set()
+            else:
+                raise Errore(f"Comando sconosciuto: {comando}")
+        except (FileNotFoundError, ValueError, IndexError, KeyError) as e:
+            raise Errore(str(e))
+        return self.ascolto_stato()
+
     def struttura_collegamenti(self):
         """Il diagramma dei collegamenti (dichiarati e trovati), calcolato una volta per ogni analisi."""
         if getattr(self, "_struttura", (None,))[0] is not self.R:
@@ -800,6 +889,7 @@ class Sessione:
         return {"formato": self.FORMATO_PROGETTO, "versione": 1, "origine": self.origine,
                 "impostazioni": self.stato()["impostazioni"], "rimosse": sorted(self.rimosse),
                 "interfaccia": list(self.interfaccia["pagine"].values()),
+                "ascolto": self.ascolto.dati(),
                 "file": [{"nome": n, "testo": str(t), "percorso": str(t.percorso) if getattr(t, "percorso", None) else None,
                           "ridotto": bool(getattr(t, "ridotto", False)), "dimensione": getattr(t, "dimensione", len(t)),
                           "mappa": t.mappa.coppie() if getattr(t, "mappa", None) else None}
@@ -822,6 +912,8 @@ class Sessione:
         self.carica(file_sql, str(p.get("origine") or "progetto"))
         self.interfaccia = {"pagine": {f"{f['url']}#{f.get('firma', '')}": f for f in p.get("interfaccia", []) if isinstance(f, dict) and f.get("url")},
                             "stato": {}}
+        self.ascolto = AS.Ascolto()
+        self.ascolto.carica(p.get("ascolto"))
         return self.stato()
 
 
@@ -920,6 +1012,11 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
             "/api/verifica_dati": s.risultato_verifica,
             "/api/peso_tabelle": s.peso_tabelle,
+            "/api/ascolto": s.ascolto_stato,
+            "/api/ascolto/riepilogo": s.ascolto_riepilogo,
+            "/api/scarica/ascolto_md": lambda: (AS.specifica_markdown(s.ascolto.azioni, s.origine).encode("utf-8"), "text/markdown; charset=utf-8",
+                                                {"Content-Disposition": 'attachment; filename="azioni_del_programma.md"'}),
+            "/api/scarica/ascolto_excel": self.scarica_ascolto,
             "/api/scarica/sql_senza_tolte": self.scarica_sql_senza_tolte,
             "/api/crud": s.analisi_crud,
             "/api/scarica/verifica_dati": self.scarica_verifica_dati,
@@ -1027,6 +1124,8 @@ class Gestore(BaseHTTPRequestHandler):
                 return s.righe_tabella(voce("tabella"), int(voce("da", "0") or 0), min(int(voce("quanti", "100") or 100), 1000),
                                        voce("cerca"), json.loads(voce("dove", "{}") or "{}"))
             return self.esegui(dati_tabella, blocca=False)
+        if percorso == "/api/ascolto/azione":
+            return self.esegui(lambda: s.ascolto_azione(parse_qs(url.query).get("indice", ["0"])[0]), blocca=False)
         if percorso == "/api/valori":
             q = parse_qs(url.query)
             return self.esegui(lambda: s.valori_colonna(q.get("tabella", [""])[0], q.get("colonna", [""])[0]), blocca=False)
@@ -1091,6 +1190,26 @@ class Gestore(BaseHTTPRequestHandler):
             nome += ".sql"
         return (QY.sql_senza_tabelle(list(s.file_sql), set(s.rimosse), s.imp.dialetto, s.origine),
                 "application/sql; charset=utf-8", {"Content-Disposition": f'attachment; filename="{nome}"'})
+
+    def scarica_ascolto(self):
+        X = SESSIONE.ascolto
+        righe_q, righe_v = [], []
+        for a in X.azioni:
+            for i, q in enumerate(a["query"], 1):
+                righe_q.append({"azione": a["nome"], "ordine": i, "ora": q["ora"], "connessione": q["conn"], "istruzione": q["verbo"],
+                                "tabelle": ", ".join(f"{t} ({op})" for t, op in q["tabelle"]), "forma": q["forma"], "query": q["testo"],
+                                "tecnica": q["tecnica"]})
+                for v in q["valori"]:
+                    righe_v.append({"azione": a["nome"], "ordine": i, **v})
+        R = SESSIONE.ascolto_riepilogo()
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer) as xls:
+            pd.DataFrame(R["matrice"], columns=["azione"] + R["tabelle"]).to_excel(xls, sheet_name="Azioni e tabelle", index=False)
+            pd.DataFrame(righe_q).to_excel(xls, sheet_name="Query", index=False)
+            pd.DataFrame(righe_v).to_excel(xls, sheet_name="Valori", index=False)
+            pd.DataFrame([{**c, "prove": "; ".join(c["prove"])} for c in R["collegamenti"]]).to_excel(xls, sheet_name="Collegamenti usati", index=False)
+        return (buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                {"Content-Disposition": 'attachment; filename="azioni_del_programma.xlsx"'})
 
     def scarica_verifica_dati(self):
         SESSIONE.richiedi_dati()
@@ -1210,6 +1329,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
             "/api/verifica_dati": lambda: s.verifica_dati(bool(dati.get("medie", True))),
         }
+        if percorso.startswith("/api/ascolto/"):
+            return self.esegui(lambda: s.ascolto_comando(percorso.rsplit("/", 1)[1], dati), blocca=False)
         lunghe = {
             "/api/query": lambda: s.query(dati.get("sql"), dati.get("conferma")),
             "/api/query/ricostruisci": lambda: s.query_tabelle(True),

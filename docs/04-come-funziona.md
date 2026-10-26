@@ -135,6 +135,20 @@ I file **XML** si leggono interi (fino a 64 MB) e si analizzano nell'interfaccia
 - **Matrice CRUD.** Si trovano le intestazioni `CREATE VIEW / PROCEDURE / FUNCTION / TRIGGER` e il corpo (`$$...$$`, `BEGIN...END` contando i blocchi annidati, `DELIMITER` di MySQL, `GO` di SQL Server, `/` di Oracle). Da ogni `SELECT/INSERT/UPDATE/DELETE/MERGE` del corpo si prova il pezzo più lungo che sqlglot sa leggere e si guarda nell'albero sintattico il nodo padre di ogni tabella: destinazione di un INSERT = C, di un UPDATE = U, di un DELETE = D, il resto = R. Il codice procedurale che sqlglot non legge si analizza con espressioni regolari; `SELECT ... INTO variabile` non è una tabella.
 - **Codice generato.** I tipi SQL diventano tipi SQLAlchemy (`VARCHAR(80)` → `String(80)`, `TINYINT(1)` → `Boolean`, `ENUM(...)` → `Enum`); lo script di normalizzazione prende le righe 1NF/2NF/3NF della qualità dello schema e scrive per ognuna le istruzioni nel dialetto scelto.
 
+## Ascolto del database: le query del programma
+
+**Lettura (`sqlfk/ascolto.py`).** Il *general log* di MySQL è un file di testo con una riga per comando: ora, numero di connessione, tipo (`Query`, `Execute`, `Connect`...) e il testo, che può continuare sulle righe dopo. Si leggono sia il formato nuovo (`2026-10-26T13:20:56.819714Z  15 Query  SELECT...`) sia quello di MySQL 5.5 e MariaDB (`261026  9:12:01  15 Query ...`, con l'ora solo quando cambia). Durante la registrazione il file si segue come `tail -f`: si leggono solo i byte nuovi, anche se il file viene svuotato o ricominciato.
+
+**Forma della query.** Ogni query diventa una *forma* con i valori al posto di `?` (stringhe, numeri, esadecimali; `IN (1, 2, 3)` → `IN (?, ...)`; più righe di `VALUES` → una). La stessa forma con valori diversi è la stessa operazione del programma.
+
+**Rumore.** Si toglie in due modi: le forme registrate con *Registra il rumore*, e nell'importazione quelle che si ripetono almeno 5 volte a **intervalli regolari** (almeno l'80% degli intervalli entro il 35% della mediana: un timer, non una persona). Le query tecniche (`SET`, `SHOW`, `USE`, `SELECT @@...`) non contano; `START TRANSACTION`, `COMMIT` e `ROLLBACK` restano nella sequenza perché dicono come è fatta l'azione.
+
+**Analisi di ogni query.** Con l'albero sintattico di sqlglot (o con espressioni regolari se sqlglot non la capisce): l'istruzione, le tabelle con l'operazione (C, R, U, D), le colonne con i valori (`INSERT` colonne e valori, anche senza l'elenco delle colonne se è caricato lo schema; `UPDATE ... SET`; le uguaglianze del `WHERE`), le **JOIN** colonna = colonna con gli alias risolti.
+
+**Collegamenti.** In un'azione, lo stesso valore in colonne di tabelle diverse (`'P02'` in `prodotti.codice`, `magazzino.prodotto`, `ordini_righe.prodotto`) e l'id generato da un `INSERT` usato dopo con `LAST_INSERT_ID()` sono indizi di chiavi esterne, come le JOIN. Con il dump caricato ogni collegamento si confronta con le chiavi dichiarate e con le candidate.
+
+**Divisione in azioni.** Dal vivo l'azione è tutto quello che arriva tra *Inizia* e *Fine* (meno il rumore). Da un log già registrato: una nuova azione dopo ogni pausa senza query più lunga di quella scelta.
+
 ## 8. Verifica con l'interfaccia del programma
 
 **Lettura (solo Windows, `sqlfk/finestre.py`).** Con **UI Automation** (la tecnologia dei lettori di schermo) si legge l'albero dei controlli della finestra scelta: per ogni controllo tipo (campo, menu a tendina, griglia, scheda...), nome, etichetta collegata, valore, voci del menu, intestazioni e righe delle griglie. Le password non si leggono. *Leggi tutte le schede* seleziona una dopo l'altra le schede e le voci degli alberi di navigazione (come un clic per spostarsi), mai pulsanti o comandi; i menu a tendina chiusi si aprono e richiudono solo per leggerne le voci. Ogni schermata diventa una **fotografia**: moduli con i campi, tabelle, coppie "etichetta: valore".
