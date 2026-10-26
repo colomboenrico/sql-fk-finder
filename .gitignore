@@ -34,3 +34,7 @@ app/python/
 app/.cache-python/
 fk_scelte_clingo.sql
 scelta_fk.lp
+
+# Demo del gestionale ordini: MySQL privato e log
+demo/gestionale_ordini/.mysql/
+demo/gestionale_ordini/query.log
