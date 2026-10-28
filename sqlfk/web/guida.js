@@ -28,6 +28,8 @@ const COSA_FA = {
   editor: "Disegna un database da zero o parti da quello caricato: entità, attributi, relazioni e SQL.",
   er: "Lo schema E-R concettuale ricostruito dal database: entità, relazioni con il rombo e un nome proposto, N:M, gerarchie ISA, attributi multivalore.",
   lavagna: "Il diagramma del database accanto a una lavagna bianca: copia le tabelle, migliora il disegno, scaricalo e riaprilo.",
+  passopasso: "Cerca una tabella e con Avanti vedi un collegamento alla volta, con le righe di esempio; poi continua dalla tabella collegata.",
+  esempi: "Come sono popolate le tabelle: per ogni colonna i valori più frequenti (nome: Mirco...) e alcune righe intere.",
   datitabelle: "Struttura, righe e grafici dei dati di ogni tabella popolata; clicca una riga per le righe collegate e seguile.",
   peso: "Tutte le tabelle, anche le vuote, con righe e spazio: togli quelle che non servono.",
   query: "Interroga i dati degli INSERT e dei COPY con SQL (anche modifiche, con conferma), anche per dump enormi.",

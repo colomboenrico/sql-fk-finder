@@ -21,8 +21,8 @@ In alto c'è una barra a schede come quella di Word: ogni scheda è una funziona
 | **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
 | **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
 | **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia, Ascolta il database · *La cartella*: File della cartella, File XML |
-| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale · *Disegno*: Editor del database, Disegno affiancato |
-| **Dati** | *Tabelle*: Dati delle tabelle, Peso delle tabelle · *SQL*: Query sui dati |
+| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato |
+| **Dati** | *Tabelle*: Dati delle tabelle, Esempi dei dati, Peso delle tabelle · *SQL*: Query sui dati |
 | **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
 | **Guida** | *Aiuto*: Come si usa, Regole di progettazione · *App*: Impostazioni |
 
@@ -120,6 +120,9 @@ Anche qui si possono **affiancare** la scheda di una tabella, lo schema delle ta
 - *Linee solo della tabella sotto il mouse*: le linee restano nascoste e compaiono solo per la tabella su cui passi il mouse, così il diagramma non diventa un groviglio.
 - **Vista a grafo**: grafo interattivo (pyvis), anche in una finestra a parte.
 
+### Collegamenti passo passo
+Per capire una tabella un collegamento alla volta. Scrivi il nome (anche una parte: `ordi` propone `ordini`, `ordini_righe`...) e scegli la tabella: la **panoramica** dice cosa rappresenta e quanti collegamenti ha (da quali tabelle dipende, quali la usano). Con **Avanti** (o la freccia destra) si vede un collegamento alla volta: la frase che lo spiega (*ogni riga di ordini punta a una riga di clienti tramite cliente...*), le colonne, se è una chiave dichiarata o trovata, la relazione (1:N, 1:1), il diagramma delle due tabelle e, se il dump ha i dati, **righe di esempio** (`ordini 2 → cliente 3 → Verdi snc`) con quante righe trovano davvero la riga collegata. **Continua da...** passa alla tabella collegata; il percorso fatto resta in alto per tornare indietro.
+
 ### Modello relazionale
 Lo schema logico, una riga per tabella (`Fatture(numero, data, id_cliente → Clienti)`), con esportazione in testo, Markdown, Mermaid, PlantUML, Graphviz DOT, DBML, JSON e come immagine.
 
@@ -133,6 +136,9 @@ Le tabelle popolate dai file (`INSERT`, `COPY`): a sinistra l'elenco con il nume
 - **Dati**: 100 righe per pagina (*Precedente*, *Successiva*), con la ricerca di un valore in tutte le colonne (Invio).
 - **Grafici**: con il pulsante *Grafici* ogni colonna ha la sua scheda con i dati che la compongono: la barra dei valori pieni e vuoti, quanti valori diversi, e il grafico adatto al tipo: l'**istogramma** dei numeri (con minimo, massimo e media), l'**andamento nel tempo** delle date (per anno, mese o giorno), i **valori più frequenti** di testi, codici e chiavi esterne (cliccandone uno si vedono le righe che lo hanno). Passando il mouse sulle barre si leggono i valori. Su due milioni di righe i grafici sono pronti in pochi secondi.
 - **Righe collegate**: cliccando una riga si vedono le righe a cui punta (per esempio il cliente di un ordine) e quelle che puntano a lei (le righe dell'ordine), seguendo gli stessi collegamenti del diagramma. Se un valore non esiste nella tabella collegata la riga è segnalata come **orfana**. *Apri* porta alla tabella collegata con il filtro su quei valori; così si va da una tabella all'altra, e *Indietro* torna al passo prima.
+
+### Esempi dei dati
+Come è popolata una tabella (serve un dump con i dati). Per ogni colonna: tipo, significato probabile o la tabella a cui punta, i **valori più frequenti** (per esempio `nome`: Mirco, Giulia, Luca, con quante volte compaiono), quante righe la riempiono e quanti valori diversi ha. Sotto, alcune **righe di esempio** lette come schede (`nome: Mirco`, `città: Torino`...). Gli esempi vengono dalle prime 2000 righe della tabella. Dalla pagina si passa ai *Collegamenti passo passo* o a tutte le righe in *Dati delle tabelle*.
 
 ### Peso delle tabelle
 Tutte le tabelle dei file, **anche le più leggere e quelle vuote**, con colonne, righe e **spazio** occupato dai dati (nel database delle query). Si ordinano dalle più leggere, dalle più pesanti, per righe o per nome, e si cercano per nome. Spunta le tabelle (*Scegli le vuote* le prende tutte) e premi **Togli dall'analisi**: spariscono da tutte le analisi e dagli schemi; con *mostra anche le tolte* si vedono ancora e si rimettono con **Rimetti nell'analisi**. I file `.sql` non vengono mai modificati. Cliccando il nome di una tabella se ne vedono i dati.

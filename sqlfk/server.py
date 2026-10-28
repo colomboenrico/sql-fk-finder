@@ -9,6 +9,7 @@ Quando è pronto stampa una riga "SQLFK_PORTA=<numero>".
 Accetta connessioni solo dal computer stesso (127.0.0.1).
 """
 import argparse
+from collections import Counter
 import shutil
 import time
 import io
@@ -507,6 +508,94 @@ class Sessione:
                                                                        f"WHERE {col} IS NOT NULL GROUP BY 1 ORDER BY 1 LIMIT 400")]
                 risultato.append(voce)
         return {"tabella": nome, "righe": righe, "colonne": risultato}
+
+    # ------------------------------------------------------------ esempi dei dati: come sono popolate le tabelle
+    PAROLE_ETICHETTA = ("nome", "cognome", "ragione", "descr", "titolo", "denominazione", "name", "title", "label", "citta", "codice")
+
+    def etichetta(self, nome, colonne, escluse=()):
+        """La colonna che dice "chi è" una riga (nome, ragione sociale, descrizione...), da mostrare accanto alla chiave."""
+        S = self.R.S
+        corto = lambda tipo: (m := re.search(r"\((\d+)", tipo or "")) is not None and int(m.group(1)) <= 3     # CHAR(1): uno stato, non un nome
+        testi = [c for c in colonne if c not in escluse and not corto(S.tipi.get((nome, c)))
+                 and A.tipo_base(S.tipi.get((nome, c)) or "") in ("VARCHAR", "CHAR", "TEXT", "NVARCHAR", "NCHAR", "VARCHAR2", "STRING", "")]
+        for parola in self.PAROLE_ETICHETTA:
+            for c in testi:
+                if parola in c.lower():
+                    return c
+        return testi[0] if testi else None
+
+    def esempi_tabella(self, tabella_, campione=2000):
+        """Come è popolata una tabella: per ogni colonna i valori più frequenti in un campione di righe (nome: Mirco,
+        Giulia...), quante righe hanno un valore, e alcune righe intere da leggere come schede."""
+        db = self.database()
+        t = db.tabella_di(tabella_)
+        if not t:
+            raise Errore(f"Tabella non trovata nei dati: {tabella_}")
+        S = self.R.S
+        nome = next((x for x in S.col_per_tab if db.tabella_di(x) == t), tabella_)
+        with self.lock_db:
+            c = db.conn
+            totale = c.execute(f"SELECT COUNT(*) FROM {QY.q(t)}").fetchone()[0]
+            cur = c.execute(f"SELECT * FROM {QY.q(t)} LIMIT ?", (int(campione),))
+            colonne = [d[0] for d in cur.description]
+            righe = [[v if not isinstance(v, bytes) else v.hex() for v in r] for r in cur.fetchall()]
+        pk = set(S.pk.get(nome, []))
+        verso = {}
+        for l in self.struttura_collegamenti()["collegamenti"]:
+            if l["da"] == nome:
+                for x, y in zip(l["colonne_da"], l["colonne_a"]):
+                    verso[x] = f"{l['a']}.{y}"
+        voci = []
+        for i, col in enumerate(colonne):
+            valori = [r[i] for r in righe if r[i] is not None and str(r[i]).strip() != ""]
+            conta = Counter(str(v) for v in valori)
+            voci.append({"colonna": col, "tipo": S.tipi.get((nome, col), ""), "ruolo": "PK" if col in pk else "FK" if col in verso else "",
+                         "verso": verso.get(col), "pieni": len(valori), "diversi": len(conta),
+                         "esempi": [[v[:120], n] for v, n in conta.most_common(6)]})
+        # le righe con più valori: si leggono meglio come esempio
+        piene = sorted(range(len(righe)), key=lambda k: -sum(1 for v in righe[k] if v not in (None, "")))[:3]
+        return {"tabella": nome, "righe": totale, "campione": len(righe), "colonne": voci, "etichetta": self.etichetta(nome, colonne, pk),
+                "schede": [dict(zip(colonne, righe[k])) for k in sorted(piene)]}
+
+    def esempi_collegamento(self, da, colonne_da, a, colonne_a, quanti=5, campione=1000):
+        """Righe di esempio di un collegamento da.colonne_da -> a.colonne_a: la riga figlia con la sua etichetta e la riga
+        padre che trova; e su un campione quante righe figlie trovano davvero il padre."""
+        db = self.database()
+        t1, t2 = db.tabella_di(da), db.tabella_di(a)
+        if not t1 or not t2:
+            return {"esempi": [], "provate": 0, "trovate": 0}
+        S = self.R.S
+        q = QY.q
+        with self.lock_db:
+            c = db.conn
+            col1 = [r[1] for r in c.execute(f"PRAGMA table_info({q(t1)})")]
+            col2 = [r[1] for r in c.execute(f"PRAGMA table_info({q(t2)})")]
+            if not all(x in col1 for x in colonne_da) or not all(x in col2 for x in colonne_a):
+                return {"esempi": [], "provate": 0, "trovate": 0}
+            e1 = self.etichetta(da, col1, set(S.pk.get(da, [])) | set(colonne_da))
+            e2 = self.etichetta(a, col2, set(S.pk.get(a, [])) | set(colonne_a))
+            pk1 = [x for x in S.pk.get(da, []) if x in col1 and x not in colonne_da][:2]
+            # le righe figlie del campione, poi la tabella padre letta una volta sola per i valori del campione
+            # (senza indici un controllo riga per riga sarebbe lentissimo sulle tabelle grandi)
+            pieno = " AND ".join(f"{q(x)} IS NOT NULL" for x in colonne_da)
+            scelte1 = list(dict.fromkeys(pk1 + list(colonne_da) + ([e1] if e1 else [])))
+            scelte2 = list(dict.fromkeys(list(colonne_a) + ([e2] if e2 else [])))
+            try:
+                figlie = c.execute(f"SELECT {', '.join(q(x) for x in scelte1)} FROM {q(t1)} WHERE {pieno} LIMIT ?", (int(campione),)).fetchall()
+                chiave_figlia = lambda r: tuple(str(r[scelte1.index(x)]) for x in colonne_da)
+                cercati = sorted({chiave_figlia(r)[0] for r in figlie})
+                padri = {}
+                for k in range(0, len(cercati), 500):
+                    pezzo = cercati[k:k + 500]
+                    for r in c.execute(f"SELECT {', '.join(q(x) for x in scelte2)} FROM {q(t2)} WHERE CAST({q(colonne_a[0])} AS TEXT) "
+                                       f"IN ({', '.join('?' * len(pezzo))})", pezzo):
+                        padri.setdefault(tuple(str(r[scelte2.index(y)]) for y in colonne_a), r)
+            except Exception as e:
+                return {"esempi": [], "provate": 0, "trovate": 0, "errore": str(e)}
+        trovate = [(r, padri[chiave_figlia(r)]) for r in figlie if chiave_figlia(r) in padri]
+        nomi = [f"{da}.{x}" for x in scelte1] + ([f"{a}.{e2}"] if e2 else [])
+        esempi = [list(f) + ([p[scelte2.index(e2)]] if e2 else []) for f, p in trovate[:int(quanti)]]
+        return {"colonne": nomi, "esempi": esempi, "provate": len(figlie), "trovate": len(trovate)}
 
     # ------------------------------------------------------------ ascolto delle query del programma (sqlfk.ascolto)
     def colonne_di(self):
@@ -1131,6 +1220,13 @@ class Gestore(BaseHTTPRequestHandler):
                 return s.righe_tabella(voce("tabella"), int(voce("da", "0") or 0), min(int(voce("quanti", "100") or 100), 1000),
                                        voce("cerca"), json.loads(voce("dove", "{}") or "{}"))
             return self.esegui(dati_tabella, blocca=False)
+        if percorso in ("/api/esempi", "/api/esempi/collegamento"):
+            q = parse_qs(url.query)
+            voce = lambda nome, predefinito="": q.get(nome, [predefinito])[0]
+            if percorso.endswith("collegamento"):
+                return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
+                                                                 json.loads(voce("colonne_a", "[]"))), blocca=False)
+            return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
         if percorso == "/api/ascolto/azione":
             return self.esegui(lambda: s.ascolto_azione(parse_qs(url.query).get("indice", ["0"])[0]), blocca=False)
         if percorso == "/api/valori":

@@ -449,3 +449,28 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .sequenza-query { padding-left: 24px; }
 .sequenza-query li { margin-bottom: 10px; }
 .sequenza-query pre.sql { margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+
+/* ---- Collegamenti passo passo ed Esempi dei dati */
+.cerca-tabella { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 260px; }
+.proposte-tabelle { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow: auto; }
+.proposte-tabelle:empty { display: none; }
+.percorso-passi { margin: 0 0 8px; color: var(--tenue); }
+.comandi-passi .contatore-passi { font-weight: 600; min-width: 190px; text-align: center; }
+.elenco-passi { columns: 2 280px; margin: 0 0 12px; }
+.elenco-passi li { margin: 2px 0; break-inside: avoid; }
+.sql-linea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--riga-alt); border: 1px solid var(--bordo);
+             border-radius: 6px; padding: 6px 10px; display: inline-block; }
+.chip.dichiarata { border-color: var(--grafico); color: var(--grafico); }
+.passo-affiancato { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin: 8px 0 12px; }
+@media (max-width: 1000px) { .passo-affiancato { grid-template-columns: 1fr; } }
+.esempi-passo .griglia { margin-top: 6px; }
+.tabella-esempi td { vertical-align: top; }
+.tabella-esempi td.numero { white-space: nowrap; }
+.valore-esempio { display: inline-block; border: 1px solid var(--bordo); border-radius: 10px; padding: 0 8px; margin: 1px 4px 1px 0;
+                  background: var(--riga-alt); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+.valore-esempio small { color: var(--tenue); }
+.schede-esempio { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.scheda-esempio h4 { margin: 0 0 8px; }
+.scheda-esempio dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 13px; }
+.scheda-esempio dt { color: var(--tenue); }
+.scheda-esempio dd { margin: 0; word-break: break-word; }

@@ -99,7 +99,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 |---|---|
 | caricamento | `carica_cartella`, `carica_percorsi`, `carica_file`, `lavoro`, `lavoro/ferma`, `progetto` |
 | reverse engineering | `reverse` |
-| dati delle tabelle | `peso_tabelle`, `dati/righe`, `dati/collegate`, `dati/grafici`, `scarica/sql_senza_tolte` |
+| dati delle tabelle | `peso_tabelle`, `dati/righe`, `dati/collegate`, `dati/grafici`, `esempi`, `esempi/collegamento`, `scarica/sql_senza_tolte` |
 | estensioni | `verifica_dati`, `valori`, `crud`, `codice/modelli`, `codice/normalizzazione` |
 | file della cartella | `file/elenco`, `file/leggi`, `file/xml`, `file/cerca`, `file/radice` |
 | analisi | `stato`, `panoramica`, `diagnostica`, `regole`, `tabelle`, `pk_composte`, `fk`, `altri`, `qualita`, `gruppi`, `aree`, `sorgente`, `cerca_entita` |

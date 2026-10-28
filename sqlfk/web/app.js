@@ -434,6 +434,8 @@ const ICONE = {
   crud: "M4 6h16M4 12h16M4 18h10M18 16l2 2 3-4",
   interfaccia: "M3 4h18v12H3zM8 20h8M12 16v4",
   ascolto: "M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H4zM17 14h3v6h-3z",
+  passi: "M3 6h5v4H3zM16 14h5v4h-5zM8 8h4v8h4M13 13l3 3-3 3",
+  esempi: "M4 4h16v16H4zM4 9h16M9 9v11M12 13h5M12 16h4",
   cartellafile: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM14 15a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM15.5 14.5l2 2",
   xml: "M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16",
   schemi: "M3 4h7v6H3zM14 14h7v6h-7zM14 4h7v6h-7zM10 7h4M17.5 10v4",
@@ -546,6 +548,36 @@ async function dopoModifica(messaggio) {
   if (messaggio) avviso(messaggio);
   await aggiornaTutto();
 }
+
+/** I disegni a tutta pagina (diagramma, E-R, lavagna, editor) prendono esattamente lo spazio che resta sotto i comandi:
+    la pagina non deve scorrere, se no con la rotellina o lo zoom i comandi finiscono sotto la barra in alto.
+    Si adattano solo le cornici senza un'altezza scelta dal codice; si rifà quando cambia lo spazio. */
+function adattaCornici() {
+  const cornici = [...vista.querySelectorAll(".er-cornice")].filter(c => {
+    if (!c.dataset.adatta) c.dataset.adatta = c.style.height ? "no" : "si";
+    return c.dataset.adatta === "si" && c.offsetParent && !c.classList.contains("er-intero");
+  });
+  if (!cornici.length) return;
+  cornici.forEach(c => { c.style.height = ""; c.style.minHeight = "0"; }); // si riparte dall'altezza del foglio di stile
+  const troppo = vista.scrollHeight - vista.clientHeight;
+  const minimo = 320;
+  cornici.forEach(c => {
+    const h = c.getBoundingClientRect().height;
+    c.style.height = `${Math.max(minimo, Math.floor(h - troppo))}px`;
+    c.style.minHeight = `${minimo}px`;
+  });
+}
+let adattaInAttesa = false;
+function adattaPresto() {
+  if (adattaInAttesa) return;
+  adattaInAttesa = true;
+  setTimeout(() => { adattaInAttesa = false; adattaCornici(); }, 0);      // dopo che la pagina è stata disegnata
+}
+new ResizeObserver(adattaPresto).observe(vista);
+new MutationObserver(mutazioni => {
+  if (mutazioni.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && (n.matches(".er-cornice") || n.querySelector(".er-cornice"))))
+      || mutazioni.some(m => m.type === "attributes")) adattaPresto();
+}).observe(vista, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
 
 async function mostra(nome) {
   vistaAttuale = nome;
