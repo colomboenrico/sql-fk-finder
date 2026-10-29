@@ -153,49 +153,136 @@ def _senza_riferimenti(frase, tolte):
     return re.sub(r",(\s*\n\s*\))", r"\1", "\n".join(righe))
 
 
+RE_TRIGGER = re.compile(rf"\bTRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?{NOME_SQL}\s+(?:BEFORE|AFTER|INSTEAD\s+OF|FOR)\b[\w\s,]*?\bON\s+"
+                        rf"(?P<nome>{NOME_SQL})", re.I)
+RE_VERSIONATO = re.compile(r"\s*/\*!\d*\s*(.*?)\s*\*/\s*$", re.S)     # /*!40000 ALTER TABLE `t` DISABLE KEYS */
+SOSTANZIALI = {"CREATE", "INSERT", "REPLACE", "COPY", "ALTER", "COMMENT", "GRANT", "UPDATE", "DELETE"}
+
+
+def _senza_tolte(testo, tolte, dialetto, conta):
+    """Pezzi di testo di un file senza le tabelle tolte. Si riscrive il testo originale di ogni istruzione com'è
+    (commenti, DELIMITER, ";;" dei trigger, GO...): si tolgono solo le istruzioni delle tabelle tolte (CREATE, ALTER,
+    indici, dati, LOCK, trigger) e le chiavi esterne che puntano a loro. conta riceve "tenute" (istruzioni con
+    struttura o dati rimaste) e "tolte"."""
+    corpo = CorpoRoutine(dialetto)
+    copia = None                                         # dati di un COPY in corso: True si tengono, False si saltano
+    scarta_corpo = False                                 # corpo di un trigger su una tabella tolta
+    appena_tolta = False
+    pezzo = []
+    for tipo, _, frase, grezzo in L.istruzioni(testo, dialetto):
+        if tipo == "dati":
+            if copia:
+                pezzo.append("\n".join(frase) + "\n")
+            continue
+        copia = None
+        testo_frase = senza_commenti_iniziali(frase)
+        if not testo_frase.strip() and (v := RE_VERSIONATO.match(frase)):
+            testo_frase = v.group(1)                     # MySQL esegue i commenti /*! ... */: contano come istruzioni
+        dentro = corpo.profondita > 0 or corpo.fino_a_go
+        if not dentro:
+            scarta_corpo = False
+            m = RE_TRIGGER.search(frase)
+            if m and _tolta(m.group("nome"), tolte):
+                corpo.salta(frase, grezzo)
+                scarta_corpo = True
+                conta["tolte"] += 1
+                appena_tolta = True
+                continue
+        tieni, uscita = True, grezzo
+        if corpo.salta(frase, grezzo):
+            tieni = not scarta_corpo                     # procedure e viste restano come sono
+        else:
+            scarta_corpo = False
+            m = RE_SOGGETTO.match(testo_frase)
+            prima = parola_iniziale(testo_frase)
+            if m and _tolta(m.group("nome"), tolte):
+                tieni = False
+                if prima == "COPY":
+                    copia = False
+            elif prima == "ALTER" and any(_tolta(x.group("nome"), tolte) for x in RE_RIFERIMENTO.finditer(frase)):
+                tieni = False                            # chiave esterna verso una tabella tolta
+            else:
+                if prima == "CREATE" and RE_RIFERIMENTO.search(frase):
+                    nuova = _senza_riferimenti(frase, tolte)
+                    if nuova != frase:
+                        uscita = grezzo.replace(frase, nuova, 1) if frase in grezzo else nuova.strip("\n") + ";\n"
+                if prima == "COPY":
+                    copia = True
+                if prima in SOSTANZIALI and not re.match(r"CREATE\s+(?:DATABASE|SCHEMA)\b", testo_frase, re.I):
+                    conta["tenute"] += 1                 # CREATE DATABASE in cima ai file di Workbench non conta
+        if not tieni:
+            conta["tolte"] += 1
+            appena_tolta = True
+            continue
+        if appena_tolta and not frase.strip():
+            continue                                     # il ";" vuoto dopo un'istruzione tolta (DELIMITER ;;)
+        appena_tolta = False
+        pezzo.append(uscita)
+        if sum(len(x) for x in pezzo) > 1 << 20:
+            yield "".join(pezzo)
+            pezzo = []
+    pezzo.append("\n")
+    yield "".join(pezzo)
+
+
 def sql_senza_tabelle(file_sql, tolte, dialetto="mysql", origine=""):
     """Pezzi (bytes) di un file .sql uguale ai file letti ma senza le tabelle tolte: senza i loro CREATE, ALTER,
-    indici e dati, e senza le chiavi esterne che puntano a loro. Le procedure, le viste e il resto restano come sono.
-    I file si rileggono a blocchi (anche quelli grandi, dal disco): i file letti non si modificano."""
+    indici, trigger e dati, e senza le chiavi esterne che puntano a loro. Le procedure, le viste e il resto restano
+    come sono. I file si rileggono a blocchi (anche quelli grandi, dal disco): i file letti non si modificano."""
     tolte = {A.nome_qualificato(t).lower() for t in tolte}
     yield (f"-- Database senza le tabelle tolte, creato da SQL FK Finder il {time.strftime('%d/%m/%Y %H:%M')}\n"
-           f"-- Origine: {origine}\n-- Tabelle tolte ({len(tolte)}): {', '.join(sorted(tolte))}\n\n").encode("utf-8")
+           f"-- Origine: {origine}\n-- Tabelle tolte: {len(tolte)}\n\n").encode("utf-8")
     for nome_file, testo in file_sql:
         yield f"\n-- ===================================================== {nome_file}\n\n".encode("utf-8")
-        corpo = CorpoRoutine(dialetto)
-        copia, tenuta = False, False                         # COPY in corso e se i suoi dati si tengono
-        pezzo = []
-        for tipo, _, frase, grezzo in L.istruzioni(testo, dialetto):
-            if tipo == "dati":
-                if copia and tenuta:
-                    pezzo.append("\n".join(frase) + "\n")
-                continue
-            if copia:
-                if tenuta:
-                    pezzo.append("\\.\n\n")
-                copia = False
-            if dialetto == "tsql" and grezzo and RE_GO_RIGA.search(grezzo):
-                pezzo.append("GO\n")
-            if not corpo.salta(frase, grezzo):
-                testo_frase = senza_commenti_iniziali(frase)
-                m = RE_SOGGETTO.match(testo_frase)
-                if m and _tolta(m.group("nome"), tolte):
-                    if parola_iniziale(testo_frase) == "COPY":
-                        copia, tenuta = True, False
-                    continue
-                if parola_iniziale(testo_frase) == "ALTER" and any(_tolta(x.group("nome"), tolte) for x in RE_RIFERIMENTO.finditer(frase)):
-                    continue                                 # chiave esterna verso una tabella tolta
-                if parola_iniziale(testo_frase) == "CREATE" and RE_RIFERIMENTO.search(frase):
-                    frase = _senza_riferimenti(frase, tolte)
-                if parola_iniziale(testo_frase) == "COPY":
-                    copia, tenuta = True, True
-            pezzo.append(frase.strip("\n") + ";\n")
-            if sum(len(x) for x in pezzo) > 1 << 20:
-                yield "".join(pezzo).encode("utf-8")
-                pezzo = []
-        if copia and tenuta:
-            pezzo.append("\\.\n")
-        yield "".join(pezzo).encode("utf-8")
+        for parte in _senza_tolte(testo, tolte, dialetto, {"tenute": 0, "tolte": 0}):
+            yield parte.encode("utf-8")
+
+
+def cartella_senza_tabelle(file_sql, tolte, destinazione, dialetto="mysql", origine="", avanzamento=None):
+    """Scrive in destinazione gli stessi file letti, ognuno senza le tabelle tolte, con gli stessi nomi: la cartella si
+    ricarica come l'originale. I file che contenevano solo tabelle tolte non si scrivono. Accanto, LEGGIMI.txt
+    con le tabelle tolte e i file saltati. Restituisce {scritti, saltati, byte}."""
+    destinazione = Path(destinazione)
+    destinazione.mkdir(parents=True, exist_ok=True)
+    tolte_n = {A.nome_qualificato(t).lower() for t in tolte}
+    totale = sum(getattr(t, "dimensione", None) or len(t) for _, t in file_sql)
+    fatti, scritti, saltati, byte, usati = 0, [], [], 0, set()
+    for nome_file, testo in file_sql:
+        if avanzamento:
+            avanzamento(fatti, totale, nome_file)
+        nome = Path(nome_file).name
+        base, k = nome, 2
+        while nome.lower() in usati:                      # stesso nome da cartelle diverse
+            nome = f"{Path(base).stem}_{k}{Path(base).suffix}"
+            k += 1
+        usati.add(nome.lower())
+        conta = {"tenute": 0, "tolte": 0}
+        provvisorio = destinazione / (nome + ".parziale")
+        try:
+            with open(provvisorio, "w", encoding="utf-8", newline="") as f:
+                for parte in _senza_tolte(testo, tolte_n, dialetto, conta):
+                    f.write(parte)
+                    if avanzamento:
+                        avanzamento(fatti, totale, nome_file)   # anche per interrompere a metà di un file grande
+        except BaseException:
+            provvisorio.unlink(missing_ok=True)                 # interrotto: niente file a metà
+            raise
+        if conta["tenute"] == 0 and conta["tolte"] > 0:
+            provvisorio.unlink()                          # c'erano solo tabelle tolte
+            saltati.append(nome_file)
+        else:
+            provvisorio.replace(destinazione / nome)
+            scritti.append(nome)
+            byte += (destinazione / nome).stat().st_size
+        fatti += getattr(testo, "dimensione", None) or len(testo)
+    (destinazione / "LEGGIMI_senza_tolte.txt").write_text(
+        f"Database senza le tabelle tolte, creato da SQL FK Finder il {time.strftime('%d/%m/%Y %H:%M')}\n"
+        f"Origine: {origine}\n\nFile scritti: {len(scritti)}\nFile saltati (contenevano solo tabelle tolte): {len(saltati)}\n"
+        + "".join(f"  {n}\n" for n in saltati)
+        + f"\nTabelle tolte ({len(tolte)}):\n" + "".join(f"  {t}\n" for t in sorted(tolte)), encoding="utf-8")
+    if avanzamento:
+        avanzamento(totale, totale, "")
+    return {"scritti": len(scritti), "saltati": len(saltati), "byte": byte, "cartella": str(destinazione)}
 
 
 def senza_commenti_iniziali(frase):

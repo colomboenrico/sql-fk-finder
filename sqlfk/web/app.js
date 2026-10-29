@@ -161,21 +161,46 @@ function intestazioneRichiudibile(chiave, titolo, ...contenuto) {
   return el("div", { class: "intestazione-pagina" }, el("div", { class: "riga-titolo" }, el("h2", {}, titolo), pulsante), corpo);
 }
 
-/** Salvare il database senza le tabelle tolte in un nuovo file .sql (con il nome scelto): i file originali non cambiano. */
+/** Salvare il database senza le tabelle tolte in una cartella nuova: gli stessi file .sql, ognuno senza le tabelle tolte,
+    da ricaricare come l'originale (o in un unico file .sql). I file originali non cambiano. */
 function salvaSenzaTolte() {
   const base = String(stato.origine || "database").split(/[\\/]/).pop().replace(/^cartella /, "").replace(/\.sql$/i, "") || "database";
+  const cartella = el("input", { type: "text", class: "largo", placeholder: "cartella nuova dove salvare", "aria-label": "Cartella dove salvare" });
+  const esito = el("div");
+  api("/api/cartella_senza_tolte").then(P => { if (!cartella.value) cartella.value = P.cartella; }).catch(() => {});
+  const salvaCartella = async () => {
+    try {
+      await api("/api/salva_cartella_senza_tolte", { cartella: cartella.value });
+      const lavoro = await seguiLavoro("Salvataggio della cartella senza le tabelle tolte");
+      const R = lavoro.risultato;
+      esito.replaceChildren(el("div", { class: "messaggio" },
+        el("p", {}, el("b", {}, `Salvati ${R.scritti} file in ${R.cartella}`), ` (${formattaByte(R.byte)})` +
+          (R.saltati ? `; ${R.saltati} file non scritti perché contenevano solo tabelle tolte.` : ".") +
+          " Nella cartella c'è anche LEGGIMI_senza_tolte.txt con l'elenco delle tabelle tolte."),
+        el("div", { class: "riga-comandi" },
+          el("button", { class: "primario", onclick: () => caricaDaServer("/api/carica_cartella", { cartella: R.cartella }) }, "Carica la cartella salvata"),
+          window.sqlfkApp ? el("button", { onclick: () => window.sqlfkApp.apriCartella(R.cartella) }, "Apri la cartella") : null)));
+      avviso("Cartella salvata.");
+    } catch (e) { avviso(e.message, true); }
+  };
   const nome = el("input", { type: "text", class: "largo", value: `${base}_senza_tolte.sql`, "aria-label": "Nome del nuovo file" });
   return el("div", { class: "pannello" },
     el("h3", { class: "titolo-file" }, "Salva il database senza le tabelle tolte"),
-    el("p", { class: "tenue" }, "Un nuovo file .sql uguale a quelli letti (struttura, dati, indici, procedure) ma senza le tabelle tolte e senza le chiavi " +
-      "esterne che puntano a loro. I file originali non vengono toccati: scegli un nome diverso." +
-      (window.sqlfkApp ? " Nell'app si apre la finestra per scegliere anche la cartella." : "")),
-    el("div", { class: "riga-comandi" }, nome,
-      el("button", { class: "primario", disabled: !stato.rimosse.length, onclick: () => {
-        let n = nome.value.trim() || `${base}_senza_tolte.sql`;
-        if (!/\.sql$/i.test(n)) n += ".sql";
-        el("a", { href: `/api/scarica/sql_senza_tolte?nome=${encodeURIComponent(n)}`, download: n }).click();
-      } }, stato.rimosse.length ? `Salva senza le ${stato.rimosse.length} tabelle tolte` : "Togli prima delle tabelle")));
+    el("p", { class: "tenue" }, "Una cartella nuova con gli stessi file .sql di quelli letti (stessi nomi, struttura, dati, indici, procedure, " +
+      "viste, DELIMITER): da ogni file si tolgono solo le tabelle tolte, i loro dati e trigger e le chiavi esterne che puntano a loro; " +
+      "i file che contenevano solo tabelle tolte non si scrivono. La cartella si ricarica come l'originale, e i file originali non vengono toccati."),
+    el("div", { class: "riga-comandi" }, cartella,
+      el("button", { class: "primario", disabled: !stato.rimosse.length, onclick: salvaCartella },
+        stato.rimosse.length ? `Salva la cartella senza le ${stato.rimosse.length} tabelle tolte` : "Togli prima delle tabelle")),
+    esito,
+    el("details", {}, el("summary", { class: "tenue" }, "Oppure un unico file .sql"),
+      el("p", { class: "tenue" }, "Tutti i file uniti in uno solo, sempre senza le tabelle tolte (si scarica: con dump molto grandi è meglio la cartella)."),
+      el("div", { class: "riga-comandi" }, nome,
+        el("button", { disabled: !stato.rimosse.length, onclick: () => {
+          let n = nome.value.trim() || `${base}_senza_tolte.sql`;
+          if (!/\.sql$/i.test(n)) n += ".sql";
+          el("a", { href: `/api/scarica/sql_senza_tolte?nome=${encodeURIComponent(n)}`, download: n }).click();
+        } }, "Scarica il file .sql"))));
 }
 
 /** I due pulsanti per aprire gli schemi grafici, aggiornati con le tabelle tolte. */

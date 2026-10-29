@@ -68,6 +68,7 @@ class Lavoro:
         self.fase, self.letti, self.totale, self.file = "inizio", 0, 0, ""
         self.unita = "byte"               # "passi" quando si contano tabelle o collegamenti
         self.inizio, self.errore, self.finito = time.time(), None, False
+        self.risultato = None             # quello che il lavoro restituisce (per esempio la cartella salvata)
         self.fermo = threading.Event()
 
     def avanza(self, letti, totale, nome=""):
@@ -82,7 +83,7 @@ class Lavoro:
         return {"tipo": self.tipo, "descrizione": self.descrizione, "fase": self.fase, "letti": self.letti,
                 "totale": self.totale, "file": self.file, "percentuale": round(100 * quota, 1),
                 "secondi": round(trascorsi), "restano": round(resta) if resta is not None else None,
-                "errore": self.errore, "finito": self.finito, "unita": self.unita}
+                "errore": self.errore, "finito": self.finito, "unita": self.unita, "risultato": self.risultato}
 
 
 class Sessione:
@@ -936,6 +937,43 @@ class Sessione:
                 "normalizzazione": tabella(Q.normalizzazione), "ridondanti": tabella(Q.ridondanti),
                 "regole": {"on_delete": self.imp.on_delete, "on_update": self.imp.on_update}}
 
+    # ------------------------------------------------------------ database senza le tabelle tolte, come cartella
+    def proposta_cartella_senza_tolte(self):
+        """Dove salvare: accanto alla cartella caricata, con _senza_tolte (e un numero se esiste già)."""
+        self.richiedi_dati()
+        cartelle = {Path(t.percorso).parent for _, t in self.file_sql if getattr(t, "percorso", None)}
+        if len(cartelle) == 1:
+            base = cartelle.pop()
+            radice, nome = base.parent, base.name
+        else:
+            radice = Path.home() / "Documents" / "SQL FK Finder"
+            nome = re.sub(r"[^\w.-]+", "_", str(self.origine or "database").split("/")[-1].replace("cartella ", "")) or "database"
+        proposta, k = radice / f"{nome}_senza_tolte", 2
+        while proposta.exists() and any(x.name != ".DS_Store" for x in proposta.iterdir()):
+            proposta, k = radice / f"{nome}_senza_tolte_{k}", k + 1
+        return {"cartella": str(proposta), "tolte": len(self.rimosse), "file": len(self.file_sql)}
+
+    def salva_cartella_senza_tolte(self, cartella):
+        """Scrive in una cartella nuova gli stessi file .sql, ognuno senza le tabelle tolte (in background)."""
+        self.richiedi_dati()
+        if not self.rimosse:
+            raise Errore("Non hai tolto nessuna tabella: il database è uguale all'originale.")
+        cartella = str(cartella or "").strip().strip('"')
+        if not cartella:
+            raise Errore("Scrivi la cartella dove salvare.")
+        dest = Path(cartella).expanduser().resolve()
+        sorgenti = {Path(t.percorso).resolve().parent for _, t in self.file_sql if getattr(t, "percorso", None)}
+        if dest in sorgenti:
+            raise Errore("È la cartella dei file originali: scegline un'altra, gli originali non si toccano.")
+        if dest.exists() and (not dest.is_dir() or any(x.name != ".DS_Store" for x in dest.iterdir())):
+            raise Errore(f"La cartella {dest} esiste già e non è vuota: scegline una nuova (o vuota).")
+        file_sql, tolte, dialetto, origine = list(self.file_sql), set(self.rimosse), self.imp.dialetto, self.origine
+
+        def lavoro(lav):
+            lav.fase = "scrittura"
+            lav.risultato = QY.cartella_senza_tabelle(file_sql, tolte, dest, dialetto, origine, lav.avanza)
+        return self.avvia("salvataggio", f"salvataggio di {len(file_sql)} file senza {len(tolte)} tabelle", lavoro)
+
     def togli(self, tabelle):
         self.richiedi_dati()
         nuove = set(tabelle) & set(self.df_schema["tabella"])
@@ -1108,6 +1146,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/reverse": lambda: (s.richiedi_dati(), DESCR.descrivi(s.R, s.gruppo_di))[1],
             "/api/verifica_dati": s.risultato_verifica,
             "/api/peso_tabelle": s.peso_tabelle,
+            "/api/cartella_senza_tolte": s.proposta_cartella_senza_tolte,
             "/api/ascolto": s.ascolto_stato,
             "/api/ascolto/riepilogo": s.ascolto_riepilogo,
             "/api/scarica/ascolto_md": lambda: (AS.specifica_markdown(s.ascolto.azioni, s.origine).encode("utf-8"), "text/markdown; charset=utf-8",
@@ -1414,6 +1453,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/carica_cartella": carica_cartella,
             "/api/carica_file": carica_file,
             "/api/togli": lambda: s.togli(dati.get("tabelle", [])),
+            "/api/salva_cartella_senza_tolte": lambda: s.salva_cartella_senza_tolte(dati.get("cartella")),
             "/api/togli_gruppo": togli_gruppo,
             "/api/rimetti": lambda: s.rimetti(dati.get("tabelle"), bool(dati.get("tutte"))),
             "/api/impostazioni": lambda: s.imposta(dati),

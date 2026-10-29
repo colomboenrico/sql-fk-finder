@@ -183,6 +183,7 @@ def istruzioni(sorgente, dialetto="mysql", avanzamento=None):
     blocchi = _blocchi(sorgente, avanzamento)
     buf, pos, riga, finito = "", 0, 1, False
     in_copy = False
+    vuote = ""            # testo delle istruzioni vuote (il secondo ";" di "DELIMITER ;;"): va nel grezzo della successiva
 
     def leggi(quanto=1):
         """Aggiunge al buffer almeno quanto caratteri (un blocco se piccolo). False alla fine del file."""
@@ -251,9 +252,12 @@ def istruzioni(sorgente, dialetto="mysql", avanzamento=None):
             if dialetto == "tsql":                # righe GO all'inizio o alla fine
                 frase = re.sub(r"^(?:GO[ \t]*(?:\n|$)\s*)+|\n[ \t]*GO[ \t]*$", "", frase, flags=re.I).strip()
             base = corpo.find(frase[:200]) if dialetto == "tsql" else 0
-            yield ("istruzione", riga + corpo.count("\n", 0, base) + _righe_vuote(corpo[base:]), frase, grezzo)
+            yield ("istruzione", riga + corpo.count("\n", 0, base) + _righe_vuote(corpo[base:]), frase, vuote + grezzo)
+            vuote = ""
             if terminatore == ";" and RE_COPY_STDIN.match(frase[:2000]):
                 in_copy = True
+        elif not frase:
+            vuote += grezzo
         riga += grezzo.count("\n")
         pos = m.end()
         if in_copy:
