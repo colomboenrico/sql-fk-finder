@@ -474,3 +474,13 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .scheda-esempio dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 13px; }
 .scheda-esempio dt { color: var(--tenue); }
 .scheda-esempio dd { margin: 0; word-break: break-word; }
+
+/* ---- riquadro dei collegamenti della tabella o della colonna cliccata nel diagramma */
+.er-info { position: absolute; top: 44px; right: 10px; width: min(380px, calc(100% - 20px)); max-height: calc(100% - 56px); overflow: auto;
+           background: var(--pannello); border: 1px solid var(--bordo); border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+           padding: 10px 14px; font-size: 13px; z-index: 5; }
+.er-info h4 { margin: 0 24px 6px 0; font-size: 14px; word-break: break-all; }
+.er-info ul { margin: 4px 0 10px; padding-left: 18px; }
+.er-info li { margin: 2px 0; }
+.er-info .fuori-diagramma { color: var(--tenue); text-decoration: underline dotted; }
+.er-info-chiudi { position: absolute; top: 6px; right: 6px; padding: 0 8px; font-size: 16px; line-height: 1.4; }

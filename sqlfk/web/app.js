@@ -2201,6 +2201,59 @@ async function contenutoSchema(quale) {
 }
 
 /** Diagramma ER in stile DBeaver: tabelle con le colonne e linee tra le colonne. */
+/** Riquadro sopra il diagramma con i collegamenti di una tabella cliccata o, se si clicca una colonna, di quella colonna:
+    quante e quali tabelle la usano (chiave primaria) o a cosa punta e chi altro usa la stessa chiave (chiave esterna).
+    tutti = {tabelle, collegamenti} di tutto lo schema (anche le tabelle che il filtro non mostra). */
+function riquadroCollegamenti(tutti, nome, colonna, { alClicTabella, alClicColonna, chiudi, presenti }) {
+  const T = tutti.tabelle.find(t => t.nome === nome);
+  const coppie = (l, lato) => l.colonne_da.map((c, i) => lato === "da" ? `${c} → ${l.a}.${l.colonne_a[i]}` : `${l.da}.${c} → ${l.a}.${l.colonne_a[i]}`).join(", ");
+  const tipo = l => l.tipo === "dichiarata" ? "dichiarata" : `trovata, ${l.tipo}`;
+  const link = (t, testo = t) => el("a", { href: "#", class: presenti.has(t) ? null : "fuori-diagramma",
+    title: presenti.has(t) ? `Vai a ${t}` : `${t} non è nel diagramma (filtro o tabella tolta)`,
+    onclick: e => { e.preventDefault(); alClicTabella(t); } }, testo);
+  const voce = (l, lato) => el("li", {}, link(lato === "da" ? l.a : l.da), " ",
+    el("span", { class: "tenue" }, `${coppie(l, lato)} · ${l.relazione || ""} · ${tipo(l)}`));
+  const quante = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
+  const padri = tutti.collegamenti.filter(l => l.da === nome);
+  const figli = tutti.collegamenti.filter(l => l.a === nome);
+  const contenuto = [];
+  if (!colonna || !T || !T.colonne.some(c => c.nome === colonna)) {
+    const collegate = new Set([...padri.map(l => l.a), ...figli.map(l => l.da)].filter(x => x !== nome));
+    contenuto.push(el("h4", {}, nome),
+      el("p", {}, el("b", {}, quante(collegate.size, "tabella collegata", "tabelle collegate")),
+        ` con ${quante(padri.length + figli.length, "collegamento", "collegamenti")}: dipende da ${quante(new Set(padri.map(l => l.a)).size, "tabella", "tabelle")}, ` +
+        `è usata da ${quante(new Set(figli.map(l => l.da)).size, "tabella", "tabelle")}.`),
+      padri.length ? [el("b", {}, "Punta a (dipende da)"), el("ul", {}, padri.map(l => voce(l, "da")))] : null,
+      figli.length ? [el("b", {}, "La usano"), el("ul", {}, figli.map(l => voce(l, "a")))] : null,
+      T ? el("p", { class: "tenue" }, "Chiavi: ", T.colonne.filter(c => c.pk || c.fk).map((c, i) => [i ? ", " : "",
+        el("a", { href: "#", onclick: e => { e.preventDefault(); alClicColonna(nome, c.nome); } }, `${c.nome} (${[c.pk ? "PK" : "", c.fk ? "FK" : ""].filter(Boolean).join(" ")})`)]),
+        ". Clicca una chiave, anche nel diagramma, per vedere chi la usa.") : null);
+  } else {
+    const C = T.colonne.find(c => c.nome === colonna);
+    const usanoQuesta = figli.filter(l => l.colonne_a.includes(colonna));
+    const puntaA = padri.filter(l => l.colonne_da.includes(colonna));
+    const ruolo = [C.pk ? "chiave primaria" : null, C.fk || puntaA.length ? "chiave esterna" : null, C.unique && !C.pk ? "UNIQUE" : null].filter(Boolean).join(", ");
+    contenuto.push(el("h4", {}, `${nome}.${colonna}`), el("p", { class: "tenue" }, `${C.tipo || ""}${ruolo ? ` · ${ruolo}` : ""}`));
+    if (usanoQuesta.length || C.pk) {
+      const tabelleChe = new Set(usanoQuesta.map(l => l.da));
+      contenuto.push(el("p", {}, el("b", {}, usanoQuesta.length ? `La usano ${quante(tabelleChe.size, "tabella", "tabelle")}` : "Nessuna tabella la usa"),
+        usanoQuesta.length ? ` (${quante(usanoQuesta.length, "collegamento", "collegamenti")}):` : ": nessuna chiave esterna punta a questa colonna."),
+        usanoQuesta.length ? el("ul", {}, usanoQuesta.map(l => voce(l, "a"))) : null);
+    }
+    for (const l of puntaA) {
+      const stessa = tutti.collegamenti.filter(x => x.a === l.a && x.colonne_a.join() === l.colonne_a.join() && x.da !== nome);
+      contenuto.push(el("p", {}, el("b", {}, "Punta a "), link(l.a, `${l.a}.${l.colonne_a.join(", ")}`), el("span", { class: "tenue" }, ` · ${l.relazione || ""} · ${tipo(l)}`)),
+        el("p", {}, stessa.length ? `La stessa chiave ${l.a}.${l.colonne_a.join(", ")} è usata anche da ${quante(new Set(stessa.map(x => x.da)).size, "altra tabella", "altre tabelle")}:`
+          : `Nessun'altra tabella usa ${l.a}.${l.colonne_a.join(", ")}.`),
+        stessa.length ? el("ul", {}, stessa.map(x => voce(x, "a"))) : null);
+    }
+    if (!usanoQuesta.length && !puntaA.length && !C.pk) contenuto.push(el("p", { class: "tenue" }, "Colonna senza collegamenti: non è una chiave e nessuna tabella la usa."));
+    contenuto.push(el("p", {}, el("a", { href: "#", onclick: e => { e.preventDefault(); alClicColonna(nome, null); } }, `‹ Tutti i collegamenti di ${nome}`)));
+  }
+  return el("div", { class: "er-info" }, el("button", { class: "er-info-chiudi", title: "Chiudi", onclick: chiudi }, "×"), contenuto);
+}
+let sceltaER = null;              // tabella e colonna cliccate negli Schemi grafici: restano scelte quando si ridisegna
+
 async function contenutoER(quale) {
   const dati = await api(`/api/diagramma?tipo=${quale}&medie=${erMedie ? 1 : 0}`);
   const gruppi = [...new Set(dati.tabelle.map(t => t.gruppo))].sort();
@@ -2294,7 +2347,23 @@ async function contenutoER(quale) {
       attenuate,
       posizioni: filtrato ? {} : layoutER[chiave],
       onSposta: (nome, x, y) => { if (!filtrato) layoutER[chiave][nome] = [x, y]; },
+      onClic: (nome, colonna) => scegliER(nome, colonna),
     });
+    const presenti = new Set(tabelle.map(t => t.nome));
+    function scegliER(nome, colonna, { vai = false } = {}) {
+      cornice.querySelector(".er-info")?.remove();
+      sceltaER = nome ? { nome, colonna } : null;
+      diagramma.fissa(nome && presenti.has(nome) ? nome : null, colonna);
+      if (!nome) return;
+      if (vai) diagramma.vaiA(nome);
+      cornice.append(riquadroCollegamenti(dati, nome, colonna, {
+        presenti,
+        alClicTabella: t => scegliER(t, null, { vai: true }),
+        alClicColonna: (t, c) => scegliER(t, c),
+        chiudi: () => scegliER(null),
+      }));
+    }
+    if (sceltaER && presenti.has(sceltaER.nome)) scegliER(sceltaER.nome, sceltaER.colonna);
     info.textContent = trovateInfo || (`${diagramma.numeri.tabelle} tabelle, ${diagramma.numeri.collegamenti} collegamenti` +
       (raggruppaER ? `, ${diagramma.numeri.gruppi} ${raggruppaER === "area" ? "aree" : "gruppi"}` : ""));
   }

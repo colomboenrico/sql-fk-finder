@@ -248,7 +248,8 @@ const DiagrammaER = (() => {
         // sfondo per le colonne trovate con la ricerca
         const daEvidenziare = opzioni.colonne && norm(opzioni.colonne) && norm(c.nome).includes(norm(opzioni.colonne));
         c.trovata = svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#ffe58a", visibility: daEvidenziare ? "visible" : "hidden" });
-        g.append(c.trovata);
+        c.scelta = svgEl("rect", { x: 1, y, width: t.larghezza - 2, height: RIGA, fill: "#ffd3a8", visibility: "hidden", class: "er-colonna-scelta" });
+        g.append(c.trovata, c.scelta);
         const s = sigle(c);
         const sigla = svgEl("text", { x: 8, y: y + 14, "font-size": 9.5, "font-weight": 700,
                                       fill: c.pk ? "#b8860b" : c.fk ? "#1f4e79" : "#6b7785",
@@ -268,7 +269,7 @@ const DiagrammaER = (() => {
         const suggerimento = svgEl("title");
         suggerimento.textContent = `${t.nome}.${c.nome}\ntipo: ${c.tipo || "?"}\n${[c.pk ? "chiave primaria" : null, c.fk ? "chiave esterna" : null,
           c.unique ? "UNIQUE" : null, c.not_null ? "NOT NULL" : "può essere NULL"].filter(Boolean).join(", ")}`;
-        g.append(svgEl("rect", { x: 0, y, width: t.larghezza, height: RIGA, fill: "transparent" }, suggerimento));
+        g.append(svgEl("rect", { x: 0, y, width: t.larghezza, height: RIGA, fill: "transparent", "data-colonna": c.nome }, suggerimento));
       });
       t.nodo = g;
       strTabelle.append(g);
@@ -354,15 +355,32 @@ const DiagrammaER = (() => {
     cornici.forEach((_, g) => aggiornaCornice(g));
 
     // ---------------------------------------------------------- evidenziazione al passaggio del mouse
-    function evidenzia(nome) {
+    // fissata: la tabella (ed eventualmente la colonna) cliccata resta evidenziata finché non se ne sceglie un'altra
+    let fissata = null;
+    function evidenzia(nome, colonna = null) {
+      if (!nome && fissata) ({ nome, colonna } = fissata);
       svg.classList.toggle("er-focus", !!nome);
       const vicine = new Set([nome]);
+      const usa = (l, lato) => !colonna || (l[lato === "da" ? "colonne_da" : "colonne_a"] || []).includes(colonna);
       for (const l of collegamenti) {
-        const attiva = !!nome && (l.da === nome || l.a === nome);
+        const attiva = !!nome && ((l.da === nome && usa(l, "da")) || (l.a === nome && usa(l, "a")));
         [l.linea, l.puntoF, l.puntoP, l.cardF, l.cardP].forEach(n => n.classList.toggle("er-attiva", attiva));
         if (attiva) { vicine.add(l.da); vicine.add(l.a); }
       }
       tabelle.forEach(t => t.nodo.classList.toggle("er-attiva", !!nome && vicine.has(t.nome)));
+    }
+    /** Tiene evidenziata una tabella (e la sua colonna, se c'è) anche quando il mouse va altrove; null per togliere. */
+    function fissa(nome, colonna = null) {
+      tabelle.forEach(t => t.colonne.forEach(c => c.scelta.setAttribute("visibility",
+        nome && t.nome === nome && colonna && c.nome === colonna ? "visible" : "hidden")));
+      fissata = nome && perNome[nome] ? { nome, colonna } : null;
+      evidenzia(null);
+    }
+    /** Porta una tabella al centro (se è nel diagramma): true se c'è. */
+    function vaiA(nome) {
+      if (!perNome[nome]) return false;
+      adatta([perNome[nome]], 0.6);
+      return true;
     }
 
     // ---------------------------------------------------------- trascinamento, spostamento, zoom
@@ -382,7 +400,9 @@ const DiagrammaER = (() => {
       if (nodo) {
         const t = perNome[nodo.dataset.nome];
         const p = puntoMondo(e);
-        trascina = { tipo: "tabella", t, dx: p.x - t.x, dy: p.y - t.y, x0: e.clientX, y0: e.clientY };
+        const riga = e.target.closest("[data-colonna]");
+        trascina = { tipo: "tabella", t, dx: p.x - t.x, dy: p.y - t.y, x0: e.clientX, y0: e.clientY,
+                     colonna: riga ? riga.getAttribute("data-colonna") : null };
         strTabelle.append(nodo);                       // in primo piano
       } else {
         trascina = { tipo: "vista", x: e.clientX - vista.x, y: e.clientY - vista.y, x0: e.clientX, y0: e.clientY };
@@ -412,7 +432,8 @@ const DiagrammaER = (() => {
       if (trascina && trascina.tipo === "rombo") {
         if (fermo && opzioni.onClicRelazione) opzioni.onClicRelazione(trascina.id);
       } else if (trascina && fermo && opzioni.onClic) {
-        opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null);   // clic senza trascinare
+        // clic senza trascinare: la tabella e, se il clic è su una riga, la colonna
+        opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null, trascina.tipo === "tabella" ? trascina.colonna : null);
       } else if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
         opzioni.onSposta(trascina.t.nome, Math.round(trascina.t.x), Math.round(trascina.t.y));
       }
@@ -527,6 +548,7 @@ const DiagrammaER = (() => {
       copia.classList.remove("er-focus");
       copia.querySelectorAll(".er-attiva").forEach(n => n.classList.remove("er-attiva"));
       copia.querySelectorAll(".er-attenuata").forEach(n => n.classList.remove("er-attenuata"));
+      copia.querySelectorAll(".er-colonna-scelta").forEach(n => n.setAttribute("visibility", "hidden"));
       copia.classList.remove("er-solo-focus");
       if (!opzioni.colonne) copia.querySelectorAll('rect[fill="#ffe58a"]').forEach(n => n.setAttribute("visibility", "hidden"));
       copia.querySelector("g").removeAttribute("transform");
@@ -564,7 +586,7 @@ const DiagrammaER = (() => {
     if (opzioni.vista) applica(); else requestAnimationFrame(() => adattaLeggibile());
     /** Posizioni attuali di tutte le tabelle: nome -> [x, y]. */
     const posizioni = () => Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y)]]));
-    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, ultimaRicerca: () => ({ ...ricerca }), esporta, png, posizioni, vista: () => ({ ...vista }),
+    return { adatta: () => adatta(), zoom: f => zoomIn(f), cerca, fissa, vaiA, ultimaRicerca: () => ({ ...ricerca }), esporta, png, posizioni, vista: () => ({ ...vista }),
              numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length, gruppi: cornici.size } };
   }
 
