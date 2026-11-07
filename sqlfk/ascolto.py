@@ -429,6 +429,13 @@ def specifica_markdown(azioni, origine=""):
     return "\n".join(righe) + "\n"
 
 
+def sembra_chiave(tabella, colonna):
+    """Una colonna che di solito è la chiave di una tabella: id, id_cliente, cliente_id, codice, cod_articolo..."""
+    c, t = colonna.lower(), tabella.lower()
+    return (c in ("id", "codice", "(chiave)") or c in (f"id_{t}", f"{t}_id", f"id{t}") or c.startswith(("id_", "cod"))
+            or c.endswith(("_id", "_cod", "_code")))
+
+
 def collegamenti_usati(azioni):
     """Coppie di colonne di tabelle diverse che il programma collega: dalle JOIN e dai valori che passano
     da una tabella all'altra in un'azione. {(tabella, colonna, tabella, colonna): [prove]}"""
@@ -443,8 +450,12 @@ def collegamenti_usati(azioni):
                 m = re.match(r"([^\s(]+)\.([^\s(.]+) \(", p)
                 if m:
                     posti.append((m.group(1), m.group(2)))
+            # un numero piccolo (2, 15...) in due colonne qualsiasi è spesso un caso: conta solo se una delle due è una chiave
+            piccolo = re.fullmatch(r"-?\d{1,2}", str(f["valore"])) is not None
             for i in range(len(posti)):
                 for j in range(i + 1, len(posti)):
+                    if piccolo and not (sembra_chiave(*posti[i]) or sembra_chiave(*posti[j])):
+                        continue
                     if posti[i][0] != posti[j][0]:
                         coppie.setdefault(tuple(sorted([posti[i], posti[j]])), []).append(f"stesso valore {f['valore']} in «{a['nome']}»")
             if f["valore"].startswith("id appena creato in ") and posti:

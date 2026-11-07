@@ -620,11 +620,9 @@ class Sessione:
             raise Errore("Questa azione non c'è più: aggiorna la pagina.")
         return {**a, "indice": int(i), "riassunto": AS.riassunto(a)}
 
-    def ascolto_riepilogo(self):
-        """Matrice azioni per tabelle e collegamenti usati dal programma, confrontati con lo schema caricato."""
-        X = self.ascolto
-        matrice = [{"azione": a["nome"], **AS.riassunto(a)["crud"]} for a in X.azioni]
-        tabelle = sorted({t for r in matrice for t in r if t != "azione"})
+    def collegamenti_ascolto(self, azioni):
+        """Le coppie di colonne che il programma collega nelle azioni (JOIN, stesso valore, id generato), con le prove
+        e com'è nello schema caricato: [{t1, c1, t2, c2, prove, schema}]."""
         dichiarate, candidate = set(), {}
         if self.df_schema is not None:
             for r in self.R.fk_dichiarate.to_dict("records"):
@@ -639,7 +637,7 @@ class Sessione:
                     return S.pk[nome][0]
             return c
         uniti = {}
-        for ((t1, c1), (t2, c2)), prove in AS.collegamenti_usati(X.azioni).items():
+        for ((t1, c1), (t2, c2)), prove in AS.collegamenti_usati(azioni).items():
             coppia = tuple(sorted([(t1, vera(t1, c1)), (t2, vera(t2, c2))]))
             uniti[coppia] = sorted(set(uniti.get(coppia, []) + prove))
         collegamenti = []
@@ -647,9 +645,80 @@ class Sessione:
             chiave = frozenset([(t1.lower(), c1.lower()), (t2.lower(), c2.lower())])
             nello_schema = ("" if self.df_schema is None else "dichiarata" if chiave in dichiarate
                             else f"candidata ({candidate[chiave]})" if chiave in candidate else "non trovata dall'analisi")
-            collegamenti.append({"da": f"{t1}.{c1}", "a": f"{t2}.{c2}", "prove": prove, "schema": nello_schema})
+            collegamenti.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "prove": prove, "schema": nello_schema})
+        return collegamenti
+
+    def ascolto_riepilogo(self):
+        """Matrice azioni per tabelle e collegamenti usati dal programma, confrontati con lo schema caricato."""
+        X = self.ascolto
+        matrice = [{"azione": a["nome"], **AS.riassunto(a)["crud"]} for a in X.azioni]
+        tabelle = sorted({t for r in matrice for t in r if t != "azione"})
+        collegamenti = [{"da": f"{c['t1']}.{c['c1']}", "a": f"{c['t2']}.{c['c2']}", "prove": c["prove"], "schema": c["schema"]}
+                        for c in self.collegamenti_ascolto(X.azioni)]
         return {"tabelle": tabelle, "matrice": [[r["azione"]] + [r.get(t, "") for t in tabelle] for r in matrice],
                 "collegamenti": collegamenti, "schema": self.df_schema is not None}
+
+    def ascolto_diagramma(self, indice=None):
+        """Il diagramma delle tabelle di un'azione (o di tutte) come le collega il programma: le tabelle usate (con le
+        colonne usate e la chiave) e una linea per ogni collegamento trovato nelle query. Linea blu se è una chiave
+        dichiarata nello schema, verde se viene da una JOIN, arancione tratteggiata se solo dai valori (stesso valore,
+        id appena creato)."""
+        X = self.ascolto
+        if indice in (None, "", "tutte"):
+            azioni = X.azioni
+        else:
+            try:
+                azioni = [X.azioni[int(indice)]]
+            except (ValueError, IndexError):
+                raise Errore("Questa azione non c'è più: aggiorna la pagina.")
+        crud, usate = {}, {}
+        for a in azioni:
+            for t, lettere in AS.riassunto(a)["crud"].items():
+                crud[t] = "".join(x for x in "CRUD" if x in crud.get(t, "") + lettere)
+            for q in a["query"]:
+                for v in q["valori"]:
+                    if v.get("tabella"):
+                        usate.setdefault(v["tabella"], set()).add(v["colonna"])
+        collegamenti = self.collegamenti_ascolto(azioni)
+        for c in collegamenti:
+            usate.setdefault(c["t1"], set()).add(c["c1"])
+            usate.setdefault(c["t2"], set()).add(c["c2"])
+        S = self.R.S if self.df_schema is not None else None
+        nome_vero = {t.lower(): t for t in (S.col_per_tab if S else [])}
+        pk_di = lambda t: list(S.pk.get(nome_vero.get(t.lower(), ""), [])) if S else []
+
+        def lato_padre(t, c):              # la colonna "padre" del collegamento: la chiave primaria, un id, l'id generato
+            pk = pk_di(t)                  # solo una chiave primaria di una colonna (in una chiave su più colonne è un figlio)
+            return c == "(chiave)" or (len(pk) == 1 and c == pk[0]) or (not pk and c.lower() in ("id", f"id_{t.lower()}"))
+        linee, fk = [], {}
+        for c in collegamenti:
+            (da, cd), (a, ca) = (c["t1"], c["c1"]), (c["t2"], c["c2"])
+            if lato_padre(da, cd) and not lato_padre(a, ca):
+                (da, cd), (a, ca) = (a, ca), (da, cd)
+            fk.setdefault(da, set()).add(cd)
+            da_join = any(pr.startswith("JOIN") for pr in c["prove"])
+            linee.append({"da": da, "colonne_da": [cd], "a": a, "colonne_a": [ca], "relazione": "1:N", "obbligatoria": False,
+                          "tipo": "dichiarata" if c["schema"] == "dichiarata" else "alta" if da_join else "media",
+                          "descrizione": "; ".join(c["prove"]) + (f"\nnello schema: {c['schema']}" if c["schema"] else "")})
+        tabelle = []
+        for t in sorted(set(crud) | set(usate)):
+            vero = nome_vero.get(t.lower())
+            tutte = list(S.col_per_tab.get(vero, [])) if vero else []
+            pk = pk_di(t)
+            mostrate = [x for x in tutte if x in pk or x in usate.get(t, set())] if tutte else sorted(usate.get(t, set()) - {"(chiave)"})
+            mostrate += sorted(x for x in usate.get(t, set()) if x not in mostrate and x != "(chiave)" and tutte and x not in tutte)
+            if "(chiave)" in usate.get(t, set()) and not pk:
+                mostrate.insert(0, "(chiave)")
+            colonne = [{"nome": x, "tipo": (S.tipi.get((vero, x), "") if S and vero else ""), "pk": x in pk or x == "(chiave)",
+                        "fk": x in fk.get(t, set()), "unique": False, "not_null": False} for x in mostrate]
+            altre = len(tutte) - len([x for x in mostrate if x in tutte])
+            if altre > 0:
+                colonne.append({"nome": f"… altre {altre} colonne", "tipo": "", "pk": False, "fk": False, "unique": False, "not_null": False})
+            lettere = crud.get(t, "")
+            tabelle.append({"nome": t, "titolo": f"{t}  {lettere}" if lettere else t, "colonne": colonne,
+                            "gruppo": "scrive" if set(lettere) & set("CUD") else "legge" if lettere else "collegata",
+                            "pk_indovinata": False})
+        return {"tabelle": tabelle, "collegamenti": linee, "azioni": len(azioni), "schema": S is not None}
 
     def ascolto_comando(self, comando, dati):
         X = self.ascolto
@@ -1266,6 +1335,8 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
                                                                  json.loads(voce("colonne_a", "[]"))), blocca=False)
             return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
+        if percorso == "/api/ascolto/diagramma":
+            return self.esegui(lambda: s.ascolto_diagramma(parse_qs(url.query).get("indice", [""])[0]), blocca=False)
         if percorso == "/api/ascolto/azione":
             return self.esegui(lambda: s.ascolto_azione(parse_qs(url.query).get("indice", ["0"])[0]), blocca=False)
         if percorso == "/api/valori":

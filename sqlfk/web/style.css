@@ -484,3 +484,6 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .er-info li { margin: 2px 0; }
 .er-info .fuori-diagramma { color: var(--tenue); text-decoration: underline dotted; }
 .er-info-chiudi { position: absolute; top: 6px; right: 6px; padding: 0 8px; font-size: 16px; line-height: 1.4; }
+
+.diagramma-azione { margin: 12px 0; }
+.diagramma-azione .legenda-azione { font-size: 12.5px; margin: 0 0 6px; }

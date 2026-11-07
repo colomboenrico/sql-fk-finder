@@ -77,6 +77,37 @@ function pannelloDatabase() {
       el("span", { class: "tenue" }, "oppure"), campo, el("button", { onclick: apri }, "Apri")));
 }
 
+/** Il diagramma delle tabelle di un'azione (indice) o di tutte ("tutte"), collegate come le collega il programma nelle query.
+    Clic su una tabella o una colonna: il riquadro con i suoi collegamenti, come negli Schemi grafici. */
+function diagrammaAzione(indice, titolo) {
+  const cornice = el("div", { class: "er-cornice", style: "height: 420px" });
+  const info = el("span", { class: "tenue" }, "Disegno...");
+  let diagramma = null, dati = null;
+  const scaricaPng = () => diagramma && conAttesa(async () =>
+    scaricaBlob(await diagramma.png(), `collegamenti_${String(titolo).replace(/[^\w-]+/g, "_").slice(0, 60) || "azione"}.png`));
+  api(`/api/ascolto/diagramma?indice=${encodeURIComponent(indice)}`).then(D => {
+    dati = D;
+    if (!D.tabelle.length) { cornice.replaceChildren(el("p", { class: "tenue" }, "Nessuna tabella in questa azione.")); info.textContent = ""; return; }
+    const presenti = new Set(D.tabelle.map(t => t.nome));
+    const scegli = (nome, colonna) => {
+      cornice.querySelector(".er-info")?.remove();
+      diagramma.fissa(nome, colonna);
+      if (!nome) return;
+      cornice.append(riquadroCollegamenti(dati, nome, colonna, { presenti,
+        alClicTabella: t => { diagramma.vaiA(t); scegli(t, null); }, alClicColonna: scegli, chiudi: () => scegli(null) }));
+    };
+    diagramma = DiagrammaER.crea(cornice, D, { tipi: true, coloraPer: "gruppo", onClic: scegli });
+    info.textContent = `${D.tabelle.length} tabelle, ${D.collegamenti.length} collegamenti trovati nelle query`;
+  }).catch(e => { cornice.replaceChildren(el("p", { class: "errore" }, e.message)); info.textContent = ""; });
+  return el("div", { class: "diagramma-azione" },
+    el("div", { class: "riga-comandi" }, el("b", {}, titolo), info, el("button", { onclick: scaricaPng }, "Scarica PNG")),
+    el("p", { class: "tenue legenda-azione" }, "Le tabelle usate (accanto al nome: C inserisce, R legge, U modifica, D cancella) con la chiave e le colonne usate. ",
+      el("span", { style: "color:#1f4e79" }, "━ chiave dichiarata"), " · ", el("span", { style: "color:#2e7d32" }, "━ JOIN nelle query"), " · ",
+      el("span", { style: "color:#c25e00" }, "╍ stesso valore o id appena creato"),
+      ". Passa il mouse su una linea per le prove; clicca una tabella o una chiave per i suoi collegamenti."),
+    cornice);
+}
+
 function dettaglioAzione(A, ridisegna) {
   const R = A.riassunto;
   const nome = el("input", { type: "text", value: A.nome, size: 40, "aria-label": "Nome dell'azione" });
@@ -110,6 +141,7 @@ function dettaglioAzione(A, ridisegna) {
     R.flussi.length ? el("div", {}, el("b", {}, "Valori che passano da una tabella all'altra"),
       el("p", { class: "tenue" }, "Lo stesso valore usato in più tabelle nella stessa azione: indizio di un collegamento (chiave esterna)."),
       el("ul", {}, R.flussi.map(f => el("li", {}, el("b", {}, f.valore), ": ", f.posti.join(", "))))) : null,
+    diagrammaAzione(A.indice, `Come sono collegate le tabelle in «${A.nome}»`),
     el("details", { open: sql.length <= 12 }, el("summary", {}, el("b", {}, "Le query in ordine")), sequenza));
 }
 
@@ -214,7 +246,11 @@ Object.assign(VISTE, {
 
       const M = await api("/api/ascolto/riepilogo");
       const classe = (c, v) => c !== "azione" && v ? "cella-crud" : null;
-      riepilogo.replaceChildren(el("div", { class: "pannello" }, el("h3", {}, "Azioni e tabelle"),
+      riepilogo.replaceChildren(
+        S.elenco.length > 1 ? el("div", { class: "pannello" }, el("h3", {}, "Tutte le azioni insieme"),
+          el("p", { class: "tenue" }, "Le tabelle usate da tutte le azioni registrate e i collegamenti trovati in tutte le query: la mappa del " +
+            "database come la usa il programma."), diagrammaAzione("tutte", `${S.elenco.length} azioni`)) : null,
+        el("div", { class: "pannello" }, el("h3", {}, "Azioni e tabelle"),
         el("p", { class: "tenue" }, "Per ogni azione registrata, cosa fa su ogni tabella: C inserisce, R legge, U modifica, D cancella."),
         griglia({ colonne: ["azione", ...M.tabelle], righe: M.matrice }, { classiCella: classe })),
         el("div", { class: "pannello" }, el("h3", {}, "Collegamenti usati dal programma"),
