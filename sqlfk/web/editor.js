@@ -179,8 +179,8 @@ const Editor = (() => {
     for (const t of dati.tabelle) {
       if (ponti.has(t.nome)) continue;
       const p = posizioni[t.nome] || [];
-      const e = { id: id(M), nome: t.nome, x: p[0], y: p[1],
-                  attributi: t.colonne.map(c => ({ nome: c.nome, tipo: c.tipo || "INT", pk: !!c.pk, nn: !!c.not_null && !c.pk, uq: !!c.unique && !c.pk })) };
+      const e = { id: id(M), nome: t.nome, origine: t.nome, x: p[0], y: p[1],
+                  attributi: t.colonne.map(c => ({ nome: c.nome, origine: c.nome, tipo: c.tipo || "INT", pk: !!c.pk, nn: !!c.not_null && !c.pk, uq: !!c.unique && !c.pk })) };
       M.entita.push(e);
       idDi[t.nome] = e.id;
     }
@@ -193,7 +193,7 @@ const Editor = (() => {
       const [l1, l2] = uscenti[nome];
       if (!idDi[l1.a] || !idDi[l2.a]) continue;
       const p = posizioni[nome] || [];
-      M.relazioni.push({ id: id(M), da: idDi[l1.a], a: idDi[l2.a], tipo: "N:M", obbligatoria: false, nome,
+      M.relazioni.push({ id: id(M), da: idDi[l1.a], a: idDi[l2.a], tipo: "N:M", obbligatoria: false, nome, origine: nome,
                          colonne_da: l1.colonne_da, colonne_a: l2.colonne_da, attributi: [], x: p[0], y: p[1] });
     }
     return M;
@@ -217,10 +217,10 @@ const Editor = (() => {
     const baseX = xs.length ? Math.max(...xs) + 420 : 40, baseY = ys.length ? Math.min(...ys) : 40;
     nuove.forEach((t, i) => {
       const p = posizioni[t.nome];
-      const e = { id: id(M), nome: t.nome,
+      const e = { id: id(M), nome: t.nome, origine: t.nome,
                   x: p ? baseX + p[0] - minX : baseX + (i % 4) * 360, y: p ? baseY + p[1] - minY : baseY + Math.floor(i / 4) * 300,
                   attributi: t.colonne.filter(c => !String(c.nome).startsWith("… "))
-                    .map(c => ({ nome: c.nome, tipo: c.tipo || "INT", pk: !!c.pk, nn: !!c.not_null && !c.pk, uq: !!c.unique && !c.pk })) };
+                    .map(c => ({ nome: c.nome, origine: c.nome, tipo: c.tipo || "INT", pk: !!c.pk, nn: !!c.not_null && !c.pk, uq: !!c.unique && !c.pk })) };
       M.entita.push(e);
       presenti.set(e.nome.toLowerCase(), e);
     });
@@ -239,5 +239,23 @@ const Editor = (() => {
     return { copiate: nuove.map(t => t.nome), saltate, relazioni };
   }
 
-  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi };
+  /**
+   * Da dove prendere i dati di ogni tabella dell'editor che viene dal database caricato: tabella e colonne di origine,
+   * anche se nell'editor sono state rinominate. Le colonne nuove non hanno origine (restano vuote), quelle tolte non ci sono.
+   * [{tabella, origine, colonne: [[nome nell'editor, colonna di origine]]}]
+   */
+  function mappaDati(M) {
+    const { tabelle } = schemaLogico(M);
+    const nomi = new Set(tabelle.map(t => t.nome));
+    const mappa = M.entita.filter(e => e.origine && nomi.has(e.nome)).map(e => ({
+      tabella: e.nome, origine: e.origine,
+      colonne: e.attributi.filter(a => a.origine).map(a => [a.nome, a.origine]),
+    }));
+    for (const r of M.relazioni.filter(r => r.tipo === "N:M" && r.origine && nomi.has(r.nome))) {
+      mappa.push({ tabella: r.nome, origine: r.origine, colonne: [...r.colonne_da, ...r.colonne_a].map(c => [c, c]) });
+    }
+    return mappa.filter(m => m.colonne.length);
+  }
+
+  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati };
 })();

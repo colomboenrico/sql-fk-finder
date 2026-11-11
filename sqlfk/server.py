@@ -1006,6 +1006,113 @@ class Sessione:
                 "normalizzazione": tabella(Q.normalizzazione), "ridondanti": tabella(Q.ridondanti),
                 "regole": {"on_delete": self.imp.on_delete, "on_update": self.imp.on_update}}
 
+    # ------------------------------------------------------------ database disegnato nell'editor, con i dati
+    def editor_esporta(self, dati):
+        """Si ricorda cosa scaricare (lo schema dell'editor e da dove prendere i dati): il download arriva subito dopo."""
+        mappa = [m for m in (dati.get("mappa") or []) if isinstance(m, dict) and m.get("tabella") and m.get("origine")]
+        self.editor_export = {"sql": str(dati.get("sql") or ""), "mappa": mappa, "dialetto": str(dati.get("dialetto") or "mysql")}
+        if mappa:
+            self.database()               # se il database delle query va costruito, lo si dice adesso
+        return {"tabelle_con_dati": len(mappa)}
+
+    @staticmethod
+    def letterale(v, dialetto):
+        if v is None:
+            return "NULL"
+        if isinstance(v, bool):
+            return "1" if v else "0"
+        if isinstance(v, (int, float)):
+            return repr(v) if isinstance(v, float) else str(v)
+        if isinstance(v, bytes):
+            return f"X'{v.hex()}'" if dialetto != "postgres" else f"'\\x{v.hex()}'"
+        testo = str(v).replace("'", "''")
+        if dialetto == "mysql":
+            testo = testo.replace("\\", "\\\\")
+        return f"N'{testo}'" if dialetto == "tsql" and not testo.isascii() else f"'{testo}'"
+
+    def righe_editor(self, voce):
+        """(colonne nuove, generatore di blocchi di righe) per una voce della mappa: le colonne di origine che ci sono ancora."""
+        db = self.database()
+        t = db.tabella_di(voce["origine"])
+        if not t:
+            return [], iter(())
+        with self.lock_db:
+            presenti = {r[1] for r in db.conn.execute(f"PRAGMA table_info({QY.q(t)})")}
+        coppie = [(str(n), str(o)) for n, o in voce["colonne"] if str(o) in presenti]
+
+        def blocchi():
+            ultimo = 0
+            while coppie:
+                with self.lock_db:
+                    righe = db.conn.execute(f"SELECT rowid, {', '.join(QY.q(o) for _, o in coppie)} FROM {QY.q(t)} WHERE rowid > ? "
+                                            f"ORDER BY rowid LIMIT 2000", (ultimo,)).fetchall()
+                if not righe:
+                    return
+                ultimo = righe[-1][0]
+                yield [r[1:] for r in righe]
+        return [n for n, _ in coppie], blocchi()
+
+    def ordine_mappa(self, sql, mappa):
+        """Le tabelle con i dati nell'ordine delle CREATE TABLE (prima quelle a cui puntano le altre)."""
+        posto = lambda m: (lambda i: i if i >= 0 else len(sql))(sql.lower().find(f"create table {m['tabella'].lower()} ("))
+        return sorted(mappa, key=posto)
+
+    def editor_database(self, formato):
+        E = getattr(self, "editor_export", None)
+        if not E:
+            raise Errore("Niente da scaricare: usa i pulsanti della pagina Editor del database.")
+        if formato == "sqlite":
+            return self.editor_sqlite(E)
+        dialetto = "postgres" if E["dialetto"] == "postgresql" else E["dialetto"]
+        sql, fine = E["sql"].rstrip() + "\n", ""
+        if sql.rstrip().endswith("SET FOREIGN_KEY_CHECKS = 1;"):     # i dati vanno prima di riattivare i controlli
+            sql, fine = sql.rstrip()[:-len("SET FOREIGN_KEY_CHECKS = 1;")], "SET FOREIGN_KEY_CHECKS = 1;\n"
+        mappa = self.ordine_mappa(sql, E["mappa"])
+
+        def pezzi():
+            yield sql.encode("utf-8")
+            for voce in mappa:
+                colonne, blocchi = self.righe_editor(voce)
+                if not colonne:
+                    continue
+                yield f"\n-- Dati di {voce['tabella']} (da {voce['origine']})\n".encode("utf-8")
+                for righe in blocchi:
+                    for k in range(0, len(righe), 200):
+                        valori = ",\n".join("(" + ", ".join(self.letterale(v, dialetto) for v in r) + ")" for r in righe[k:k + 200])
+                        yield f"INSERT INTO {voce['tabella']} ({', '.join(colonne)}) VALUES\n{valori};\n".encode("utf-8")
+            yield ("\n" + fine).encode("utf-8")
+        return pezzi()
+
+    def editor_sqlite(self, E):
+        """Un file .sqlite con lo schema dell'editor (tradotto con sqlglot) e i dati delle tabelle importate."""
+        import sqlite3
+        import tempfile
+        dialetto = {"postgresql": "postgres"}.get(E["dialetto"], E["dialetto"])
+        with tempfile.TemporaryDirectory() as cartella:
+            file = Path(cartella) / "database.sqlite"
+            conn = sqlite3.connect(file)
+            for tipo, _, frase, _ in L.istruzioni(E["sql"], dialetto):
+                testo = QY.senza_commenti_iniziali(frase).strip()
+                if tipo != "istruzione" or not testo or re.match(r"SET\b", testo, re.I):
+                    continue
+                try:
+                    import sqlglot
+                    conn.execute(sqlglot.transpile(testo, read=dialetto, write="sqlite")[0])
+                except Exception:
+                    pass                  # la tabella si crea comunque sotto, con le sole colonne, se servono i dati
+            for voce in self.ordine_mappa(E["sql"], E["mappa"]):
+                colonne, blocchi = self.righe_editor(voce)
+                if not colonne:
+                    continue
+                q = QY.q
+                conn.execute(f"CREATE TABLE IF NOT EXISTS {q(voce['tabella'])} ({', '.join(q(c) for c in colonne)})")
+                for righe in blocchi:
+                    conn.executemany(f"INSERT INTO {q(voce['tabella'])} ({', '.join(q(c) for c in colonne)}) "
+                                     f"VALUES ({', '.join('?' * len(colonne))})", righe)
+            conn.commit()
+            conn.close()
+            return file.read_bytes()
+
     # ------------------------------------------------------------ database senza le tabelle tolte, come cartella
     def proposta_cartella_senza_tolte(self):
         """Dove salvare: accanto alla cartella caricata, con _senza_tolte (e un numero se esiste già)."""
@@ -1335,6 +1442,15 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
                                                                  json.loads(voce("colonne_a", "[]"))), blocca=False)
             return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
+        if percorso == "/api/scarica/editor_database":
+            formato = parse_qs(url.query).get("formato", ["sql"])[0]
+
+            def scarica_editor():
+                corpo = s.editor_database(formato)
+                if formato == "sqlite":
+                    return (corpo, "application/vnd.sqlite3", {"Content-Disposition": 'attachment; filename="database.sqlite"'})
+                return (corpo, "application/sql; charset=utf-8", {"Content-Disposition": 'attachment; filename="database.sql"'})
+            return self.esegui(scarica_editor, blocca=False)
         if percorso == "/api/ascolto/diagramma":
             return self.esegui(lambda: s.ascolto_diagramma(parse_qs(url.query).get("indice", [""])[0]), blocca=False)
         if percorso == "/api/ascolto/azione":
@@ -1525,6 +1641,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/carica_file": carica_file,
             "/api/togli": lambda: s.togli(dati.get("tabelle", [])),
             "/api/salva_cartella_senza_tolte": lambda: s.salva_cartella_senza_tolte(dati.get("cartella")),
+            "/api/editor/esporta": lambda: s.editor_esporta(dati),
             "/api/togli_gruppo": togli_gruppo,
             "/api/rimetti": lambda: s.rimetti(dati.get("tabelle"), bool(dati.get("tutte"))),
             "/api/impostazioni": lambda: s.imposta(dati),

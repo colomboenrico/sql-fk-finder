@@ -1041,6 +1041,9 @@ function creaEditor(S) {
       const relazioni = M().relazioni.filter(x => x.da === e.id || x.a === e.id);
       contenuto.push(
         el("h3", {}, `Entità ${e.nome}`), el("label", { class: "campo" }, "Nome", nome),
+        e.origine ? el("p", { class: "tenue" }, `Importata da «${e.origine}»: nel database scaricato i dati vengono da lì. ` +
+          `Le colonne rinominate restano collegate alla loro colonna di origine; quelle nuove restano vuote. ` +
+          (() => { const cambiate = e.attributi.filter(a => a.origine && a.origine !== a.nome); return cambiate.length ? `Rinominate: ${cambiate.map(a => `${a.origine} → ${a.nome}`).join(", ")}.` : ""; })()) : null,
         el("table", {}, el("thead", {}, intestazione), el("tbody", {}, e.attributi.map((at, i) =>
           riga(at, () => { e.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
         el("div", { class: "riga-comandi", style: "margin-top: 8px" },
@@ -1131,6 +1134,24 @@ function creaEditor(S) {
     avviso(`Importate ${S.modello.entita.length} entità e ${S.modello.relazioni.length} relazioni.`);
   }
 
+  /** Aggiunge al disegno alcune tabelle del database caricato (con le collegate, se richiesto), senza togliere niente. */
+  async function importaScelte(nomi, conCollegate) {
+    if (!nomi.length) return avviso("Spunta almeno una tabella.", true);
+    if (diagramma) salvaPosizioni(diagramma.posizioni());
+    const dati = await api(`/api/diagramma?tipo=${tipoImport.value}`);
+    const scelte = new Set(nomi);
+    if (conCollegate) dati.collegamenti.forEach(l => {
+      if (nomi.includes(l.da)) scelte.add(l.a);
+      if (nomi.includes(l.a)) scelte.add(l.da);
+    });
+    const esito = Editor.copiaTabelle(M(), dati, [...scelte], layoutER[tipoImport.value] || {});
+    S.vista = null; diagramma = null;
+    if (esito.copiate.length) S.selezione = M().entita.find(x => x.nome === esito.copiate[0])?.id || null;
+    ridisegna();
+    avviso(`Importate ${esito.copiate.length} tabelle e ${esito.relazioni} relazioni` +
+      (esito.saltate.length ? `; già nel disegno: ${esito.saltate.join(", ")}` : "") + ".");
+  }
+
   async function analizza() {
     if (!M().entita.length) return avviso("L'editor è vuoto.", true);
     if (diagramma) salvaPosizioni(diagramma.posizioni());
@@ -1152,9 +1173,74 @@ function creaEditor(S) {
     S.selezione = null; S.vista = null; diagramma = null;
     ridisegna();
   }
-  return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, analizza, regole, dialetto,
+  return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, importaScelte, analizza, regole, dialetto,
            pulsanteCollega, statoCollega,
            azzera, ricarica, posizioniModello, get diagramma() { return diagramma; } };
+}
+
+/** Nell'editor: cerca le tabelle del database caricato, spunta quelle da importare e aggiungile al disegno. */
+let ricercaImportEditor = "";
+function importaDalDatabase(E) {
+  const elenco = el("div", { class: "scelta-import" });
+  const collegate = el("input", { type: "checkbox" });
+  const scelte = new Set();
+  const conteggio = el("span", { class: "tenue" });
+  const campo = el("input", { type: "search", size: 34, value: ricercaImportEditor, placeholder: "cerca una tabella (es. ordini, cliente...)",
+    "aria-label": "Cerca le tabelle da importare" });
+  let nomi = [];
+  const aggiorna = () => { conteggio.textContent = scelte.size ? `${scelte.size} scelte` : ""; };
+  const disegna = () => {
+    ricercaImportEditor = campo.value;
+    const testo = campo.value.trim().toLowerCase();
+    const nelDisegno = new Set(modelloEditor.entita.map(e => e.nome.toLowerCase()));
+    const trovate = testo ? nomi.filter(n => n.toLowerCase().includes(testo))
+      .sort((a, b) => (b.toLowerCase().startsWith(testo) - a.toLowerCase().startsWith(testo)) || a.localeCompare(b, "it")) : [];
+    elenco.replaceChildren(...(testo ? [
+      ...trovate.slice(0, 60).map(n => {
+        const gia = nelDisegno.has(n.toLowerCase());
+        const spunta = el("input", { type: "checkbox", checked: scelte.has(n), disabled: gia });
+        spunta.addEventListener("change", () => { if (spunta.checked) scelte.add(n); else scelte.delete(n); aggiorna(); });
+        return el("label", { class: gia ? "tenue" : null, title: gia ? "già nel disegno" : null }, spunta, " ", n);
+      }),
+      trovate.length > 60 ? el("span", { class: "tenue" }, `e altre ${trovate.length - 60}: scrivi di più`) : null,
+      !trovate.length ? el("span", { class: "tenue" }, "Nessuna tabella con questo nome.") : null].filter(Boolean) : []));
+  };
+  api("/api/diagramma?tipo=iniziale").then(D => { nomi = D.tabelle.map(t => t.nome); disegna(); }).catch(() => {});
+  campo.addEventListener("input", disegna);
+  return el("details", { class: "pannello", open: !!ricercaImportEditor },
+    el("summary", {}, el("b", {}, "Importa tabelle dal database caricato")),
+    el("p", { class: "tenue" }, "Cerca le tabelle per nome, spunta quelle che ti servono e importale: si aggiungono al disegno (quello che c'è resta), " +
+      "con le colonne, i tipi, le chiavi e i collegamenti tra loro. Poi le modifichi come vuoi (nomi, tipi, colonne, relazioni) e scarichi il " +
+      "database, anche con i dati delle tabelle importate."),
+    el("div", { class: "riga-comandi" }, campo,
+      el("label", {}, collegate, "anche le tabelle collegate"),
+      el("button", { class: "primario", onclick: () => conAttesa(async () => {
+        await E.importaScelte([...scelte], collegate.checked);
+        scelte.clear(); aggiorna(); disegna();
+      }) }, "Importa le scelte"), conteggio),
+    elenco);
+}
+
+/** Scaricare il database disegnato: solo lo schema, schema e dati delle tabelle importate (script SQL), oppure un file .sqlite. */
+function scaricaDatabaseEditor(E) {
+  const scarica = formato => conAttesa(async () => {
+    if (!modelloEditor.entita.length) return avviso("L'editor è vuoto.", true);
+    const mappa = Editor.mappaDati(modelloEditor);
+    if (formato !== "schema" && !mappa.length && !confirm("Nessuna tabella viene dal database caricato: il database non avrà dati. Continuare?")) return;
+    await api("/api/editor/esporta", { sql: Editor.sql(modelloEditor, E.regole(), E.dialetto()), mappa: formato === "schema" ? [] : mappa,
+      dialetto: E.dialetto() });
+    el("a", { href: `/api/scarica/editor_database?formato=${formato === "sqlite" ? "sqlite" : "sql"}`,
+      download: formato === "sqlite" ? "database.sqlite" : "database.sql" }).click();
+  });
+  return el("div", { class: "pannello" },
+    el("h3", {}, "Scarica il database"),
+    el("p", { class: "tenue" }, "Il database come l'hai disegnato. Con i dati: per ogni tabella importata si copiano le righe del database caricato, " +
+      "seguendo i nomi nuovi delle tabelle e delle colonne (le colonne aggiunte restano vuote, quelle tolte non ci sono). " +
+      "Il file .sqlite si apre con DBeaver o DB Browser for SQLite; lo script SQL è nel dialetto delle Impostazioni."),
+    el("div", { class: "riga-comandi" },
+      el("button", { class: "primario", onclick: () => scarica("sql") }, "Scarica script SQL con i dati"),
+      el("button", { onclick: () => scarica("sqlite") }, "Scarica database .sqlite con i dati"),
+      el("button", { onclick: () => scarica("schema") }, "Solo lo schema (SQL)")));
 }
 
 // lo stato dell'editor della pagina Editor del database: le variabili globali (si salvano nel progetto)
@@ -1597,7 +1683,9 @@ const VISTE = {
         el("button", { onclick: () => scaricaBlob(new Blob([Editor.sql(M(), E.regole(), E.dialetto())], { type: "application/sql" }), "database.sql") }, "Scarica SQL"),
         el("button", { onclick: () => E.diagramma && conAttesa(async () => scaricaBlob(await E.diagramma.png(), "database.png")) }, "Scarica PNG"))),
       E.statoCollega, E.avvisiBox,
+      stato.caricato ? importaDalDatabase(E) : null,
       el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
+      scaricaDatabaseEditor(E),
       el("h3", {}, "Codice SQL generato"),
       E.anteprima,
     ];

@@ -487,3 +487,6 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 
 .diagramma-azione { margin: 12px 0; }
 .diagramma-azione .legenda-azione { font-size: 12.5px; margin: 0 0 6px; }
+.scelta-import { display: flex; flex-wrap: wrap; gap: 4px 16px; max-height: 180px; overflow: auto; }
+.scelta-import:empty { display: none; }
+.scelta-import label { display: inline-flex; gap: 4px; align-items: center; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }

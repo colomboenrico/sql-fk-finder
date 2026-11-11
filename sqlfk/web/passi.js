@@ -29,7 +29,7 @@ function cercaTabella(nomi, alScelto, { iniziale = "", segnaposto = "cerca una t
     proposte.replaceChildren(...(campo.value.trim() ? [
       ...T.slice(0, 40).map(n => el("a", { href: "#", class: "chip", onclick: e => { e.preventDefault(); campo.value = n; proposte.replaceChildren(); alScelto(n); } }, n)),
       T.length > 40 ? el("span", { class: "tenue" }, ` e altre ${T.length - 40}: scrivi di più`) : null,
-      !T.length ? el("span", { class: "tenue" }, "Nessuna tabella con questo nome.") : null] : []));
+      !T.length ? el("span", { class: "tenue" }, "Nessuna tabella con questo nome.") : null].filter(Boolean) : []));
   };
   campo.addEventListener("input", disegna);
   campo.addEventListener("keydown", e => {
