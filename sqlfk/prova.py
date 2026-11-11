@@ -346,8 +346,12 @@ SQLITE_HPP = r'''// Generato da SQL FK Finder: la parte dell'API di SQLite usata
 #include <stdexcept>
 #include <string>
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -724,7 +728,7 @@ def genera_cpp():
                           "c++ -std=c++17 -O1 main.cpp -lsqlite3 -o backend\n",
             "compila.bat": "@echo off\r\nrem Compila il backend su Windows. SQLite non serve: si usa winsqlite3.dll di Windows 10 e 11.\r\n"
                            "rem Con MSYS2 / MinGW (g++ nel PATH):\r\n"
-                           "where g++ >nul 2>nul && (g++ -std=c++17 -O1 -static main.cpp -o backend.exe & goto fine)\r\n"
+                           "where g++ >nul 2>nul && (g++ -std=c++17 -O1 -static -s main.cpp -o backend.exe & goto fine)\r\n"
                            "rem Con Visual Studio: aprire il \"Developer Command Prompt\" e lanciare questo file\r\n"
                            "cl /nologo /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe\r\n:fine\r\n",
             "LEGGIMI.txt": "Backend C++ generato da SQL FK Finder dal database di prova.\n\n"
@@ -791,7 +795,7 @@ def compila():
         comando = ["cmd", "/c", "compila_msvc.bat"]
         mostrato = f"Visual Studio ({arch}): cl /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe"
     elif os.name == "nt":                                # MinGW / LLVM: SQLite si carica all'avvio, -static per non dipendere dalle sue DLL
-        comando = [cc, "-std=c++17", "-O1", "-static", "main.cpp", "-o", eseguibile.name]
+        comando = [cc, "-std=c++17", "-O1", "-static", "-s", "main.cpp", "-o", eseguibile.name]
         mostrato = " ".join(comando)
     else:
         comando = [cc, "-std=c++17", "-O1", "main.cpp", "-lsqlite3", "-o", eseguibile.name]
