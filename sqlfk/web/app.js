@@ -930,28 +930,93 @@ function creaEditor(S) {
     M().relazioni.forEach(r => { if (r.tipo === "N:M" && pos[r.nome]) [r.x, r.y] = pos[r.nome]; });
   }
 
-  // Collega: si clicca la tabella che riceve la chiave esterna (lato molti), poi quella a cui punta
+  // Collega: si trascina il pallino "+" di una tabella sull'altra, oppure Collega due tabelle e due clic (in qualsiasi ordine).
+  // Poi un riquadro chiede, con frasi semplici, come sono collegate.
   let collega = null;                       // null = spento; {} = aspetta la prima tabella; {primo} = aspetta la seconda
   const statoCollega = el("span", { class: "stato-collega" });
-  const pulsanteCollega = el("button", { title: "Collega due tabelle: clicca prima quella che riceve la chiave esterna (lato molti), poi quella a cui punta" }, "Collega due tabelle");
+  const pulsanteCollega = el("button", { title: "Clicca le due tabelle da collegare, in qualsiasi ordine (oppure trascina il + di una tabella sull'altra)" }, "Collega due tabelle");
   function aggiornaCollega() {
     pulsanteCollega.classList.toggle("primario", !!collega);
     pulsanteCollega.textContent = collega ? "Annulla il collegamento" : "Collega due tabelle";
-    statoCollega.textContent = !collega ? "" : collega.primo
-      ? `${Editor.entitaDi(M(), collega.primo)?.nome}: ora clicca la tabella a cui punta (lato uno).`
-      : "Clicca la tabella che riceve la chiave esterna (lato molti).";
+    statoCollega.textContent = !collega ? "Per collegare due entità trascina il + di una sull'altra." : collega.primo
+      ? `${Editor.entitaDi(M(), collega.primo)?.nome}: ora clicca la seconda tabella.`
+      : "Clicca la prima delle due tabelle da collegare.";
   }
+  aggiornaCollega();
   pulsanteCollega.addEventListener("click", () => { collega = collega ? null : {}; aggiornaCollega(); });
   function cliccaPerCollegare(nome) {
     const e = nome ? M().entita.find(x => x.nome === nome) : null;
     if (!e) { avviso("Clicca un'entità (non una tabella ponte).", true); return; }
     if (!collega.primo) { collega.primo = e.id; aggiornaCollega(); return; }
-    const r = Editor.aggiungiRelazione(M(), { da: collega.primo, a: e.id, tipo: "1:N", obbligatoria: false });
+    const primo = collega.primo;
     collega = null;
     aggiornaCollega();
-    S.selezione = r.id;                       // si apre il riquadro della relazione: nome, cardinalità
-    ridisegna();
-    avviso("Relazione creata: dagli un nome e scegli la cardinalità nel riquadro.");
+    chiediRelazione(primo, e.id);
+  }
+
+  /** Il riquadro della nuova relazione tra due entità: nome (il verbo nel rombo) e come sono collegate, in parole. */
+  function chiediRelazione(idA, idB) {
+    const A = Editor.entitaDi(M(), idA), B = Editor.entitaDi(M(), idB);
+    if (!A || !B) return;
+    cornice.querySelector(".nuova-relazione")?.remove();
+    const stessa = A === B;
+    const verbo = el("input", { type: "text", class: "largo", placeholder: "per esempio: effettua, contiene, appartiene a", "aria-label": "Nome della relazione" });
+    const scelte = [
+      { valore: "AB", tipo: "1:N", figlia: A, padre: B, testo: `Ogni ${A.nome} ha un solo ${B.nome}; un ${B.nome} ha molti ${A.nome}`,
+        nota: `uno a molti: ${A.nome} riceve la chiave esterna verso ${B.nome}` },
+      { valore: "BA", tipo: "1:N", figlia: B, padre: A, testo: `Ogni ${B.nome} ha un solo ${A.nome}; un ${A.nome} ha molti ${B.nome}`,
+        nota: `uno a molti: ${B.nome} riceve la chiave esterna verso ${A.nome}` },
+      { valore: "11", tipo: "1:1", figlia: A, padre: B, testo: `Ogni ${A.nome} ha al massimo un ${B.nome}, e viceversa`,
+        nota: `uno a uno: chiave esterna UNIQUE in ${A.nome}` },
+      ...(stessa ? [] : [{ valore: "NM", tipo: "N:M", figlia: A, padre: B, testo: `Ogni ${A.nome} ha molti ${B.nome}; ogni ${B.nome} ha molti ${A.nome}`,
+        nota: `molti a molti: si crea la tabella ponte ${A.nome}_${B.nome}` }]),
+    ];
+    if (stessa) { scelte[0].testo = `Ogni ${A.nome} può avere un ${A.nome} «padre»; un ${A.nome} ne ha molti «figli»`; scelte[0].nota = "gerarchia (relazione con se stessa)"; scelte.splice(1, 1); }
+    let scelta = scelte[0];
+    const obbl = el("input", { type: "checkbox" });
+    const testoObbl = el("span");
+    const anteprimaR = el("div", { class: "anteprima-relazione" });
+    const aggiornaR = () => {
+      testoObbl.textContent = scelta.tipo === "N:M" ? "" : ` obbligatoria: ogni ${scelta.figlia.nome} deve avere un ${scelta.padre.nome}`;
+      obbl.parentElement.hidden = scelta.tipo === "N:M";
+      const cf = scelta.tipo === "N:M" ? "(0,N)" : obbl.checked ? "(1,1)" : "(0,1)";
+      const cp = scelta.tipo === "N:M" ? "(0,N)" : scelta.tipo === "1:1" ? "(0,1)" : "(0,N)";
+      anteprimaR.textContent = `Nello schema E-R: ${scelta.figlia.nome} ${cf} ◇ ${verbo.value.trim() || "relazione"} ◇ ${cp} ${scelta.padre.nome}.`;
+    };
+    const opzioniR = el("div", { class: "scelte-cardinalita" }, scelte.map((x, i) => {
+      const radio = el("input", { type: "radio", name: "cardinalita-nuova", checked: i === 0 });
+      radio.addEventListener("change", () => { scelta = x; aggiornaR(); });
+      return el("label", {}, radio, el("span", {}, x.testo), el("span", { class: "nota" }, x.nota));
+    }));
+    verbo.addEventListener("input", aggiornaR);
+    obbl.addEventListener("change", aggiornaR);
+    const chiudi = () => { riquadro.remove(); document.removeEventListener("keydown", tasti); };
+    const crea = () => {
+      const r = Editor.aggiungiRelazione(M(), { da: scelta.figlia.id, a: scelta.padre.id, tipo: scelta.tipo,
+        obbligatoria: scelta.tipo !== "N:M" && obbl.checked, verbo: verbo.value.trim(),
+        nome: scelta.tipo === "N:M" ? `${scelta.figlia.nome}_${scelta.padre.nome}` : undefined });
+      if (r.tipo === "N:M") {
+        r.verbo = verbo.value.trim();
+        if (isFinite(A.x) && isFinite(B.x)) { r.x = Math.round((A.x + B.x) / 2); r.y = Math.max(A.y, B.y) + 260; }
+      }
+      chiudi();
+      S.selezione = r.id;
+      ridisegna();
+      avviso(`Relazione creata tra ${A.nome} e ${B.nome}.`);
+    };
+    const tasti = ev => { if (ev.key === "Escape") chiudi(); if (ev.key === "Enter" && ev.target === verbo) crea(); };
+    document.addEventListener("keydown", tasti);
+    const riquadro = el("div", { class: "nuova-relazione" },
+      el("h4", {}, stessa ? `Relazione di ${A.nome} con se stessa` : `Come sono collegate ${A.nome} e ${B.nome}?`),
+      el("label", { class: "campo" }, "Nome della relazione (va nel rombo)", verbo),
+      opzioniR,
+      el("label", {}, obbl, testoObbl),
+      anteprimaR,
+      el("div", { class: "riga-comandi" }, el("button", { class: "primario", onclick: crea }, "Crea la relazione"),
+        el("button", { onclick: chiudi }, "Annulla")));
+    cornice.append(riquadro);
+    aggiornaR();
+    verbo.focus();
   }
 
   function ridisegna() {
@@ -962,6 +1027,10 @@ function creaEditor(S) {
       diagramma = DiagrammaER.crea(cornice, schema, {
         tipi: true, posizioni: posizioniModello(), vista: S.vista, selezionata: scelto,
         rombi: true, relazioneScelta: S.selezione,
+        collegabile: t => !!t.entita, onCollega: (da, a) => {
+          const A = M().entita.find(x => x.nome === da), B = M().entita.find(x => x.nome === a);
+          if (A && B) chiediRelazione(A.id, B.id); else avviso("Si collegano due entità (non le tabelle ponte).", true);
+        },
         onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
         onClic: nome => {
           if (collega) return cliccaPerCollegare(nome);
@@ -1009,7 +1078,8 @@ function creaEditor(S) {
       el("option", { value: "N:M" }, "N:M  molte per molte (tabella ponte)"));
     const obbl = el("input", { type: "checkbox", checked: true });
     const nomePonte = el("input", { type: "text", class: "largo", placeholder: "nome della tabella ponte (facoltativo)" });
-    return [
+    return el("details", { class: "modulo-relazione" }, el("summary", {}, el("b", {}, "Nuova relazione dal modulo")),
+      el("p", { class: "tenue" }, "Più semplice: trascina il + di un'entità sull'altra nel disegno."),
       el("h3", {}, "Nuova relazione"),
       el("label", { class: "campo" }, "Prima entità (per 1:N: quella dal lato molti, che riceve la chiave esterna)", da),
       el("label", { class: "campo" }, "Seconda entità (per 1:N: quella dal lato uno)", a),
@@ -1026,8 +1096,7 @@ function creaEditor(S) {
         }
         S.selezione = r.tipo === "N:M" ? r.id : da.value;
         ridisegna();
-      } }, "Crea relazione"),
-    ];
+      } }, "Crea relazione"));
   }
 
   function disegnaPannello() {

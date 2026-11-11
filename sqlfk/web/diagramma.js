@@ -271,6 +271,16 @@ const DiagrammaER = (() => {
           c.unique ? "UNIQUE" : null, c.not_null ? "NOT NULL" : "può essere NULL"].filter(Boolean).join(", ")}`;
         g.append(svgEl("rect", { x: 0, y, width: t.larghezza, height: RIGA, fill: "transparent", "data-colonna": c.nome }, suggerimento));
       });
+      if (opzioni.onCollega && opzioni.collegabile?.(t)) {
+        // il pallino per collegare: si trascina su un'altra tabella
+        const maniglia = svgEl("g", { class: "er-maniglia", "data-collega": t.nome, cursor: "crosshair",
+                                      transform: `translate(${t.larghezza - 14} ${TESTA / 2})` });
+        maniglia.append(svgEl("circle", { r: 8, fill: "#ffffff", stroke: "#ffffff", "stroke-width": 1.5, "fill-opacity": 0.95 }),
+          svgEl("path", { d: "M-4 0H4M0 -4V4", stroke: colore, "stroke-width": 2, "stroke-linecap": "round" }));
+        const s_ = svgEl("title"); s_.textContent = "Trascina su un'altra tabella per creare una relazione";
+        maniglia.append(s_);
+        g.append(maniglia);
+      }
       t.nodo = g;
       strTabelle.append(g);
     }
@@ -291,23 +301,35 @@ const DiagrammaER = (() => {
       l.puntoP = svgEl("circle", { r: 3, fill: stile.colore });
       l.cardF = svgEl("text", { "font-size": 10, "font-weight": 700, fill: stile.colore, "font-family": "Arial, sans-serif" });
       l.cardP = svgEl("text", { "font-size": 10, "font-weight": 700, fill: stile.colore, "font-family": "Arial, sans-serif" });
-      l.cardF.textContent = l.relazione === "1:1" ? "1" : "N";
-      l.cardP.textContent = l.relazione === "N:M" ? "N" : "1";
+      l.er = !!(opzioni.rombi && l.etichetta !== undefined);
+      if (l.er) {
+        // schema E-R: accanto a ogni entità la sua partecipazione (min,max). La figlia (chi ha la chiave esterna) partecipa
+        // al massimo una volta, almeno una se la relazione è obbligatoria; il padre da 0 a N volte (0 a 1 per 1:1).
+        l.cardF.textContent = l.relazione === "N:M" ? "(0,N)" : l.obbligatoria ? "(1,1)" : "(0,1)";
+        l.cardP.textContent = l.relazione === "N:M" ? "(0,N)" : l.relazione === "1:1" ? "(0,1)" : "(0,N)";
+        [l.cardF, l.cardP].forEach(n => { n.setAttribute("font-size", 11.5); n.setAttribute("paint-order", "stroke");
+          n.setAttribute("stroke", "#ffffff"); n.setAttribute("stroke-width", 3); n.setAttribute("fill", "#1d2330"); });
+      } else {
+        l.cardF.textContent = l.relazione === "1:1" ? "1" : "N";
+        l.cardP.textContent = l.relazione === "N:M" ? "N" : "1";
+      }
       strLinee.append(l.linea);
       strEtichette.append(l.puntoF, l.puntoP, l.cardF, l.cardP);
       if (opzioni.rombi && l.etichetta !== undefined) {
         // relazione come nello schema E-R: un rombo a metà del collegamento con il nome (vuoto: piccolo, da cliccare)
+        // il rombo dello schema E-R (notazione di Chen): sempre visibile, largo il doppio dell'altezza, con il nome dentro
         const testo = String(l.etichetta || "");
-        const w = testo ? Math.max(56, testo.length * 7 + 30) : 30, h = testo ? 30 : 18;
+        const w = Math.max(96, (testo || "nome?").length * 7.6 + 48), h = Math.round(w * 0.5);
         const scelta = opzioni.relazioneScelta && opzioni.relazioneScelta === l.id;
         l.rombo = svgEl("g", { class: "er-rombo", "data-relazione": l.id ?? "", cursor: "pointer" });
-        l.rombo.append(svgEl("polygon", { points: `0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`, fill: "#ffffff",
-          stroke: scelta ? "#ef6c00" : stile.colore, "stroke-width": scelta ? 2.5 : 1.4, "stroke-dasharray": testo ? null : "3 2" }));
-        const t = svgEl("text", { "text-anchor": "middle", y: 4, "font-size": testo ? 11 : 12, "font-weight": testo ? 700 : 400,
-          fill: testo ? "#1d2330" : "#8a94a3", "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
-        t.textContent = testo || "+";
+        l.rombo.append(svgEl("polygon", { points: `0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`, fill: scelta ? "#fff3e0" : "#fffdf5",
+          stroke: scelta ? "#ef6c00" : "#3b4352", "stroke-width": scelta ? 2.6 : 1.6 }));
+        const t = svgEl("text", { "text-anchor": "middle", y: 4, "font-size": 12, "font-weight": testo ? 700 : 400,
+          "font-style": testo ? null : "italic", fill: testo ? "#1d2330" : "#8a94a3", "font-family": "-apple-system, Segoe UI, Roboto, Arial, sans-serif" });
+        t.textContent = testo || "nome?";
         const suggerimento = svgEl("title");
-        suggerimento.textContent = testo ? `Relazione «${testo}» (${l.relazione}): clicca per modificarla` : "Clicca per dare un nome alla relazione";
+        suggerimento.textContent = (testo ? `Relazione «${testo}»` : "Relazione senza nome") +
+          ` (${l.relazione}${l.relazione !== "N:M" ? (l.obbligatoria ? ", obbligatoria" : ", facoltativa") : ""}): clicca per modificarla`;
         l.rombo.append(t, suggerimento);
         strEtichette.append(l.rombo);
       }
@@ -320,8 +342,9 @@ const DiagrammaER = (() => {
         l.linea.setAttribute("d", p.d);
         l.puntoF.setAttribute("cx", p.a.x); l.puntoF.setAttribute("cy", p.a.y);
         l.puntoP.setAttribute("cx", p.b.x); l.puntoP.setAttribute("cy", p.b.y);
-        l.cardF.setAttribute("x", p.a.x + (p.latoF === "destra" ? 6 : -14)); l.cardF.setAttribute("y", p.a.y - 4);
-        l.cardP.setAttribute("x", p.b.x + (p.latoP === "destra" ? 6 : -12)); l.cardP.setAttribute("y", p.b.y - 4);
+        const largo = l.er ? 34 : 0;          // "(0,N)" è più largo di "N"
+        l.cardF.setAttribute("x", p.a.x + (p.latoF === "destra" ? 6 : -14 - largo)); l.cardF.setAttribute("y", p.a.y - (l.er ? 6 : 4));
+        l.cardP.setAttribute("x", p.b.x + (p.latoP === "destra" ? 6 : -12 - largo)); l.cardP.setAttribute("y", p.b.y - (l.er ? 6 : 4));
         if (l.rombo) l.rombo.setAttribute("transform", `translate(${p.m.x} ${p.m.y})`);
       }
     }
@@ -389,7 +412,19 @@ const DiagrammaER = (() => {
       const r = svg.getBoundingClientRect();
       return { x: (e.clientX - r.left - vista.x) / vista.s, y: (e.clientY - r.top - vista.y) / vista.s };
     };
+    const tabellaNelPunto = p => tabelle.find(t => p.x >= t.x && p.x <= t.x + t.larghezza && p.y >= t.y && p.y <= t.y + t.altezza);
     svg.addEventListener("pointerdown", e => {
+      const maniglia = e.target.closest(".er-maniglia");
+      if (maniglia) {
+        const t = perNome[maniglia.dataset.collega];
+        const inizio = { x: t.x + t.larghezza - 14, y: t.y + TESTA / 2 };
+        const linea = svgEl("path", { fill: "none", stroke: "#ef6c00", "stroke-width": 2.2, "stroke-dasharray": "6 4", "pointer-events": "none" });
+        strEtichette.append(linea);
+        trascina = { tipo: "collega", t, inizio, linea, x0: e.clientX, y0: e.clientY };
+        svg.setPointerCapture(e.pointerId);
+        e.stopPropagation();
+        return;
+      }
       const rombo = e.target.closest(".er-rombo");
       if (rombo) {
         trascina = { tipo: "rombo", id: rombo.dataset.relazione, x0: e.clientX, y0: e.clientY };
@@ -416,6 +451,13 @@ const DiagrammaER = (() => {
         return;
       }
       if (trascina.tipo === "rombo") return;
+      if (trascina.tipo === "collega") {
+        const p = puntoMondo(e);
+        trascina.linea.setAttribute("d", `M ${trascina.inizio.x} ${trascina.inizio.y} L ${p.x} ${p.y}`);
+        const sotto = tabellaNelPunto(p);
+        tabelle.forEach(t => t.nodo.classList.toggle("er-bersaglio", t === sotto && t !== trascina.t));
+        return;
+      }
       if (trascina.tipo === "tabella") {
         const p = puntoMondo(e);
         trascina.t.x = p.x - trascina.dx; trascina.t.y = p.y - trascina.dy;
@@ -428,6 +470,15 @@ const DiagrammaER = (() => {
       }
     });
     const fine = e => {
+      if (trascina && trascina.tipo === "collega") {
+        trascina.linea.remove();
+        tabelle.forEach(t => t.nodo.classList.remove("er-bersaglio"));
+        const arrivo = e ? tabellaNelPunto(puntoMondo(e)) : null;
+        const da = trascina.t.nome;
+        trascina = null;
+        if (arrivo) opzioni.onCollega(da, arrivo.nome);
+        return;
+      }
       const fermo = trascina && e && Math.hypot(e.clientX - trascina.x0, e.clientY - trascina.y0) < 4;
       if (trascina && trascina.tipo === "rombo") {
         if (fermo && opzioni.onClicRelazione) opzioni.onClicRelazione(trascina.id);

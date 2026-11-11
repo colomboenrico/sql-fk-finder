@@ -59,7 +59,8 @@ const Editor = (() => {
       r.colonne_da = [];
       r.colonne_a = chiave(padre).map(k => k.nome);
       for (const k of chiave(padre)) {
-        const nomeCol = nomeColonnaFk(padre, k);
+        // con se stessa (gerarchia): una colonna nuova, per esempio id_categoria_padre, non la chiave stessa
+        const nomeCol = figlia === padre ? `${k.nome}_padre` : nomeColonnaFk(padre, k);
         let col = figlia.attributi.find(x => x.nome.toLowerCase() === nomeCol.toLowerCase());
         if (!col) {
           col = { nome: nomeCol, tipo: tipoChiaveEsterna(k.tipo), pk: false, nn: !!obbligatoria, uq: false };
