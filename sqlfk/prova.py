@@ -15,6 +15,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -333,14 +334,151 @@ def _modelli(T):
     return "\n".join(righe)
 
 
+SQLITE_HPP = r'''// Generato da SQL FK Finder: la parte dell'API di SQLite usata dal backend.
+// Mac e Linux: la libreria del sistema (#include <sqlite3.h>, si compila con -lsqlite3).
+// Windows (o con -DSQLFK_SQLITE_DINAMICO): SQLite si carica all'avvio da winsqlite3.dll (c'è già in Windows 10 e 11)
+// o da sqlite3.dll accanto al programma: non servono sqlite3.h né una libreria da collegare.
+#pragma once
+
+#if !defined(_WIN32) && !defined(SQLFK_SQLITE_DINAMICO)
+#include <sqlite3.h>
+#else
+#include <stdexcept>
+#include <string>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
+typedef struct sqlite3 sqlite3;
+typedef struct sqlite3_stmt sqlite3_stmt;
+typedef long long sqlite3_int64;
+#define SQLITE_OK 0
+#define SQLITE_ROW 100
+#define SQLITE_DONE 101
+#define SQLITE_NULL 5
+#define SQLITE_TRANSIENT ((void (*)(void*))-1)
+#if defined(_WIN32) && defined(_M_IX86)
+#define SQLFK_CC __stdcall               // winsqlite3.dll a 32 bit usa __stdcall
+#else
+#define SQLFK_CC
+#endif
+
+namespace sqlfk_sqlite {
+struct Api {
+    int (SQLFK_CC* open)(const char*, sqlite3**);
+    int (SQLFK_CC* close)(sqlite3*);
+    int (SQLFK_CC* exec)(sqlite3*, const char*, int (*)(void*, int, char**, char**), void*, char**);
+    void (SQLFK_CC* free_)(void*);
+    int (SQLFK_CC* prepare_v2)(sqlite3*, const char*, int, sqlite3_stmt**, const char**);
+    sqlite3_int64 (SQLFK_CC* last_insert_rowid)(sqlite3*);
+    int (SQLFK_CC* changes)(sqlite3*);
+    const char* (SQLFK_CC* errmsg)(sqlite3*);
+    int (SQLFK_CC* finalize)(sqlite3_stmt*);
+    int (SQLFK_CC* bind_int64)(sqlite3_stmt*, int, sqlite3_int64);
+    int (SQLFK_CC* bind_double)(sqlite3_stmt*, int, double);
+    int (SQLFK_CC* bind_text)(sqlite3_stmt*, int, const char*, int, void (*)(void*));
+    int (SQLFK_CC* bind_null)(sqlite3_stmt*, int);
+    int (SQLFK_CC* step)(sqlite3_stmt*);
+    int (SQLFK_CC* column_type)(sqlite3_stmt*, int);
+    sqlite3_int64 (SQLFK_CC* column_int64)(sqlite3_stmt*, int);
+    double (SQLFK_CC* column_double)(sqlite3_stmt*, int);
+    const unsigned char* (SQLFK_CC* column_text)(sqlite3_stmt*, int);
+};
+
+inline void* apri(const char* nome) {
+#ifdef _WIN32
+    return reinterpret_cast<void*>(LoadLibraryA(nome));
+#else
+    return dlopen(nome, RTLD_NOW);
+#endif
+}
+inline void* simbolo(void* lib, const char* nome) {
+#ifdef _WIN32
+    return reinterpret_cast<void*>(GetProcAddress(reinterpret_cast<HMODULE>(lib), nome));
+#else
+    return dlsym(lib, nome);
+#endif
+}
+
+inline const Api& api() {
+    static const Api a = [] {
+#if defined(_WIN32) && defined(_M_IX86)
+        const char* nomi[] = {"winsqlite3.dll"};
+#elif defined(_WIN32)
+        const char* nomi[] = {"sqlite3.dll", "winsqlite3.dll"};      // prima quella accanto al programma, se c'è
+#elif defined(__APPLE__)
+        const char* nomi[] = {"libsqlite3.dylib", "/usr/lib/libsqlite3.dylib"};
+#else
+        const char* nomi[] = {"libsqlite3.so.0", "libsqlite3.so"};
+#endif
+        void* lib = nullptr;
+        for (const char* n : nomi)
+            if ((lib = apri(n))) break;
+        if (!lib) throw std::runtime_error("SQLite non trovato: serve winsqlite3.dll (Windows 10 e 11) o sqlite3.dll accanto al programma");
+        Api x{};
+        auto carica = [&](auto& campo, const char* nome) {
+            campo = reinterpret_cast<std::remove_reference_t<decltype(campo)>>(simbolo(lib, nome));
+            if (!campo) throw std::runtime_error(std::string("SQLite senza la funzione ") + nome);
+        };
+        carica(x.open, "sqlite3_open");
+        carica(x.close, "sqlite3_close");
+        carica(x.exec, "sqlite3_exec");
+        carica(x.free_, "sqlite3_free");
+        carica(x.prepare_v2, "sqlite3_prepare_v2");
+        carica(x.last_insert_rowid, "sqlite3_last_insert_rowid");
+        carica(x.changes, "sqlite3_changes");
+        carica(x.errmsg, "sqlite3_errmsg");
+        carica(x.finalize, "sqlite3_finalize");
+        carica(x.bind_int64, "sqlite3_bind_int64");
+        carica(x.bind_double, "sqlite3_bind_double");
+        carica(x.bind_text, "sqlite3_bind_text");
+        carica(x.bind_null, "sqlite3_bind_null");
+        carica(x.step, "sqlite3_step");
+        carica(x.column_type, "sqlite3_column_type");
+        carica(x.column_int64, "sqlite3_column_int64");
+        carica(x.column_double, "sqlite3_column_double");
+        carica(x.column_text, "sqlite3_column_text");
+        return x;
+    }();
+    return a;
+}
+}  // namespace sqlfk_sqlite
+
+inline int sqlite3_open(const char* f, sqlite3** db) { return sqlfk_sqlite::api().open(f, db); }
+inline int sqlite3_close(sqlite3* db) { return sqlfk_sqlite::api().close(db); }
+inline int sqlite3_exec(sqlite3* db, const char* sql, int (*cb)(void*, int, char**, char**), void* p, char** err) { return sqlfk_sqlite::api().exec(db, sql, cb, p, err); }
+inline void sqlite3_free(void* p) { sqlfk_sqlite::api().free_(p); }
+inline int sqlite3_prepare_v2(sqlite3* db, const char* sql, int n, sqlite3_stmt** st, const char** resto) { return sqlfk_sqlite::api().prepare_v2(db, sql, n, st, resto); }
+inline sqlite3_int64 sqlite3_last_insert_rowid(sqlite3* db) { return sqlfk_sqlite::api().last_insert_rowid(db); }
+inline int sqlite3_changes(sqlite3* db) { return sqlfk_sqlite::api().changes(db); }
+inline const char* sqlite3_errmsg(sqlite3* db) { return sqlfk_sqlite::api().errmsg(db); }
+inline int sqlite3_finalize(sqlite3_stmt* st) { return sqlfk_sqlite::api().finalize(st); }
+inline int sqlite3_bind_int64(sqlite3_stmt* st, int i, sqlite3_int64 v) { return sqlfk_sqlite::api().bind_int64(st, i, v); }
+inline int sqlite3_bind_double(sqlite3_stmt* st, int i, double v) { return sqlfk_sqlite::api().bind_double(st, i, v); }
+inline int sqlite3_bind_text(sqlite3_stmt* st, int i, const char* v, int n, void (*d)(void*)) { return sqlfk_sqlite::api().bind_text(st, i, v, n, d); }
+inline int sqlite3_bind_null(sqlite3_stmt* st, int i) { return sqlfk_sqlite::api().bind_null(st, i); }
+inline int sqlite3_step(sqlite3_stmt* st) { return sqlfk_sqlite::api().step(st); }
+inline int sqlite3_column_type(sqlite3_stmt* st, int i) { return sqlfk_sqlite::api().column_type(st, i); }
+inline sqlite3_int64 sqlite3_column_int64(sqlite3_stmt* st, int i) { return sqlfk_sqlite::api().column_int64(st, i); }
+inline double sqlite3_column_double(sqlite3_stmt* st, int i) { return sqlfk_sqlite::api().column_double(st, i); }
+inline const unsigned char* sqlite3_column_text(sqlite3_stmt* st, int i) { return sqlfk_sqlite::api().column_text(st, i); }
+#endif
+'''
+
+
 DATABASE_HPP = r'''// Generato da SQL FK Finder: collegamento a SQLite e funzioni per leggere e scrivere i valori.
 #pragma once
 
-#include <sqlite3.h>
+#include "sqlite.hpp"
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 class Database {
 public:
@@ -475,7 +613,9 @@ def _main(T):
          "//   backend <database.sqlite> <operazione> <tabella> [colonna=valore ...]",
          "//   operazioni: tutti, trova, inserisci, aggiorna, elimina. Il valore \\N vuol dire NULL.",
          "// Risponde con una riga JSON: {\"ok\": true/false, \"messaggio\": ..., \"righe\": [...]}.",
-         '#include "repository.hpp"', "", "#include <iostream>", "#include <map>", "#include <sstream>", "",
+         "//   oppure: backend <database.sqlite>  e sullo standard input, in UTF-8: operazione, tabella, poi colonna=valore",
+         "//   una per riga (\\n e \\\\ dentro i valori). Così su Windows passano anche gli accenti.",
+         '#include "repository.hpp"', "", "#include <cstdio>", "#include <iostream>", "#include <map>", "#include <sstream>", "",
          "using Valori = std::map<std::string, std::string>;", "",
          "static std::string json(const std::string& s) {",
          "    std::ostringstream o; o << '\"';",
@@ -534,11 +674,31 @@ def _main(T):
                   "        return \"{\\\"ok\\\":true,\\\"messaggio\\\":\\\"elimina(): \" + std::string(fatto ? \"eliminata\" : \"nessuna riga con questa chiave\") + \"\\\",\\\"righe\\\":[]}\";",
                   "    }"]
         r += ["    return \"{\\\"ok\\\":false,\\\"messaggio\\\":\\\"operazione non disponibile per questa tabella\\\"}\";", "}", ""]
-    r += ["int main(int argc, char** argv) {",
-          "    if (argc < 4) { std::cout << \"{\\\"ok\\\":false,\\\"messaggio\\\":\\\"uso: backend database.sqlite operazione tabella [colonna=valore ...]\\\"}\" << std::endl; return 2; }",
+    r += ["static std::string decodifica(const std::string& s) {",
+          "    std::string o;",
+          "    for (size_t i = 0; i < s.size(); ++i) {",
+          "        if (s[i] == '\\\\' && i + 1 < s.size() && (s[i + 1] == 'n' || s[i + 1] == '\\\\')) { o += s[i + 1] == 'n' ? '\\n' : '\\\\'; ++i; }",
+          "        else o += s[i];",
+          "    }",
+          "    return o;",
+          "}", "",
+          "int main(int argc, char** argv) {",
+          "    if (argc < 2) { std::cout << \"{\\\"ok\\\":false,\\\"messaggio\\\":\\\"uso: backend database.sqlite operazione tabella [colonna=valore ...]\\\"}\" << std::endl; return 2; }",
           "    Valori v;",
-          "    for (int i = 4; i < argc; ++i) { std::string a = argv[i]; auto p = a.find('='); if (p != std::string::npos) v[a.substr(0, p)] = a.substr(p + 1); }",
-          "    const std::string op = argv[2], tabella = argv[3];",
+          "    std::string op, tabella;",
+          "    auto aggiungi = [&](std::string a) {",
+          "        if (!a.empty() && a.back() == '\\r') a.pop_back();",
+          "        auto p = a.find('='); if (p != std::string::npos) v[a.substr(0, p)] = decodifica(a.substr(p + 1));",
+          "    };",
+          "    if (argc >= 4) {",
+          "        op = argv[2]; tabella = argv[3];",
+          "        for (int i = 4; i < argc; ++i) aggiungi(argv[i]);",
+          "    } else {                              // richiesta dallo standard input (la usa l'app)",
+          "        std::string riga;",
+          "        if (std::getline(std::cin, op) && !op.empty() && op.back() == '\\r') op.pop_back();",
+          "        if (std::getline(std::cin, tabella) && !tabella.empty() && tabella.back() == '\\r') tabella.pop_back();",
+          "        while (std::getline(std::cin, riga)) aggiungi(riga);",
+          "    }",
           "    try {", "        Database db(argv[1]);"]
     for t in T:
         r.append(f"        if (tabella == \"{_c(t['nome'])}\") {{ std::cout << esegui_{identificatore(t['nome'])}(db, op, v) << std::endl; return 0; }}")
@@ -559,16 +719,22 @@ def genera_cpp():
     if not S["esiste"] or not S["tabelle"]:
         raise ErroreProva("Prima crea il database di prova: il codice C++ si genera dalle sue tabelle.")
     T = [_descrivi(t) for t in S["tabelle"]]
-    file = {"modelli.hpp": _modelli(T), "database.hpp": DATABASE_HPP, "repository.hpp": _repository(T), "main.cpp": _main(T),
+    file = {"modelli.hpp": _modelli(T), "sqlite.hpp": SQLITE_HPP, "database.hpp": DATABASE_HPP, "repository.hpp": _repository(T), "main.cpp": _main(T),
             "compila.sh": "#!/bin/sh\n# compila il backend (serve un compilatore C++17 e la libreria sqlite3)\n"
                           "c++ -std=c++17 -O1 main.cpp -lsqlite3 -o backend\n",
+            "compila.bat": "@echo off\r\nrem Compila il backend su Windows. SQLite non serve: si usa winsqlite3.dll di Windows 10 e 11.\r\n"
+                           "rem Con MSYS2 / MinGW (g++ nel PATH):\r\n"
+                           "where g++ >nul 2>nul && (g++ -std=c++17 -O1 -static main.cpp -o backend.exe & goto fine)\r\n"
+                           "rem Con Visual Studio: aprire il \"Developer Command Prompt\" e lanciare questo file\r\n"
+                           "cl /nologo /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe\r\n:fine\r\n",
             "LEGGIMI.txt": "Backend C++ generato da SQL FK Finder dal database di prova.\n\n"
                            "modelli.hpp     una classe per tabella con getter e setter\n"
                            "repository.hpp  per ogni tabella: inserisci, aggiorna, elimina, trova, tutti (SQLite)\n"
                            "database.hpp    collegamento a SQLite\n"
                            "main.cpp        programma di prova: ./backend prova.sqlite tutti clienti\n\n"
-                           "Compilare: sh compila.sh  (Mac: Xcode Command Line Tools; Linux: g++ e libsqlite3-dev;\n"
-                           "Windows: MSYS2 con mingw-w64 e sqlite3)\n"}
+                           "Compilare: sh compila.sh  (Mac: Xcode Command Line Tools; Linux: g++ e libsqlite3-dev)\n"
+                           "Windows: compila.bat (MSYS2/MinGW, oppure Visual Studio dal Developer Command Prompt):\n"
+                           "SQLite si carica da winsqlite3.dll di Windows 10 e 11, o da sqlite3.dll accanto a backend.exe.\n"}
     if CARTELLA_CPP.exists():
         shutil.rmtree(CARTELLA_CPP)
     CARTELLA_CPP.mkdir(parents=True)
@@ -577,28 +743,65 @@ def genera_cpp():
     return {"file": file, "cartella": str(CARTELLA_CPP), "tabelle": len(T)}
 
 
+def visual_studio():
+    """vcvarsall.bat di Visual Studio (o dei Build Tools) con il compilatore C++, cercato con vswhere: None se non c'è."""
+    vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.exists():
+        return None
+    try:
+        r = subprocess.run([str(vswhere), "-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                            "-property", "installationPath"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for riga in r.stdout.splitlines():
+        bat = Path(riga.strip()) / "VC" / "Auxiliary" / "Build" / "vcvarsall.bat"
+        if bat.exists():
+            return bat
+    return None
+
+
 def compilatore():
+    """("gcc", percorso) per g++/clang++/c++, ("msvc", vcvarsall.bat) per Visual Studio su Windows, oppure None."""
     for nome in ("c++", "clang++", "g++"):
         trovato = shutil.which(nome)
         if trovato:
-            return trovato
+            return "gcc", trovato
+    if os.name == "nt":
+        bat = visual_studio()
+        if bat:
+            return "msvc", bat
     return None
 
 
 def compila():
-    if not (CARTELLA_CPP / "main.cpp").exists():
-        genera_cpp()
-    cc = compilatore()
-    if not cc:
-        return {"ok": False, "uscita": "Nessun compilatore C++ trovato (c++, clang++ o g++). Sul Mac: xcode-select --install; "
-                                      "su Linux: il pacchetto g++ e libsqlite3-dev. Il codice si può comunque scaricare."}
+    genera_cpp()                                         # sempre il codice delle tabelle di adesso
+    trovato = compilatore()
+    if not trovato:
+        aiuto = ("Su Windows installa gli \"Strumenti di compilazione per Visual Studio\" (gratis, con \"Sviluppo di applicazioni desktop "
+                 "con C++\") oppure MSYS2 con mingw-w64 (g++), poi riprova." if os.name == "nt" else
+                 "Sul Mac: xcode-select --install; su Linux: il pacchetto g++ e libsqlite3-dev.")
+        return {"ok": False, "uscita": f"Nessun compilatore C++ trovato. {aiuto} Il codice si può comunque scaricare."}
+    genere, cc = trovato
     eseguibile = CARTELLA_CPP / ("backend.exe" if os.name == "nt" else "backend")
-    comando = [cc, "-std=c++17", "-O1", "main.cpp", "-lsqlite3", "-o", eseguibile.name]
+    eseguibile.unlink(missing_ok=True)
+    if genere == "msvc":
+        arch = {"AMD64": "x64", "ARM64": "arm64", "x86": "x86"}.get(os.environ.get("PROCESSOR_ARCHITECTURE", "AMD64"), "x64")
+        (CARTELLA_CPP / "compila_msvc.bat").write_text(
+            f'@echo off\r\ncall "{cc}" {arch} >nul\r\ncl /nologo /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe\r\n', encoding="utf-8")
+        comando = ["cmd", "/c", "compila_msvc.bat"]
+        mostrato = f"Visual Studio ({arch}): cl /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe"
+    elif os.name == "nt":                                # MinGW / LLVM: SQLite si carica all'avvio, -static per non dipendere dalle sue DLL
+        comando = [cc, "-std=c++17", "-O1", "-static", "main.cpp", "-o", eseguibile.name]
+        mostrato = " ".join(comando)
+    else:
+        comando = [cc, "-std=c++17", "-O1", "main.cpp", "-lsqlite3", "-o", eseguibile.name]
+        mostrato = " ".join(comando)
     try:
-        r = subprocess.run(comando, cwd=CARTELLA_CPP, capture_output=True, text=True, timeout=180)
+        r = subprocess.run(comando, cwd=CARTELLA_CPP, capture_output=True, timeout=300)
     except subprocess.TimeoutExpired:
-        return {"ok": False, "uscita": "La compilazione ci mette troppo (più di 3 minuti)."}
-    return {"ok": r.returncode == 0, "comando": " ".join(str(x) for x in comando), "uscita": (r.stdout + r.stderr).strip()[-8000:]}
+        return {"ok": False, "uscita": "La compilazione ci mette troppo (più di 5 minuti)."}
+    uscita = (r.stdout + r.stderr).decode("utf-8", errors="replace").strip()
+    return {"ok": r.returncode == 0 and eseguibile.exists(), "comando": mostrato, "uscita": uscita[-8000:]}
 
 
 def esegui(operazione, tabella, valori=None):
@@ -606,19 +809,27 @@ def esegui(operazione, tabella, valori=None):
     eseguibile = CARTELLA_CPP / ("backend.exe" if os.name == "nt" else "backend")
     if not eseguibile.exists():
         raise ErroreProva("Prima compila il backend C++.")
-    argomenti = [str(eseguibile), str(DATABASE), str(operazione), str(tabella)]
     # solo i campi scritti: con aggiorna gli altri restano come sono; \N vuol dire NULL
-    argomenti += [f"{k}={v}" for k, v in (valori or {}).items() if v is not None and str(v) != ""]
+    campi = [(k, str(v)) for k, v in (valori or {}).items() if v is not None and str(v) != ""]
+    # la richiesta va sullo standard input in UTF-8: su Windows gli argomenti della riga di comando perderebbero gli accenti
+    codifica = lambda v: v.replace("\\", "\\\\").replace("\r", "").replace("\n", "\\n") if v != NULL else v
+    richiesta = "\n".join([str(operazione), str(tabella), *(f"{k}={codifica(v)}" for k, v in campi)]) + "\n"
     try:
-        r = subprocess.run(argomenti, capture_output=True, text=True, timeout=30)
+        ambiente = dict(os.environ)
+        if os.name == "nt":                  # sqlite3.dll del Python dell'app, se Windows non ha winsqlite3.dll (prima di Windows 10)
+            ambiente["PATH"] = os.pathsep.join([str(Path(sys.base_prefix) / "DLLs"), sys.base_prefix, ambiente.get("PATH", "")])
+        r = subprocess.run([str(eseguibile), str(DATABASE)], input=richiesta.encode("utf-8"), capture_output=True, timeout=30,
+                           cwd=CARTELLA_CPP, env=ambiente)
     except subprocess.TimeoutExpired:
         raise ErroreProva("Il backend non risponde (più di 30 secondi).")
-    uscita = r.stdout.strip().splitlines()
+    stdout, stderr = r.stdout.decode("utf-8", errors="replace"), r.stderr.decode("utf-8", errors="replace")
+    uscita = stdout.strip().splitlines()
     try:
-        risposta = json.loads(uscita[-1]) if uscita else {"ok": False, "messaggio": r.stderr.strip() or "nessuna risposta"}
+        risposta = json.loads(uscita[-1]) if uscita else {"ok": False, "messaggio": stderr.strip() or "nessuna risposta"}
     except json.JSONDecodeError:
-        risposta = {"ok": False, "messaggio": r.stdout.strip()[-2000:] or r.stderr.strip()[-2000:]}
-    risposta["comando"] = " ".join(["./backend", "prova.sqlite", *argomenti[2:]])
+        risposta = {"ok": False, "messaggio": stdout.strip()[-2000:] or stderr.strip()[-2000:]}
+    risposta["comando"] = " ".join([".\\backend.exe" if os.name == "nt" else "./backend", "prova.sqlite", str(operazione), str(tabella),
+                                    *(f"{k}={v}" for k, v in campi)])
     return risposta
 
 
@@ -628,7 +839,7 @@ def zip_cpp():
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(CARTELLA_CPP.iterdir()):
-            if f.suffix in (".hpp", ".cpp", ".sh", ".txt"):
+            if f.suffix in (".hpp", ".cpp", ".sh", ".bat", ".txt") and f.name != "compila_msvc.bat":
                 z.write(f, f"backend_cpp/{f.name}")
         if DATABASE.exists():
             z.write(DATABASE, "backend_cpp/prova.sqlite")
