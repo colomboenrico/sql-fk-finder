@@ -34,6 +34,7 @@ from . import asp as ASP
 from . import controllo as CTRL
 from . import descrizione as DESCR
 from . import ascolto as AS
+from . import prova as PR
 from . import esplora as ESP
 from . import estensioni as EXT
 from . import finestre as FIN
@@ -1030,7 +1031,7 @@ class Sessione:
             testo = testo.replace("\\", "\\\\")
         return f"N'{testo}'" if dialetto == "tsql" and not testo.isascii() else f"'{testo}'"
 
-    def righe_editor(self, voce):
+    def righe_editor(self, voce, limite=None):
         """(colonne nuove, generatore di blocchi di righe) per una voce della mappa: le colonne di origine che ci sono ancora."""
         db = self.database()
         t = db.tabella_di(voce["origine"])
@@ -1041,14 +1042,17 @@ class Sessione:
         coppie = [(str(n), str(o)) for n, o in voce["colonne"] if str(o) in presenti]
 
         def blocchi():
-            ultimo = 0
-            while coppie:
+            ultimo, date = 0, 0
+            while coppie and (limite is None or date < limite):
                 with self.lock_db:
                     righe = db.conn.execute(f"SELECT rowid, {', '.join(QY.q(o) for _, o in coppie)} FROM {QY.q(t)} WHERE rowid > ? "
                                             f"ORDER BY rowid LIMIT 2000", (ultimo,)).fetchall()
                 if not righe:
                     return
                 ultimo = righe[-1][0]
+                if limite is not None:
+                    righe = righe[:limite - date]
+                date += len(righe)
                 yield [r[1:] for r in righe]
         return [n for n, _ in coppie], blocchi()
 
@@ -1101,7 +1105,7 @@ class Sessione:
                 except Exception:
                     pass                  # la tabella si crea comunque sotto, con le sole colonne, se servono i dati
             for voce in self.ordine_mappa(E["sql"], E["mappa"]):
-                colonne, blocchi = self.righe_editor(voce)
+                colonne, blocchi = self.righe_editor(voce, E.get("limite"))
                 if not colonne:
                     continue
                 q = QY.q
@@ -1112,6 +1116,49 @@ class Sessione:
             conn.commit()
             conn.close()
             return file.read_bytes()
+
+    # ------------------------------------------------------------ database di prova dell'editor e backend C++ (sqlfk.prova)
+    def percorso_caricato(self, da_tabella, da_colonna, valore, a_tabella):
+        """Da un dato a un altro direttamente sul database caricato (anche enorme): tutte le tabelle, le chiavi dichiarate e
+        quelle trovate dall'analisi, i dati del database delle query (con gli indici che servono alle JOIN)."""
+        db = self.database()
+        struttura = self.struttura_collegamenti()
+        nomi = {t["nome"] for t in struttura["tabelle"]}
+        for t in (da_tabella, a_tabella):
+            if t not in nomi or not db.tabella_di(t):
+                raise Errore(f"Tabella non trovata nei dati: {t}")
+        collegamenti = [{"da": l["da"], "a": l["a"], "colonne_da": l["colonne_da"], "colonne_a": l["colonne_a"],
+                         "tipo": "dichiarata" if l["tipo"] == "dichiarata" else f"trovata, {l['tipo']}"}
+                        for l in struttura["collegamenti"] if db.tabella_di(l["da"]) and db.tabella_di(l["a"])]
+        with self.lock_db:
+            return PR.percorso_su(db.conn, collegamenti, da_tabella, da_colonna, valore, a_tabella, nome_db=db.tabella_di)
+
+    def prova(self, comando, dati):
+        try:
+            if comando == "crea":
+                mappa = [m for m in (dati.get("mappa") or []) if isinstance(m, dict)] if dati.get("con_dati") else []
+                limite = int(dati.get("limite") or 0) or None      # righe per tabella (database enormi)
+                E = {"sql": str(dati.get("sql") or ""), "mappa": mappa, "dialetto": str(dati.get("dialetto") or "mysql"), "limite": limite}
+                if not E["sql"].strip():
+                    raise Errore("L'editor è vuoto.")
+                return PR.crea(self.editor_sqlite(E))
+            if comando == "riga":
+                return PR.riga(dati.get("azione"), dati.get("tabella"), dati.get("valori"), dati.get("chiave"))
+            if comando == "query":
+                return PR.query(str(dati.get("sql") or ""))
+            if comando == "percorso":
+                if dati.get("dove") == "caricato":
+                    return self.percorso_caricato(dati.get("da_tabella"), dati.get("da_colonna"), dati.get("valore"), dati.get("a_tabella"))
+                return PR.percorso(dati.get("da_tabella"), dati.get("da_colonna"), dati.get("valore"), dati.get("a_tabella"))
+            if comando == "genera":
+                return PR.genera_cpp()
+            if comando == "compila":
+                return PR.compila()
+            if comando == "esegui":
+                return PR.esegui(dati.get("operazione"), dati.get("tabella"), dati.get("valori"))
+        except PR.ErroreProva as e:
+            raise Errore(str(e))
+        raise Errore(f"Comando sconosciuto: {comando}")
 
     # ------------------------------------------------------------ database senza le tabelle tolte, come cartella
     def proposta_cartella_senza_tolte(self):
@@ -1442,6 +1489,24 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
                                                                  json.loads(voce("colonne_a", "[]"))), blocca=False)
             return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
+        if percorso in ("/api/prova/struttura", "/api/prova/righe", "/api/scarica/prova_cpp", "/api/scarica/prova_sqlite"):
+            q = parse_qs(url.query)
+
+            def prova_get():
+                try:
+                    if percorso.endswith("struttura"):
+                        return PR.struttura()
+                    if percorso.endswith("righe"):
+                        return PR.righe(q.get("tabella", [""])[0], int(q.get("da", ["0"])[0] or 0), min(int(q.get("quanti", ["200"])[0] or 200), 1000),
+                                        q.get("cerca", [""])[0])
+                    if percorso.endswith("prova_cpp"):
+                        return (PR.zip_cpp(), "application/zip", {"Content-Disposition": 'attachment; filename="backend_cpp.zip"'})
+                    if not PR.DATABASE.exists():
+                        raise PR.ErroreProva("Prima crea il database di prova.")
+                    return (PR.DATABASE.read_bytes(), "application/vnd.sqlite3", {"Content-Disposition": 'attachment; filename="prova.sqlite"'})
+                except PR.ErroreProva as e:
+                    raise Errore(str(e))
+            return self.esegui(prova_get, blocca=False)
         if percorso == "/api/scarica/editor_database":
             formato = parse_qs(url.query).get("formato", ["sql"])[0]
 
@@ -1660,6 +1725,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
             "/api/verifica_dati": lambda: s.verifica_dati(bool(dati.get("medie", True))),
         }
+        if percorso.startswith("/api/prova/"):
+            return self.esegui(lambda: s.prova(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/ascolto/"):
             return self.esegui(lambda: s.ascolto_comando(percorso.rsplit("/", 1)[1], dati), blocca=False)
         lunghe = {

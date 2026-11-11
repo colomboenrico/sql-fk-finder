@@ -1755,6 +1755,7 @@ const VISTE = {
       stato.caricato ? importaDalDatabase(E) : null,
       el("div", { class: "editor-griglia" }, E.cornice, E.pannello),
       scaricaDatabaseEditor(E),
+      sezioneProva(E),
       el("h3", {}, "Codice SQL generato"),
       E.anteprima,
     ];

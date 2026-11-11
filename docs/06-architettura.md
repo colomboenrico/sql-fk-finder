@@ -74,6 +74,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/interfaccia.py` | dalle fotografie: classi, collegamento a tabelle e colonne, relazioni, verifica, racconto e mappa |
 | `sqlfk/ascolto.py` | ascolto del database: lettura del general log di MySQL, forme delle query, rumore, azioni, CRUD, valori, JOIN, collegamenti, specifica in Markdown |
 | `sqlfk/descrizione.py` | reverse engineering: descrizione delle tabelle, significato delle colonne, filo logico |
+| `sqlfk/prova.py` | database di prova dell'editor (SQLite): righe, query, percorso da un dato a un altro, backend C++ generato (getter, setter, repository), compilazione ed esecuzione |
 | `sqlfk/esplora.py` | file della cartella: elenco, ricerca per nome e nel contenuto, lettura a pezzi con la codifica, file XML (sola lettura, mai fuori dalla cartella) |
 | `sqlfk/estensioni.py` | chiavi verificate sui dati, collegamenti dai valori, profilo, matrice CRUD di viste e procedure, modelli SQLAlchemy, script di normalizzazione |
 | `sqlfk/asp.py`, `sqlfk/regole_fk.lp` | scelta delle chiavi esterne con clingo |
@@ -108,6 +109,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 | query | `query/tabelle`, `query`, `query/csv`, `query/interrompi`, `query/costruisci`, `query/ricostruisci`, `query/svuota_cache` |
 | interfaccia | `finestre`, `finestre/leggi`, `finestre/leggi_tutto`, `finestre/registra`, `finestre/ferma`, `interfaccia`, `interfaccia/pagina`, `interfaccia/analisi`, `interfaccia/svuota` |
 | ascolto del database | `ascolto`, `ascolto/segui`, `ascolto/inizia`, `ascolto/fine`, `ascolto/annulla`, `ascolto/importa`, `ascolto/azione`, `ascolto/riepilogo`, `ascolto/rinomina`, `ascolto/elimina`, `ascolto/svuota`, `ascolto/dimentica_rumore` |
+| editor e prova | `editor/esporta`, `scarica/editor_database`, `prova/crea`, `prova/struttura`, `prova/righe`, `prova/riga`, `prova/query`, `prova/percorso`, `prova/genera`, `prova/compila`, `prova/esegui`, `scarica/prova_cpp`, `scarica/prova_sqlite` |
 | clingo | `asp` |
 | controllo | `autoverifica` |
 | download | `scarica/excel`, `scarica/sql`, `scarica/create`, `scarica/report`, `scarica/ontologia`, `scarica/r2rml`, `scarica/database_sqlite`, `scarica/database_sql`, `scarica/interfaccia`, `scarica/asp_sql`, `scarica/asp_lp`, `scarica/verifica_dati`, `scarica/crud`, `scarica/modelli`, `scarica/normalizzazione`, `scarica/ascolto_excel`, `scarica/ascolto_md` |
@@ -135,6 +137,7 @@ flowchart LR
 | Progetti | dove li salvi tu (`.sqlfk`, JSON con file letti, impostazioni, tabelle tolte, disposizione, modello dell'editor, schermate lette, azioni ascoltate dal database) |
 | Rapporti della verifica con l'interfaccia | `Documenti/SQL FK Finder/rapporti/<programma data>/` |
 | Risultato del controllo dell'app | `autoverifica.txt` nella cartella dei dati dell'app |
+| Database di prova e backend C++ dell'editor | `~/.sqlfk/prova` (`prova.sqlite`, `backend_cpp/`) |
 | Database delle query su disco | `~/.sqlfk/cache` (o `SQLFK_CACHE`) |
 | Ambiente dell'app (impostazioni di Electron) | cartella dei dati dell'app (`SQL FK Finder`) |
 

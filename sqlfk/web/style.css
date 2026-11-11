@@ -506,3 +506,13 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .scelte-cardinalita label:has(input:checked) { border-color: var(--primario); background: var(--primario-chiaro); }
 .scelte-cardinalita .nota { grid-column: 2; font-size: 12px; color: var(--tenue); }
 .anteprima-relazione { font-size: 12.5px; color: var(--tenue); margin: 6px 0 12px; }
+
+/* ---- Prova il database (editor): dati, query, percorso, backend C++ */
+.sezione-prova .schede-prova { margin: 4px 0 12px; }
+.modulo-riga { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 12px; margin: 6px 0; }
+.modulo-riga .campo { margin: 0; }
+.modulo-riga input { width: 100%; }
+.colonne-prova { font-size: 12.5px; margin: 0 0 8px; max-height: 120px; overflow: auto; }
+.colonne-prova a { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.editor-sql { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.codice-cpp { max-height: 420px; font-size: 12px; white-space: pre; }
