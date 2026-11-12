@@ -4,7 +4,7 @@
 // con le query, dove cercare come si arriva da un dato a un altro, e il backend C++ generato (getter, setter e repository
 // con inserisci, aggiorna, elimina, trova, tutti) da compilare e provare (sqlfk/prova.py).
 
-const STATO_PROVA = { scheda: "dati", tabella: null, query: "", cppFile: "modelli.hpp", cppTabella: null, cppOperazione: "tutti",
+const STATO_PROVA = { scheda: "chiedi", tabella: null, query: "", cppFile: "modelli.hpp", cppTabella: null, cppOperazione: "tutti",
                       dove: "caricato", da: 0, cerca: "" };
 const OPERAZIONI_CPP = {
   tutti: "tutti(): tutte le righe", trova: "trova(chiave): una riga", inserisci: "inserisci(riga): INSERT con i setter",
@@ -133,6 +133,134 @@ function sezioneProva(E) {
   }
 
   // ---------------------------------------------------------------- scheda Da un dato a un altro
+  // ---------------------------------------------------------------- scheda Chiedi un dato: cosa vuoi, da dove parti, la query e il backend
+  function schedaChiedi() {
+    const C = STATO_PROVA.chiedi ||= { cosa: "", colonne: [], da: "", colonna: "", operatore: "=", valore: "", ordina: "", linguaggio: "cpp" };
+    const risultato = el("div");
+    const domande = el("div");
+    let elenco = {};                                     // nome -> [colonne]
+    const dove = el("select", { "aria-label": "Dove cercare" },
+      stato.caricato ? el("option", { value: "caricato", selected: STATO_PROVA.dove === "caricato" }, "nel database caricato (tutte le tabelle, chiavi dichiarate e trovate)") : null,
+      S.esiste ? el("option", { value: "prova", selected: STATO_PROVA.dove === "prova" || !stato.caricato }, "nel database di prova dell'editor") : null);
+    const OPERATORI_UI = [["=", "è uguale a"], ["contiene", "contiene"], ["inizia", "inizia con"], ["<>", "è diverso da"],
+                          [">", "è maggiore di"], ["<", "è minore di"], [">=", "è almeno"], ["<=", "è al massimo"]];
+
+    function disegnaDomande() {
+      const nomi = Object.keys(elenco);
+      const campoTabella = (valore, alCambio, etichetta) => {
+        const c = el("input", { type: "text", value: valore, list: "tabelle-chiedi", size: 26, placeholder: "nome della tabella", "aria-label": etichetta });
+        c.addEventListener("change", () => { alCambio(c.value.trim()); disegnaDomande(); });
+        return c;
+      };
+      const colonneCosa = elenco[C.cosa] || [];
+      C.colonne = C.colonne.filter(c => colonneCosa.includes(c));
+      const spunte = el("div", { class: "scelta-import" }, colonneCosa.map(c => {
+        const s = el("input", { type: "checkbox", checked: C.colonne.includes(c) });
+        s.addEventListener("change", () => { C.colonne = colonneCosa.filter(x => x === c ? s.checked : C.colonne.includes(x)); });
+        return el("label", {}, s, " ", c);
+      }));
+      const colonna = el("select", { "aria-label": "Colonna di partenza" }, (elenco[C.da] || []).map(c => el("option", { value: c, selected: c === C.colonna }, c)));
+      colonna.addEventListener("change", () => { C.colonna = colonna.value; });
+      if (!C.colonna || !(elenco[C.da] || []).includes(C.colonna)) C.colonna = colonna.value;
+      const operatore = el("select", { "aria-label": "Condizione" }, OPERATORI_UI.map(([v, t]) => el("option", { value: v, selected: v === C.operatore }, t)));
+      operatore.addEventListener("change", () => { C.operatore = operatore.value; });
+      const valore = el("input", { type: "text", value: C.valore, placeholder: "il valore (es. Mirco, 7, P02)", "aria-label": "Valore" });
+      valore.addEventListener("input", () => { C.valore = valore.value; });
+      valore.addEventListener("keydown", e => { if (e.key === "Enter") crea(); });
+      const ordina = el("select", { "aria-label": "Ordina per" }, el("option", { value: "" }, "nessun ordine"),
+        colonneCosa.map(c => el("option", { value: c, selected: c === C.ordina }, c)));
+      ordina.addEventListener("change", () => { C.ordina = ordina.value; });
+      metti(domande,
+        el("datalist", { id: "tabelle-chiedi" }, nomi.map(n => el("option", { value: n }))),
+        el("div", { class: "domanda" }, el("b", {}, "1. Che dato vuoi recuperare?"),
+          el("div", { class: "riga-comandi" }, "Dalla tabella", campoTabella(C.cosa, v => { C.cosa = v; C.colonne = []; C.ordina = ""; }, "Tabella del dato"),
+            colonneCosa.length ? el("span", { class: "tenue" }, "le colonne (nessuna spunta = tutte):") : null),
+          spunte),
+        el("div", { class: "domanda" }, el("b", {}, "2. Da dove parti?"),
+          el("div", { class: "riga-comandi" }, "Dalla tabella", campoTabella(C.da, v => { C.da = v; C.colonna = ""; }, "Tabella di partenza"),
+            "dove", colonna, operatore, valore)),
+        el("div", { class: "domanda" }, el("b", {}, "3. Come lo vuoi?"),
+          el("div", { class: "riga-comandi" }, "Ordinato per", ordina,
+            el("button", { class: "primario", onclick: crea }, "Crea la query"))));
+    }
+
+    async function carica() {
+      STATO_PROVA.dove = dove.value;
+      if (dove.value === "caricato") {
+        const D = await api("/api/diagramma?tipo=collegamenti");
+        elenco = Object.fromEntries(D.tabelle.map(t => [t.nome, t.colonne.map(c => c.nome).filter(c => !c.startsWith("… "))]));
+      } else {
+        elenco = Object.fromEntries(S.tabelle.map(t => [t.nome, t.colonne.map(c => c.nome)]));
+      }
+      disegnaDomande();
+    }
+
+    function esempio(R) {
+      const codici = { cpp: ["C++", R.cpp, "esempio_query.cpp"], python: ["Python", R.python, "esempio_query.py"] };
+      const blocco = el("pre", { class: "codice-cpp" });
+      const uscita = el("div");
+      const scelta = el("div", { class: "riga-comandi" });
+      const mostraCodice = () => {
+        const [nome, testo, file] = codici[C.linguaggio];
+        blocco.textContent = testo;
+        metti(scelta, Object.entries(codici).map(([k, [n]]) =>
+            el("button", { class: C.linguaggio === k ? "primario" : null, onclick: () => { C.linguaggio = k; mostraCodice(); } }, n)),
+          el("button", { onclick: async () => { try { await navigator.clipboard.writeText(testo); avviso("Codice copiato."); } catch { avviso("Selezionalo e copialo a mano.", true); } } }, "Copia"),
+          el("button", { onclick: () => scaricaBlob(new Blob([testo], { type: "text/plain" }), file) }, `Scarica ${file}`),
+          C.linguaggio === "cpp" ? el("button", { disabled: !S.esiste || dove.value !== "prova",
+            title: S.esiste && dove.value === "prova" ? "Compila l'esempio con il backend generato e lo esegue sul database di prova"
+              : "L'esempio si prova sul database di prova: crealo con le stesse tabelle e scegli «nel database di prova»",
+            onclick: provaCpp }, "Compila ed esegui l'esempio") : null);
+        if (C.linguaggio !== "cpp") metti(uscita);
+      };
+      async function provaCpp() {
+        try {
+          metti(uscita, el("p", { class: "tenue" }, "Compilazione ed esecuzione..."));
+          const E = await api("/api/prova/prova_esempio", { codice: R.cpp, valore: C.valore });
+          metti(uscita,
+            el("p", { class: E.ok && E.codice_uscita === 0 ? "si" : "errore" }, !E.ok ? "La compilazione non è riuscita." :
+              E.codice_uscita === 0 ? `Compilato ed eseguito: ${E.messaggi || ""}` : `Eseguito con errore: ${E.messaggi}`),
+            E.comando ? el("p", { class: "tenue" }, E.comando) : null,
+            !E.ok && E.uscita ? el("pre", {}, E.uscita) : null,
+            E.eseguito ? el("pre", { class: "sql" }, E.uscita_programma || "(nessuna riga)") : null);
+        } catch (e) { metti(uscita, el("pre", { class: "errore" }, e.message)); }
+      }
+      mostraCodice();
+      return el("div", { class: "esempio-backend" }, el("h4", {}, "Esempio di backend"),
+        el("p", { class: "tenue" }, "La stessa query dentro una funzione, con il valore come parametro (niente SQL injection). In C++ usa database.hpp " +
+          "e sqlite.hpp del backend generato nella scheda Backend C++ (si compila anche su Windows); in Python basta la libreria standard."),
+        scelta, blocco, uscita);
+    }
+
+    async function crea() {
+      if (!C.cosa || !C.da) return avviso("Scegli la tabella del dato e quella da cui parti.", true);
+      try {
+        metti(risultato, el("p", { class: "tenue" }, "Costruzione della query..."));
+        const R = await api("/api/prova/chiedi", { dove: dove.value, cosa: C.cosa, colonne: C.colonne, da: C.da, colonna: C.colonna,
+          operatore: C.operatore, valore: C.valore, ordina: C.ordina });
+        if (!R.trovato) { metti(risultato, el("div", { class: "messaggio" }, R.spiegazione)); return; }
+        metti(risultato,
+          el("p", {}, el("b", {}, R.spiegazione), ` ${R.righe.length}${R.righe.length >= R.limite ? "+" : ""} righe.`),
+          R.frasi.length ? el("ol", {}, R.frasi.map(f => el("li", {}, f))) : null,
+          el("pre", { class: "sql" }, R.sql_leggibile),
+          el("div", { class: "riga-comandi" },
+            el("button", { onclick: async () => { try { await navigator.clipboard.writeText(R.sql_leggibile); avviso("Query copiata."); } catch { avviso("Selezionala e copiala a mano.", true); } } }, "Copia la query"),
+            dove.value === "prova" ? el("button", { onclick: () => { STATO_PROVA.query = R.sql_leggibile + ";"; STATO_PROVA.scheda = "query"; disegna(); } }, "Apri nella scheda Query") : null),
+          R.righe.length ? griglia({ colonne: R.colonne, righe: R.righe }) : el("p", { class: "tenue" }, "Il collegamento c'è, ma con questa condizione non ci sono righe."),
+          esempio(R));
+      } catch (e) { metti(risultato, el("pre", { class: "errore" }, e.message)); }
+    }
+
+    dove.addEventListener("change", carica);
+    carica().catch(e => metti(risultato, el("pre", { class: "errore" }, e.message)));
+    return el("div", {},
+      el("p", { class: "tenue" }, "Rispondi a tre domande: che dato vuoi (per esempio la descrizione dei prodotti), da dove parti (per esempio i clienti " +
+        "il cui nome contiene Mirco) e come lo vuoi ordinato. L'app trova come sono collegate le tabelle, scrive la query con le JOIN, la esegue " +
+        "e ti dà un esempio di backend in C++ e in Python che la usa."),
+      el("div", { class: "riga-comandi" }, el("b", {}, "Cerca"), dove),
+      domande, risultato);
+  }
+
   function schedaPercorso() {
     const risultato = el("div");
     const pannelloScelte = el("div");
@@ -286,13 +414,13 @@ function sezioneProva(E) {
   }
 
   function disegna() {
-    const schede = [["dati", "Dati"], ["query", "Query"], ["percorso", "Da un dato a un altro"], ["cpp", "Backend C++"]];
-    if (!S.esiste && STATO_PROVA.scheda !== "percorso") STATO_PROVA.scheda = stato.caricato ? "percorso" : STATO_PROVA.scheda;
+    const schede = [["chiedi", "Chiedi un dato"], ["dati", "Dati"], ["query", "Query"], ["percorso", "Da un dato a un altro"], ["cpp", "Backend C++"]];
+    if (!S.esiste && !["percorso", "chiedi"].includes(STATO_PROVA.scheda)) STATO_PROVA.scheda = stato.caricato ? "chiedi" : STATO_PROVA.scheda;
     metti(corpo, ...(!S.esiste && !stato.caricato ? [el("p", { class: "tenue" }, "Crea il database di prova per popolare le tabelle, fare le query e provare il backend C++.")] : [
       el("div", { class: "riga-comandi schede-prova" }, schede.map(([k, n]) =>
-        el("button", { class: STATO_PROVA.scheda === k ? "primario" : null, disabled: !S.esiste && k !== "percorso",
-          title: !S.esiste && k !== "percorso" ? "Prima crea il database di prova" : null, onclick: () => { STATO_PROVA.scheda = k; disegna(); } }, n))),
-      { dati: schedaDati, query: schedaQuery, percorso: schedaPercorso, cpp: schedaCpp }[STATO_PROVA.scheda](),
+        el("button", { class: STATO_PROVA.scheda === k ? "primario" : null, disabled: !S.esiste && !["percorso", "chiedi"].includes(k),
+          title: !S.esiste && !["percorso", "chiedi"].includes(k) ? "Prima crea il database di prova" : null, onclick: () => { STATO_PROVA.scheda = k; disegna(); } }, n))),
+      { chiedi: schedaChiedi, dati: schedaDati, query: schedaQuery, percorso: schedaPercorso, cpp: schedaCpp }[STATO_PROVA.scheda](),
     ]));
   }
 

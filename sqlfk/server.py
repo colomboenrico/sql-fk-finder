@@ -1133,6 +1133,22 @@ class Sessione:
         with self.lock_db:
             return PR.percorso_su(db.conn, collegamenti, da_tabella, da_colonna, valore, a_tabella, nome_db=db.tabella_di)
 
+    def chiedi_caricato(self, dati):
+        """Chiedi un dato sul database caricato intero: tutte le tabelle, le chiavi dichiarate e trovate, i suoi dati."""
+        db = self.database()
+        struttura = self.struttura_collegamenti()
+        tabelle = {t["nome"]: t for t in struttura["tabelle"]}
+        for t in (dati.get("cosa"), dati.get("da")):
+            if t not in tabelle or not db.tabella_di(t):
+                raise Errore(f"Tabella non trovata nei dati: {t}")
+        collegamenti = [{"da": l["da"], "a": l["a"], "colonne_da": l["colonne_da"], "colonne_a": l["colonne_a"],
+                         "tipo": "dichiarata" if l["tipo"] == "dichiarata" else f"trovata, {l['tipo']}"}
+                        for l in struttura["collegamenti"] if db.tabella_di(l["da"]) and db.tabella_di(l["a"])]
+        tipi_di = lambda t: {c["nome"]: c.get("tipo") or "" for c in tabelle[t]["colonne"] if not str(c["nome"]).startswith("… ")}
+        with self.lock_db:
+            return PR.chiedi_su(db.conn, collegamenti, tipi_di, dati.get("cosa"), dati.get("colonne"), dati.get("da"),
+                                dati.get("colonna"), dati.get("operatore") or "=", dati.get("valore"), dati.get("ordina"), nome_db=db.tabella_di)
+
     def prova(self, comando, dati):
         try:
             if comando == "crea":
@@ -1150,6 +1166,13 @@ class Sessione:
                 if dati.get("dove") == "caricato":
                     return self.percorso_caricato(dati.get("da_tabella"), dati.get("da_colonna"), dati.get("valore"), dati.get("a_tabella"))
                 return PR.percorso(dati.get("da_tabella"), dati.get("da_colonna"), dati.get("valore"), dati.get("a_tabella"))
+            if comando == "chiedi":
+                if dati.get("dove") == "caricato":
+                    return self.chiedi_caricato(dati)
+                return PR.chiedi(dati.get("cosa"), dati.get("colonne"), dati.get("da"), dati.get("colonna"),
+                                 dati.get("operatore") or "=", dati.get("valore"), dati.get("ordina"))
+            if comando == "prova_esempio":
+                return PR.prova_esempio(str(dati.get("codice") or ""), dati.get("valore", ""))
             if comando == "genera":
                 return PR.genera_cpp()
             if comando == "compila":

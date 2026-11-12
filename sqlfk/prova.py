@@ -16,6 +16,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import unicodedata
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -260,6 +261,199 @@ def percorso_su(conn, collegamenti, da_tabella, da_colonna, valore, a_tabella, n
                             if passi else f"È la stessa tabella: le righe di {a_tabella} con {da_colonna} = {valore}.")}
 
 
+OPERATORI = {"=": ("=", "uguale a"), "<>": ("<>", "diverso da"), ">": (">", "maggiore di"), "<": ("<", "minore di"),
+             ">=": (">=", "almeno"), "<=": ("<=", "al massimo"), "contiene": ("LIKE", "contiene"), "inizia": ("LIKE", "inizia con")}
+
+
+def chiedi_su(conn, collegamenti, tipi_di, cosa, colonne, da, colonna, operatore, valore, ordina=None, limite=200, nome_db=lambda t: t):
+    """Il dato che si vuole (tabella cosa, colonne) partendo da una condizione (da.colonna operatore valore): la catena di
+    chiavi esterne tra le due tabelle, la query con le JOIN, il risultato e un esempio di backend (C++ e Python).
+    tipi_di(tabella) -> {colonna: tipo SQL}."""
+    if operatore not in OPERATORI:
+        raise ErroreProva(f"Condizione sconosciuta: {operatore}")
+    tipi_cosa, tipi_da = tipi_di(cosa), tipi_di(da)
+    colonne = [c for c in (colonne or []) if c in tipi_cosa] or list(tipi_cosa)
+    if colonna not in tipi_da:
+        raise ErroreProva(f"La colonna {colonna} non è in {da}.")
+    passi = cerca_percorso(collegamenti, da, cosa)
+    if passi is None:
+        return {"trovato": False, "spiegazione": f"Da {da} non si arriva a {cosa}: nessuna catena di chiavi esterne le collega."}
+    indicizza(conn, passi + [{"da": da, "colonne_da": [colonna], "a": da, "colonne_a": [colonna]}], nome_db)
+    simbolo, parole = OPERATORI[operatore]
+    v = _valore(valore)
+    parametro = f"%{valore}%" if operatore == "contiene" else f"{valore}%" if operatore == "inizia" else v
+
+    def testo_sql(nome):
+        alias = {da: "t0"}
+        righe = []
+        for i, p in enumerate(passi, 1):
+            alias[p["a"]] = f"t{i}"
+            uguali = " AND ".join(f"t{i}.{q(y)} = {alias[p['da']]}.{q(x)}" for x, y in zip(p["colonne_da"], p["colonne_a"]))
+            righe.append(f"JOIN {q(nome(p['a']))} AS t{i} ON {uguali}")
+        finale = alias[cosa]
+        scelte = ", ".join(f"{finale}.{q(c)}" for c in colonne)
+        ordine = [f"ORDER BY {finale}.{q(ordina)}"] if ordina in tipi_cosa else []
+        return "\n".join([f"SELECT DISTINCT {scelte}", f"FROM {q(nome(da))} AS t0", *righe,
+                          f"WHERE t0.{q(colonna)} {simbolo} ?", *ordine])
+
+    cur = conn.execute(testo_sql(nome_db) + f"\nLIMIT {int(limite)}", (parametro,))
+    righe = [list(r) for r in cur.fetchall()]
+    sql = testo_sql(lambda t: t)                     # con i nomi delle tabelle del database, non quelli interni
+    letterale = str(parametro) if isinstance(parametro, (int, float)) else "'" + str(parametro).replace("'", "''") + "'"
+    catena = " → ".join([da] + [p["a"] for p in passi])
+    spiegazione = (f"Per avere {', '.join(colonne)} di {cosa} partendo da {da}.{colonna} {parole} {valore}: "
+                   + (f"si passa per {catena} ({len(passi)} collegamenti)." if passi else "è la stessa tabella."))
+
+    def frase(p):
+        verso = "punta a" if p["verso"] == "→" else "è usata da"
+        tipo = f" ({p['tipo']})" if p.get("tipo") else ""
+        return f"{p['da']}.{', '.join(p['colonne_da'])} {verso} {p['a']}.{', '.join(p['colonne_a'])}{tipo}"
+
+    info = {"cosa": cosa, "colonne": colonne, "tipi": [tipi_cosa[c] for c in colonne], "da": da, "colonna": colonna,
+            "tipo_valore": tipi_da[colonna], "operatore": operatore, "valore": str(valore), "sql": sql, "spiegazione": spiegazione}
+    return {"trovato": True, "spiegazione": spiegazione, "frasi": [frase(p) for p in passi], "sql": sql,
+            "sql_leggibile": sql.replace("?", letterale, 1), "parametro": parametro, "colonne": colonne, "righe": righe,
+            "limite": limite, "cpp": esempio_cpp(info), "python": esempio_python(info)}
+
+
+def _nome_funzione(info):
+    return "trova_" + identificatore(f"{info['cosa']}_da_{info['da']}_{info['colonna']}").lower()
+
+
+def esempio_cpp(info):
+    """Un esempio di backend C++ per la query: una struttura per la riga del risultato, la funzione che esegue la query con il
+    valore come parametro (niente SQL injection) e un main che la prova. Usa database.hpp e sqlite.hpp del backend generato."""
+    funzione = _nome_funzione(info)
+    campi = [(identificatore(c), tipo_cpp(t)) for c, t in zip(info["colonne"], info["tipi"])]
+    testuale = info["operatore"] in ("contiene", "inizia")
+    genere_valore = tipo_cpp(info["tipo_valore"])[1]
+    tipo_par = ("std::int64_t" if genere_valore == "intero" and not testuale else
+                "double" if genere_valore == "reale" and not testuale else "const std::string&")
+    leggi_par = ("std::stoll(testo)" if tipo_par == "std::int64_t" else "std::stod(testo)" if tipo_par == "double" else
+                 '"%" + testo + "%"' if info["operatore"] == "contiene" else 'testo + "%"' if info["operatore"] == "inizia" else "testo")
+    righe_sql = info["sql"].split("\n")
+    sql_cpp = [f'        "{_c(x)}' + ("\\n" if k < len(righe_sql) - 1 else "") + '"' for k, x in enumerate(righe_sql)]
+    sql_cpp[-1] += ");"
+    r = ["// Esempio di backend generato da SQL FK Finder.",
+         f"// {info['spiegazione']}",
+         "// Compilare nella cartella del backend generato (con database.hpp e sqlite.hpp):",
+         "//   Mac/Linux:  c++ -std=c++17 esempio_query.cpp -lsqlite3 -o esempio_query",
+         "//   Windows:    g++ -std=c++17 -static esempio_query.cpp -o esempio_query.exe  (oppure cl /std:c++17 /EHsc /utf-8 esempio_query.cpp)",
+         "// Usare:        esempio_query prova.sqlite <valore>   (oppure il valore sullo standard input)",
+         '#include "database.hpp"', "",
+         "#include <iostream>", "#include <optional>", "#include <string>", "#include <vector>", "",
+         f"// Una riga del risultato: le colonne di {info['cosa']} che servono (vuote se NULL)",
+         "struct Risultato {"]
+    r += [f"    std::optional<{base}> {nome};" for nome, (base, _) in campi]
+    r += ["};", "",
+          f"// Le righe di {info['cosa']} con {info['da']}.{info['colonna']} {OPERATORI[info['operatore']][1]} «valore»",
+          f"std::vector<Risultato> {funzione}(Database& db, {tipo_par} valore) {{",
+          "    Istruzione st(db,", *sql_cpp,
+          "    st.lega(1, valore);              // il valore è un parametro: niente SQL injection",
+          "    std::vector<Risultato> righe;",
+          "    while (st.passo()) {",
+          "        Risultato r;"]
+    r += [f"        if (!st.nullo({k})) r.{nome} = st.{genere}({k});" for k, (nome, (_, genere)) in enumerate(campi)]
+    r += ["        righe.push_back(r);",
+          "    }",
+          "    return righe;",
+          "}",
+          "",
+          'template <typename T> static void stampa(const std::optional<T>& v) { if (v) std::cout << *v; else std::cout << "NULL"; }',
+          "",
+          "int main(int argc, char** argv) {",
+          "    try {",
+          '        Database db(argc > 1 ? argv[1] : "prova.sqlite");',
+          "        std::string testo;",
+          "        if (argc > 2) testo = argv[2];",
+          f'        else if (!std::getline(std::cin, testo)) testo = "{_c(info["valore"])}";',
+          "        if (!testo.empty() && testo.back() == '\\r') testo.pop_back();",
+          f"        const auto righe = {funzione}(db, {leggi_par});",
+          '        std::cout << "' + _c("\t".join(info["colonne"])).replace("\t", "\\t") + '\\n";',
+          "        for (const auto& r : righe) {"]
+    r += [("            std::cout << '\\t'; " if k else "            ") + f"stampa(r.{nome});" for k, (nome, _) in enumerate(campi)]
+    r += ['            std::cout << "\\n";',
+          "        }",
+          '        std::cerr << righe.size() << " righe\\n";',
+          "    } catch (const std::exception& e) {",
+          '        std::cerr << "Errore: " << e.what() << "\\n";',
+          "        return 1;",
+          "    }",
+          "    return 0;",
+          "}",
+          ""]
+    return "\n".join(r)
+
+
+def esempio_python(info):
+    """Lo stesso esempio in Python, con il modulo sqlite3 della libreria standard."""
+    funzione = _nome_funzione(info)
+    par = 'f"%{valore}%"' if info["operatore"] == "contiene" else 'f"{valore}%"' if info["operatore"] == "inizia" else "valore"
+    sql = info["sql"].replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    return "\n".join([
+        '"""Esempio di backend generato da SQL FK Finder.',
+        info["spiegazione"],
+        "Usare: python esempio_query.py prova.sqlite <valore>",
+        '"""',
+        "import sqlite3",
+        "import sys",
+        "",
+        'SQL = """',
+        sql,
+        '"""',
+        "",
+        "",
+        f"def {funzione}(conn, valore):",
+        f'    """Le righe di {info["cosa"]} ({", ".join(info["colonne"])}) per {info["da"]}.{info["colonna"]} '
+        f'{OPERATORI[info["operatore"]][1]} valore."""',
+        f"    return conn.execute(SQL, ({par},)).fetchall()",
+        "",
+        "",
+        'if __name__ == "__main__":',
+        '    percorso = sys.argv[1] if len(sys.argv) > 1 else "prova.sqlite"',
+        f'    valore = sys.argv[2] if len(sys.argv) > 2 else {info["valore"]!r}',
+        "    with sqlite3.connect(percorso) as conn:",
+        f'        print("\\t".join({info["colonne"]!r}))',
+        f"        for riga in {funzione}(conn, valore):",
+        '            print("\\t".join("NULL" if v is None else str(v) for v in riga))',
+        ""])
+
+
+def chiedi(cosa, colonne, da, colonna, operatore, valore, ordina=None):
+    """Chiedi un dato sul database di prova."""
+    with connetti() as conn:
+        tabelle = _tabelle(conn)
+        for t in (cosa, da):
+            if t not in tabelle:
+                raise ErroreProva(f"Tabella non trovata nel database di prova: {t}")
+        collegamenti = [{**fk, "tipo": ""} for t in tabelle for fk in _chiavi_esterne(conn, t) if fk["a"] in tabelle]
+        tipi_di = lambda t: {c["nome"]: c["tipo"] for c in _colonne(conn, t)}
+        return chiedi_su(conn, collegamenti, tipi_di, cosa, colonne, da, colonna, operatore, valore, ordina)
+
+
+def prova_esempio(codice, valore):
+    """Compila l'esempio C++ nella cartella del backend generato e lo esegue sul database di prova."""
+    if not DATABASE.exists():
+        raise ErroreProva("Prima crea il database di prova: l'esempio C++ si prova su quello.")
+    if not (CARTELLA_CPP / "database.hpp").exists():
+        genera_cpp()
+    (CARTELLA_CPP / "esempio_query.cpp").write_text(codice, encoding="utf-8")
+    esito = compila("esempio_query.cpp", "esempio_query")
+    if not esito["ok"]:
+        return {**esito, "eseguito": False}
+    eseguibile = CARTELLA_CPP / ("esempio_query.exe" if os.name == "nt" else "esempio_query")
+    ambiente = dict(os.environ)
+    if os.name == "nt":
+        ambiente["PATH"] = os.pathsep.join([str(Path(sys.base_prefix) / "DLLs"), sys.base_prefix, ambiente.get("PATH", "")])
+    try:
+        r = subprocess.run([str(eseguibile), str(DATABASE)], input=(str(valore) + "\n").encode("utf-8"), capture_output=True,
+                           timeout=30, cwd=CARTELLA_CPP, env=ambiente)
+    except subprocess.TimeoutExpired:
+        raise ErroreProva("L'esempio non risponde (più di 30 secondi).")
+    return {**esito, "eseguito": True, "uscita_programma": r.stdout.decode("utf-8", "replace"),
+            "messaggi": r.stderr.decode("utf-8", "replace").strip(), "codice_uscita": r.returncode}
+
+
 def percorso(da_tabella, da_colonna, valore, a_tabella, limite=200):
     """Il percorso sul database di prova, con le sue chiavi esterne."""
     with connetti() as conn:
@@ -279,16 +473,21 @@ PAROLE_CPP = {"class", "struct", "int", "double", "float", "long", "short", "cha
               "unsigned", "void", "enum", "goto", "break", "continue", "sizeof", "friend", "virtual", "explicit", "inline"}
 
 
+def senza_accenti(testo):
+    """città -> citta: i nomi C++ si scrivono in ASCII."""
+    return unicodedata.normalize("NFKD", str(testo)).encode("ascii", "ignore").decode("ascii")
+
+
 def identificatore(nome):
     """Nome valido per il C++."""
-    n = re.sub(r"\W+", "_", str(nome), flags=re.A).strip("_") or "x"
+    n = re.sub(r"\W+", "_", senza_accenti(nome), flags=re.A).strip("_") or "x"
     if n[0].isdigit():
         n = "_" + n
     return n + "_" if n.lower() in PAROLE_CPP else n
 
 
 def pascal(nome):
-    parti = [p for p in re.split(r"[\W_]+", str(nome), flags=re.A) if p]
+    parti = [p for p in re.split(r"[\W_]+", senza_accenti(nome), flags=re.A) if p]
     n = "".join(p[:1].upper() + p[1:] for p in parti) or "Tabella"
     return "_" + n if n[0].isdigit() else n
 
@@ -777,8 +976,9 @@ def compilatore():
     return None
 
 
-def compila():
-    genera_cpp()                                         # sempre il codice delle tabelle di adesso
+def compila(sorgente="main.cpp", nome="backend"):
+    if sorgente == "main.cpp":
+        genera_cpp()                                     # sempre il codice delle tabelle di adesso
     trovato = compilatore()
     if not trovato:
         aiuto = ("Su Windows installa gli \"Strumenti di compilazione per Visual Studio\" (gratis, con \"Sviluppo di applicazioni desktop "
@@ -786,19 +986,19 @@ def compila():
                  "Sul Mac: xcode-select --install; su Linux: il pacchetto g++ e libsqlite3-dev.")
         return {"ok": False, "uscita": f"Nessun compilatore C++ trovato. {aiuto} Il codice si può comunque scaricare."}
     genere, cc = trovato
-    eseguibile = CARTELLA_CPP / ("backend.exe" if os.name == "nt" else "backend")
+    eseguibile = CARTELLA_CPP / (f"{nome}.exe" if os.name == "nt" else nome)
     eseguibile.unlink(missing_ok=True)
     if genere == "msvc":
         arch = {"AMD64": "x64", "ARM64": "arm64", "x86": "x86"}.get(os.environ.get("PROCESSOR_ARCHITECTURE", "AMD64"), "x64")
         (CARTELLA_CPP / "compila_msvc.bat").write_text(
-            f'@echo off\r\ncall "{cc}" {arch} >nul\r\ncl /nologo /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe\r\n', encoding="utf-8")
+            f'@echo off\r\ncall "{cc}" {arch} >nul\r\ncl /nologo /std:c++17 /EHsc /O1 /utf-8 {sorgente} /Fe:{eseguibile.name}\r\n', encoding="utf-8")
         comando = ["cmd", "/c", "compila_msvc.bat"]
-        mostrato = f"Visual Studio ({arch}): cl /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe"
+        mostrato = f"Visual Studio ({arch}): cl /std:c++17 /EHsc /O1 /utf-8 {sorgente} /Fe:{eseguibile.name}"
     elif os.name == "nt":                                # MinGW / LLVM: SQLite si carica all'avvio, -static per non dipendere dalle sue DLL
-        comando = [cc, "-std=c++17", "-O1", "-static", "-s", "main.cpp", "-o", eseguibile.name]
+        comando = [cc, "-std=c++17", "-O1", "-static", "-s", sorgente, "-o", eseguibile.name]
         mostrato = " ".join(comando)
     else:
-        comando = [cc, "-std=c++17", "-O1", "main.cpp", "-lsqlite3", "-o", eseguibile.name]
+        comando = [cc, "-std=c++17", "-O1", sorgente, "-lsqlite3", "-o", eseguibile.name]
         mostrato = " ".join(comando)
     try:
         r = subprocess.run(comando, cwd=CARTELLA_CPP, capture_output=True, timeout=300)

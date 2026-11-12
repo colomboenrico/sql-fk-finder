@@ -516,3 +516,6 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .colonne-prova a { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .editor-sql { width: 100%; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
 .codice-cpp { max-height: 420px; font-size: 12px; white-space: pre; }
+
+.sezione-prova .domanda { margin: 8px 0 12px; }
+.esempio-backend { margin-top: 14px; border-top: 1px solid var(--bordo); padding-top: 10px; }
