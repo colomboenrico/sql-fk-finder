@@ -34,6 +34,7 @@ from . import asp as ASP
 from . import controllo as CTRL
 from . import descrizione as DESCR
 from . import ascolto as AS
+from . import consigli as CONS
 from . import prova as PR
 from . import esplora as ESP
 from . import estensioni as EXT
@@ -1149,6 +1150,34 @@ class Sessione:
             return PR.chiedi_su(db.conn, collegamenti, tipi_di, dati.get("cosa"), dati.get("colonne"), dati.get("da"),
                                 dati.get("colonna"), dati.get("operatore") or "=", dati.get("valore"), dati.get("ordina"), nome_db=db.tabella_di)
 
+    def analisi_separata(self, sql, dialetto=None):
+        """L'analisi completa di uno schema (per esempio il disegno dell'editor) senza toccare il database caricato."""
+        dialetto = dialetto or self.imp.dialetto
+        file_sql = [("editor.sql", str(sql or ""))]
+        df, pk, fk, errori = A.leggi_testi(file_sql, dialetto)
+        if df.empty:
+            raise Errore("Nel disegno non ci sono tabelle: disegnale o importale in Editor del database.")
+        gruppi, gruppo_di = A.raggruppa_tabelle(df["tabella"].unique(), self.imp)
+        simili = A.trova_nomi_simili(A.prepara(df, pk, None, self.imp), self.imp)
+        R = A.analizza(df, pk, set(), simili, fk, gruppi, self.imp, errori, A.create_originali(file_sql, dialetto))
+        return R, gruppo_di
+
+    def analisi_di(self, dati):
+        if dati.get("origine") == "caricato":
+            self.richiedi_dati()
+            return self.R, self.gruppo_di, f"database caricato: {self.origine}"
+        R, gruppo_di = self.analisi_separata(dati.get("sql"), dati.get("dialetto"))
+        return R, gruppo_di, "disegno dell'editor"
+
+    def documentazione(self, dati):
+        R, gruppo_di, origine = self.analisi_di(dati)
+        D = DESCR.descrivi(R, gruppo_di)
+        return {**D, "origine": origine, "tabelle_n": len(R.S.col_per_tab), "fk": tabella(R.fk), "dichiarate": tabella(R.fk_dichiarate)}
+
+    def suggerimenti(self, dati):
+        R, _, origine = self.analisi_di(dati)
+        return {**CONS.suggerimenti(R), "origine": origine}
+
     def backend(self, comando, dati):
         """Il backend C++ costruito dal disegno dell'editor o dal database caricato, con le query salvate (sqlfk.prova)."""
         cartella = PR.CARTELLA / "backend"
@@ -1227,7 +1256,7 @@ class Sessione:
             proposta, k = radice / f"{nome}_senza_tolte_{k}", k + 1
         return {"cartella": str(proposta), "tolte": len(self.rimosse), "file": len(self.file_sql)}
 
-    def salva_cartella_senza_tolte(self, cartella):
+    def salva_cartella_senza_tolte(self, cartella, con_trovate=False):
         """Scrive in una cartella nuova gli stessi file .sql, ognuno senza le tabelle tolte (in background)."""
         self.richiedi_dati()
         if not self.rimosse:
@@ -1243,9 +1272,20 @@ class Sessione:
             raise Errore(f"La cartella {dest} esiste già e non è vuota: scegline una nuova (o vuota).")
         file_sql, tolte, dialetto, origine = list(self.file_sql), set(self.rimosse), self.imp.dialetto, self.origine
 
+        trovate = []
+        if con_trovate:                   # le chiavi esterne trovate dall'analisi (alta) diventano ALTER TABLE in un file a parte
+            trovate = [r["sql"] for r in self.R.fk.to_dict("records")
+                       if r.get("affidabilità") == "alta" and not r.get("già dichiarata") and r.get("sql")]
+
         def lavoro(lav):
             lav.fase = "scrittura"
             lav.risultato = QY.cartella_senza_tabelle(file_sql, tolte, dest, dialetto, origine, lav.avanza)
+            if trovate:
+                (dest / "zz_chiavi_trovate.sql").write_text(
+                    "-- Chiavi esterne trovate da SQL FK Finder (affidabilità alta), non dichiarate nei file originali.\n"
+                    "-- Il file si chiama zz_ per essere caricato per ultimo, dopo le tabelle.\n\n" + "\n".join(trovate) + "\n", encoding="utf-8")
+                lav.risultato["chiavi_trovate"] = len(trovate)
+                lav.risultato["scritti"] += 1
         return self.avvia("salvataggio", f"salvataggio di {len(file_sql)} file senza {len(tolte)} tabelle", lavoro)
 
     def togli(self, tabelle):
@@ -1763,7 +1803,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/carica_cartella": carica_cartella,
             "/api/carica_file": carica_file,
             "/api/togli": lambda: s.togli(dati.get("tabelle", [])),
-            "/api/salva_cartella_senza_tolte": lambda: s.salva_cartella_senza_tolte(dati.get("cartella")),
+            "/api/salva_cartella_senza_tolte": lambda: s.salva_cartella_senza_tolte(dati.get("cartella"), bool(dati.get("con_trovate"))),
             "/api/editor/esporta": lambda: s.editor_esporta(dati),
             "/api/togli_gruppo": togli_gruppo,
             "/api/rimetti": lambda: s.rimetti(dati.get("tabelle"), bool(dati.get("tutte"))),
@@ -1783,6 +1823,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
             "/api/verifica_dati": lambda: s.verifica_dati(bool(dati.get("medie", True))),
         }
+        if percorso in ("/api/documentazione", "/api/suggerimenti"):
+            return self.esegui(lambda: (s.documentazione if percorso.endswith("documentazione") else s.suggerimenti)(dati), blocca=False)
         if percorso.startswith("/api/backend/"):
             return self.esegui(lambda: s.backend(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/prova/"):

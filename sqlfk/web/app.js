@@ -168,15 +168,17 @@ function salvaSenzaTolte() {
   const base = String(stato.origine || "database").split(/[\\/]/).pop().replace(/^cartella /, "").replace(/\.sql$/i, "") || "database";
   const cartella = el("input", { type: "text", class: "largo", placeholder: "cartella nuova dove salvare", "aria-label": "Cartella dove salvare" });
   const esito = el("div");
+  const conTrovate = el("input", { type: "checkbox", checked: true });
   api("/api/cartella_senza_tolte").then(P => { if (!cartella.value) cartella.value = P.cartella; }).catch(() => {});
   const salvaCartella = async () => {
     try {
-      await api("/api/salva_cartella_senza_tolte", { cartella: cartella.value });
+      await api("/api/salva_cartella_senza_tolte", { cartella: cartella.value, con_trovate: conTrovate.checked });
       const lavoro = await seguiLavoro("Salvataggio della cartella senza le tabelle tolte");
       const R = lavoro.risultato;
       esito.replaceChildren(el("div", { class: "messaggio" },
         el("p", {}, el("b", {}, `Salvati ${R.scritti} file in ${R.cartella}`), ` (${formattaByte(R.byte)})` +
           (R.saltati ? `; ${R.saltati} file non scritti perché contenevano solo tabelle tolte.` : ".") +
+          (R.chiavi_trovate ? ` Con ${R.chiavi_trovate} chiavi esterne trovate in zz_chiavi_trovate.sql.` : "") +
           " Nella cartella c'è anche LEGGIMI_senza_tolte.txt con l'elenco delle tabelle tolte."),
         el("div", { class: "riga-comandi" },
           el("button", { class: "primario", onclick: () => caricaDaServer("/api/carica_cartella", { cartella: R.cartella }) }, "Carica la cartella salvata"),
@@ -193,6 +195,8 @@ function salvaSenzaTolte() {
     el("div", { class: "riga-comandi" }, cartella,
       el("button", { class: "primario", disabled: !stato.rimosse.length, onclick: salvaCartella },
         stato.rimosse.length ? `Salva la cartella senza le ${stato.rimosse.length} tabelle tolte` : "Togli prima delle tabelle")),
+    el("label", {}, conTrovate, ` aggiungi anche le chiavi esterne trovate dall'analisi (affidabilità alta: ${stato.fk_alta ?? 0} ` +
+      "relazioni) in zz_chiavi_trovate.sql: nei file originali ci sono solo quelle dichiarate"),
     esito,
     el("details", {}, el("summary", { class: "tenue" }, "Oppure un unico file .sql"),
       el("p", { class: "tenue" }, "Tutti i file uniti in uno solo, sempre senza le tabelle tolte (si scarica: con dump molto grandi è meglio la cartella)."),
@@ -471,6 +475,8 @@ const ICONE = {
   editor: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   lavagna: "M3 4h8v16H3zM13 4h8v16h-8zM15 9h4M15 13h3",
   backend: "M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6",
+  documentazione: "M6 3h9l4 4v14H6zM15 3v4h4M9 11h7M9 14h7M9 17h5",
+  suggerimenti: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z",
   er: "M3 5h6v4H3zM15 15h6v4h-6zM12 8l4 4-4 4-4-4zM9 7h3v1M12 16v1h3",
   dati: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   peso: "M5 20V10M10 20V4M15 20v-7M20 20v-4M3 20h19",
@@ -948,7 +954,7 @@ function creaEditor(S) {
   const anteprima = el("pre", { style: "max-height: 320px" });
   const nomeNuova = el("input", { type: "text", placeholder: "nome della nuova entità", "aria-label": "Nome della nuova entità" });
   const tipoImport = el("select", { "aria-label": "Chiavi esterne da importare" },
-    el("option", { value: "iniziale" }, "solo FK dichiarate"), el("option", { value: "collegamenti" }, "FK dichiarate e trovate"));
+    el("option", { value: "collegamenti", selected: true }, "FK dichiarate e trovate"), el("option", { value: "iniziale" }, "solo FK dichiarate"));
   let diagramma = null;
   const regole = () => ({ on_delete: stato.impostazioni?.on_delete || "", on_update: stato.impostazioni?.on_update || "" });
   const dialetto = () => stato.impostazioni?.dialetto || "mysql";
@@ -1144,7 +1150,7 @@ function creaEditor(S) {
     disegnaPannello();
   }
 
-  function riga(attributo, eliminabile, alCambio) {
+  function riga(attributo, eliminabile, alCambio, alRinomina = null) {
     const nome = el("input", { type: "text", value: attributo.nome, "aria-label": "Nome dell'attributo" });
     const tipo = el("input", { type: "text", value: attributo.tipo, list: "tipi-sql", "aria-label": "Tipo" });
     const spunta = (chiave, titolo) => {
@@ -1152,7 +1158,12 @@ function creaEditor(S) {
       c.addEventListener("change", () => { attributo[chiave] = c.checked; alCambio(); });
       return el("td", { class: "stretto" }, c);
     };
-    nome.addEventListener("change", () => { attributo.nome = Editor.pulisciNome(nome.value); alCambio(); });
+    nome.addEventListener("change", () => {
+      const vecchio = attributo.nome;
+      attributo.nome = Editor.pulisciNome(nome.value);
+      if (alRinomina) alRinomina(vecchio, attributo.nome);   // le relazioni seguono il nome nuovo
+      alCambio();
+    });
     tipo.addEventListener("change", () => { attributo.tipo = tipo.value.trim().toUpperCase() || "INT"; alCambio(); });
     return el("tr", {}, el("td", {}, nome), el("td", {}, tipo),
       "pk" in attributo ? spunta("pk", "chiave primaria") : el("td"), spunta("nn", "NOT NULL (obbligatorio)"),
@@ -1223,7 +1234,13 @@ function creaEditor(S) {
           `Le colonne rinominate restano collegate alla loro colonna di origine; quelle nuove restano vuote. ` +
           (() => { const cambiate = e.attributi.filter(a => a.origine && a.origine !== a.nome); return cambiate.length ? `Rinominate: ${cambiate.map(a => `${a.origine} → ${a.nome}`).join(", ")}.` : ""; })()) : null,
         el("table", {}, el("thead", {}, intestazione), el("tbody", {}, e.attributi.map((at, i) =>
-          riga(at, () => { e.attributi.splice(i, 1); ridisegna(); }, ridisegna)))),
+          riga(at, () => {
+            const usate = Editor.relazioniDiAttributo(M(), e, at.nome);
+            if (usate.length && !confirm(`${at.nome} è usata da ${usate.length} relazioni: eliminare l'attributo e anche le relazioni?`)) return;
+            M().relazioni = M().relazioni.filter(x => !usate.includes(x));
+            e.attributi.splice(i, 1);
+            ridisegna();
+          }, ridisegna, (vecchio, nuovo) => Editor.rinominaAttributo(M(), e, vecchio, nuovo))))),
         el("div", { class: "riga-comandi", style: "margin-top: 8px" },
           el("button", { onclick: () => { e.attributi.push({ nome: `attributo${e.attributi.length + 1}`, tipo: "VARCHAR(50)", pk: false, nn: false, uq: false }); ridisegna(); } }, "Aggiungi attributo"),
           el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); S.selezione = null; ridisegna(); } }, "Elimina entità")),

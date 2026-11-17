@@ -21,7 +21,7 @@ In alto c'è una barra a schede come quella di Word: ogni scheda è una funziona
 | **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
 | **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
 | **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia, Ascolta il database · *La cartella*: File della cartella, File XML |
-| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato, Schema E-R, Backend |
+| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato, Schema E-R, Backend, Documentazione, Suggerimenti |
 | **Dati** | *Tabelle*: Dati delle tabelle, Esempi dei dati, Peso delle tabelle · *SQL*: Query sui dati |
 | **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
 | **Guida** | *Aiuto*: Come si usa, Regole di progettazione · *App*: Impostazioni |
@@ -52,7 +52,7 @@ Per disegnare un database da zero o modificarne uno: aggiungi entità con attrib
 
 **Più tabelle insieme**: Maiusc+clic (o Cmd/Ctrl+clic) aggiunge o toglie una tabella dalla selezione; Maiusc+trascinare sul vuoto disegna un riquadro che sceglie le tabelle che tocca; *Seleziona tutte* (Ctrl+A). Trascinando una tabella scelta si spostano tutte. Il pannello mostra *N tabelle scelte* con **Copia** (Ctrl+C / Cmd+C), **Duplica** (Ctrl+D) ed *Elimina le scelte*. **Incolla** (Ctrl+V / Cmd+V) le aggiunge con le loro relazioni, nello stesso disegno (con i nomi `_copia`) o in un altro: dopo *Nuovo database*, nella lavagna del *Disegno affiancato* o in un'altra finestra dell'app, perché vanno negli appunti. Le tabelle importate restano collegate ai loro dati. Il disegno occupa almeno l'80% della finestra e **Schermo intero** allarga il disegno insieme al pannello, per continuare a modificare (Esc per uscire).
 
-**Importa tabelle dal database caricato**: cerca le tabelle per nome, spunta quelle che ti servono (con *anche le tabelle collegate* si aggiungono quelle collegate da chiavi esterne) e premi *Importa le scelte*: si aggiungono al disegno con colonne, tipi, chiavi e collegamenti, senza togliere quello che c'è già. Poi le modifichi come vuoi: nomi delle tabelle e delle colonne, tipi, chiavi, colonne nuove o tolte, relazioni. Ogni tabella importata ricorda da dove viene (nel pannello: *Importata da «clienti»*, con le colonne rinominate).
+**Importa tabelle dal database caricato** (con le chiavi esterne dichiarate e trovate): cerca le tabelle per nome, spunta quelle che ti servono (con *anche le tabelle collegate* si aggiungono quelle collegate da chiavi esterne) e premi *Importa le scelte*: si aggiungono al disegno con colonne, tipi, chiavi e collegamenti, senza togliere quello che c'è già. Poi le modifichi come vuoi: nomi delle tabelle e delle colonne, tipi, chiavi, colonne nuove o tolte, relazioni. Ogni tabella importata ricorda da dove viene (nel pannello: *Importata da «clienti»*, con le colonne rinominate).
 
 **Scarica il database**: *Scarica script SQL con i dati* scrive le CREATE TABLE dell'editor e, per ogni tabella importata, le righe del database caricato con i nomi nuovi (le colonne aggiunte restano vuote, quelle tolte non ci sono), nel dialetto delle Impostazioni; *Scarica database .sqlite con i dati* crea un file SQLite pronto (si apre con DBeaver o DB Browser for SQLite); *Solo lo schema (SQL)* scrive solo le tabelle. I dati vengono dal database delle query: con dump molto grandi va costruito prima (pagina *Query sui dati*).
 
@@ -71,6 +71,12 @@ Per disegnare un database da zero o modificarne uno: aggiungi entità con attrib
 - `main.cpp`, `database.hpp`, `sqlite.hpp`, `compila.sh`, `compila.bat`.
 
 In alto il riepilogo (classi, repository, query, righe di codice), sotto l'elenco delle query salvate (*Togli* per toglierne una) e i file da leggere e copiare. *Compila* controlla che il backend si compili (Mac, Linux, Windows); *Scarica il backend (.zip)* scarica tutti i file. Le query salvate restano nel file di progetto.
+
+### Documentazione
+*Diagrammi → Documentazione*: la documentazione del database che stai costruendo nell'editor (o di quello caricato), scritta dall'app e aggiornata ogni volta che apri la pagina: una sintesi, **le relazioni** dette a parole con i nomi e le cardinalità che hai disegnato (*ordini (1,1) «effettua» (0,N) clienti: ogni ordine ha esattamente un cliente...*), il filo logico e per ogni tabella cosa rappresenta probabilmente, da chi dipende, chi la usa e il significato delle colonne. Si scarica in HTML o Markdown.
+
+### Suggerimenti
+*Diagrammi → Suggerimenti*: l'app legge il database (dell'editor o caricato) e dice cosa migliorare, **perché** e **come**, come farebbe un esperto: chiavi primarie ed esterne mancanti, normalizzazione, importi in virgola mobile (meglio DECIMAL), date salvate come testo, email e codici fiscali senza UNIQUE, nomi obbligatori che possono essere vuoti, parole riservate, nomi poco coerenti. In alto un punteggio da 0 a 100 e la sintesi; si filtrano errori, avvisi e consigli. Ogni consiglio ha l'SQL da copiare e, sul disegno dell'editor, *Applica nell'editor* per i cambi di tipo, NOT NULL e UNIQUE. Tutto con regole sul computer: nessun servizio esterno, nessuna rete.
 
 ### Disegno affiancato
 A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca** (lo stesso editor della pagina *Editor del database*).

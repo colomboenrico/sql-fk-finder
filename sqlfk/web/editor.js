@@ -75,6 +75,21 @@ const Editor = (() => {
     return r;
   }
 
+  /** Un attributo cambia nome: le relazioni che lo usano (come chiave esterna o come chiave puntata) seguono il nome nuovo. */
+  function rinominaAttributo(M, e, vecchio, nuovo) {
+    if (!vecchio || vecchio === nuovo) return;
+    for (const r of M.relazioni) {
+      if (r.tipo === "N:M") continue;                  // le colonne della tabella ponte hanno nomi loro
+      if (r.da === e.id) r.colonne_da = r.colonne_da.map(c => c === vecchio ? nuovo : c);
+      if (r.a === e.id) r.colonne_a = r.colonne_a.map(c => c === vecchio ? nuovo : c);
+    }
+  }
+
+  /** Le relazioni che usano un attributo di un'entità (per avvisare prima di eliminarlo). */
+  function relazioniDiAttributo(M, e, nome) {
+    return M.relazioni.filter(r => r.tipo !== "N:M" && ((r.da === e.id && r.colonne_da.includes(nome)) || (r.a === e.id && r.colonne_a.includes(nome))));
+  }
+
   function eliminaEntita(M, eid) {
     M.entita = M.entita.filter(e => e.id !== eid);
     M.relazioni = M.relazioni.filter(r => r.da !== eid && r.a !== eid);
@@ -116,6 +131,13 @@ const Editor = (() => {
                             colonne_a: k2.map(k => k.nome), tipo: "dichiarata", relazione: "1:N", obbligatoria: true });
         if (!k1.length || !k2.length) avvisi.push(`${r.nome}: le due entità devono avere una chiave primaria`);
       } else {
+        const nomiFiglia = new Set(figlia.attributi.map(a => a.nome)), nomiPadre = new Set(padre.attributi.map(a => a.nome));
+        const mancano = [...r.colonne_da.filter(c => !nomiFiglia.has(c)).map(c => `${figlia.nome}.${c}`),
+                         ...r.colonne_a.filter(c => !nomiPadre.has(c)).map(c => `${padre.nome}.${c}`)];
+        if (mancano.length) {                          // relazione rotta: non va nell'SQL (sarebbe un errore), lo si dice
+          avvisi.push(`${figlia.nome} → ${padre.nome}: la relazione usa ${mancano.join(", ")}, che non c'è più: ricreala o rimetti la colonna`);
+          continue;
+        }
         // id ed etichetta: il rombo della relazione (schema E-R) a metà del collegamento
         collegamenti.push({ da: figlia.nome, colonne_da: r.colonne_da, a: padre.nome, colonne_a: r.colonne_a,
                             tipo: "dichiarata", relazione: r.tipo, obbligatoria: r.obbligatoria, id: r.id, etichetta: r.verbo || "" });
@@ -313,5 +335,5 @@ const Editor = (() => {
   }
 
   return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati,
-           copia, incolla };
+           copia, incolla, rinominaAttributo, relazioniDiAttributo };
 })();

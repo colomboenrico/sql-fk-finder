@@ -1549,14 +1549,17 @@ def aree_e_categorie(R, gruppo_di):
                            centrali=sorted(centrali))
 
 
-def trova_isolate(S, stesso_nome, df_simili, df_fk, df_pk_composte):
+def trova_isolate(S, stesso_nome, df_simili, df_fk, df_pk_composte, fk_dichiarate=None):
     collegate = set(df_fk["tabella"]) | set(df_fk["→ tabella"])
+    if fk_dichiarate is not None and len(fk_dichiarate):        # anche le chiavi esterne dichiarate collegano le tabelle
+        collegate |= set(fk_dichiarate["tabella"]) | set(fk_dichiarate["→ tabella"])
     for tabelle in stesso_nome["tabelle"]:
         collegate |= set(tabelle.split(", "))
     collegate |= set(df_simili["tabella 1"]) | set(df_simili["tabella 2"])
     trovate = df_pk_composte[df_pk_composte["→ tabella"] != "-"]
     collegate |= set(trovate["tabella"]) | set(trovate["→ tabella"])
-    return sorted(set(S.col_per_tab) - collegate)
+    minuscole = {t.lower() for t in collegate}
+    return sorted(t for t in S.col_per_tab if t not in collegate and t.lower() not in minuscole)
 
 
 def analizza(df_schema, pk_dichiarate, rimosse=(), simili_tutti=None, fk_dichiarate=None, gruppi=None, imp=None,
@@ -1584,7 +1587,7 @@ def analizza(df_schema, pk_dichiarate, rimosse=(), simili_tutti=None, fk_dichiar
     qualita = controlli_progettazione(S, fk, fk_dichiarate)
     R = SimpleNamespace(S=S, stesso_nome=stesso, simili=simili, fk=fk, sospette=sosp, qualita=qualita,
                         pk_composte=composte,
-                        isolate=trova_isolate(S, stesso, simili, fk, composte),
+                        isolate=trova_isolate(S, stesso, simili, fk, composte, fk_dichiarate),
                         rimosse=sorted(rimosse), fk_dichiarate=fk_dichiarate, gruppi=gruppi)
     if gruppi is not None:
         gruppo_di = {t: r["gruppo"] for r in gruppi.to_dict("records") for t in r["tabelle"].split(", ")}
