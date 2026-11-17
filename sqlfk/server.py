@@ -36,6 +36,7 @@ from . import descrizione as DESCR
 from . import ascolto as AS
 from . import consigli as CONS
 from . import prova as PR
+from . import popola as POP
 from . import esplora as ESP
 from . import estensioni as EXT
 from . import finestre as FIN
@@ -1846,6 +1847,20 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in ("/api/documentazione", "/api/suggerimenti"):
             return self.esegui(lambda: (s.documentazione if percorso.endswith("documentazione") else s.suggerimenti)(dati), blocca=False)
+        if percorso.startswith("/api/popola/"):
+            def popola_():
+                comando = percorso.rsplit("/", 1)[1]
+                try:
+                    if comando == "popola":
+                        return POP.popola(dati.get("tabelle") or None, dati.get("righe") or 20, dati.get("con_padri", True) is not False)
+                    if comando == "verifica":
+                        return POP.verifica()
+                    if comando == "svuota":
+                        return POP.svuota(dati.get("tabelle") or None)
+                except PR.ErroreProva as e:
+                    raise Errore(str(e))
+                raise Errore(f"Comando sconosciuto: {comando}")
+            return self.esegui(popola_, blocca=False)
         if percorso.startswith("/api/backend/"):
             return self.esegui(lambda: s.backend(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/prova/"):

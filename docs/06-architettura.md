@@ -75,6 +75,7 @@ La modalità nel browser (`python -m sqlfk.server`) è diversa: usa un piccolo s
 | `sqlfk/ascolto.py` | ascolto del database: lettura del general log di MySQL, forme delle query, rumore, azioni, CRUD, valori, JOIN, collegamenti, specifica in Markdown |
 | `sqlfk/descrizione.py` | reverse engineering: descrizione delle tabelle, significato delle colonne, filo logico |
 | `sqlfk/consigli.py` | suggerimenti per migliorare il database (diagnostica e controlli su tipi, vincoli e nomi), con il punteggio |
+| `sqlfk/popola.py` | dati di prova che rispettano tipi e chiavi, verifica delle chiavi esterne (orfani, rifiuto, cancellazione) |
 | `sqlfk/prova.py` | database di prova dell'editor (SQLite): righe, query, percorso da un dato a un altro, backend C++ generato (getter, setter, repository), compilazione ed esecuzione |
 | `sqlfk/esplora.py` | file della cartella: elenco, ricerca per nome e nel contenuto, lettura a pezzi con la codifica, file XML (sola lettura, mai fuori dalla cartella) |
 | `sqlfk/estensioni.py` | chiavi verificate sui dati, collegamenti dai valori, profilo, matrice CRUD di viste e procedure, modelli SQLAlchemy, script di normalizzazione |
@@ -112,6 +113,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 | ascolto del database | `ascolto`, `ascolto/segui`, `ascolto/inizia`, `ascolto/fine`, `ascolto/annulla`, `ascolto/importa`, `ascolto/azione`, `ascolto/riepilogo`, `ascolto/rinomina`, `ascolto/elimina`, `ascolto/svuota`, `ascolto/dimentica_rumore` |
 | backend | `backend/genera`, `backend/compila`, `scarica/backend` |
 | documentazione e suggerimenti | `documentazione`, `suggerimenti` |
+| popola e verifica | `popola/popola`, `popola/verifica`, `popola/svuota` |
 | editor e prova | `editor/esporta`, `scarica/editor_database`, `prova/crea`, `prova/struttura`, `prova/righe`, `prova/riga`, `prova/query`, `prova/percorso`, `prova/genera`, `prova/compila`, `prova/esegui`, `scarica/prova_cpp`, `scarica/prova_sqlite` |
 | clingo | `asp` |
 | controllo | `autoverifica` |

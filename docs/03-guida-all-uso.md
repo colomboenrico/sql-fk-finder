@@ -21,7 +21,7 @@ In alto c'è una barra a schede come quella di Word: ogni scheda è una funziona
 | **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
 | **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
 | **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia, Ascolta il database · *La cartella*: File della cartella, File XML |
-| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato, Schema E-R, Backend, Documentazione, Suggerimenti |
+| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato, Schema E-R, Backend, Documentazione, Suggerimenti, Popola e verifica |
 | **Dati** | *Tabelle*: Dati delle tabelle, Esempi dei dati, Peso delle tabelle · *SQL*: Query sui dati |
 | **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
 | **Guida** | *Aiuto*: Come si usa, Regole di progettazione · *App*: Impostazioni |
@@ -84,6 +84,12 @@ In alto il riepilogo (classi, repository, query, righe di codice), sotto l'elenc
 
 ### Suggerimenti
 *Diagrammi → Suggerimenti*: l'app legge il database (dell'editor o caricato) e dice cosa migliorare, **perché** e **come**, come farebbe un esperto: chiavi primarie ed esterne mancanti, normalizzazione, importi in virgola mobile (meglio DECIMAL), date salvate come testo, email e codici fiscali senza UNIQUE, nomi obbligatori che possono essere vuoti, parole riservate, nomi poco coerenti. In alto un punteggio da 0 a 100 e la sintesi; si filtrano errori, avvisi e consigli. Ogni consiglio ha l'SQL da copiare e, sul disegno dell'editor, *Applica nell'editor* per i cambi di tipo, NOT NULL e UNIQUE. Tutto con regole sul computer: nessun servizio esterno, nessuna rete.
+
+### Popola e verifica
+*Diagrammi → Popola e verifica*: prova il database che hai disegnato con dati veri, sul database di prova creato dal disegno dell'editor (*Crea il database di prova dal disegno dell'editor*; i file caricati non cambiano).
+- **Popola**: spunta le tabelle (o *Tutte*), scegli quante righe e premi *Popola*. I dati sono inventati ma credibili, dai nomi delle colonne: nomi e cognomi, ragioni sociali, città con CAP e provincia, email, telefoni, codici, prodotti, prezzi, quantità, date, posizioni (POINT o latitudine e longitudine). Si rispettano tipi e lunghezze, chiavi primarie (anche su più colonne), UNIQUE e NOT NULL; per le **chiavi esterne** si usano valori che esistono nella tabella collegata, e con *riempi anche le tabelle a cui puntano* i padri vuoti si riempiono prima. Nelle relazioni 1:1 ogni padre si usa una volta sola. Per ogni tabella si vedono le righe inserite e quelle scartate con il motivo. *Svuota le scelte* cancella le righe.
+- **Verifica i collegamenti**: per ogni chiave esterna le righe collegate, le orfane e quelle senza valore; se il database **rifiuta un figlio con un padre che non esiste**; cosa succede **cancellando un padre usato** (bloccata, a cascata, messa a NULL, come dice il vincolo); alcune righe collegate di esempio. Le prove si annullano subito: i dati restano come sono.
+- **Query di prova**: SQL sul database di prova, con le query pronte per ogni chiave esterna (*tabella con tabella*, *quanti figli per padre*) e i nomi delle colonne da cliccare.
 
 ### Disegno affiancato
 A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca** (lo stesso editor della pagina *Editor del database*).
