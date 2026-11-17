@@ -155,7 +155,10 @@ function bloccaRete() {
   app.on("web-contents-created", (_e, wc) => {
     wc.on("will-navigate", (evento, url) => { if (!url.startsWith(INDIRIZZO)) evento.preventDefault(); });
     wc.setWindowOpenHandler(({ url }) => url.startsWith(INDIRIZZO)
-      ? { action: "allow", overrideBrowserWindowOptions: { width: 1300, height: 900, autoHideMenuBar: true, icon: ICONA } }
+      // altre finestre dell'app (una pagina su un altro schermo): stessa sicurezza e stesso ponte della principale;
+      // grandezza e posizione vengono da window.open
+      ? { action: "allow", overrideBrowserWindowOptions: { minWidth: 700, minHeight: 500, autoHideMenuBar: true, icon: ICONA,
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.js") } } }
       : { action: "deny" });
   });
 }

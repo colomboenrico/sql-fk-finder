@@ -86,7 +86,7 @@ Object.assign(VISTE, {
       el("p", { class: "tenue" }, "Carica i file .sql in alto per vedere qui il diagramma del database e copiarne le tabelle. " +
         "La lavagna si può usare anche da sola, o riaprendo un disegno salvato."));
     return [
-      el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
+      el("datalist", { id: "tipi-sql" }, Editor.TIPI_SPIEGATI.map(([t, d]) => el("option", { value: t, label: d }, d))),
       intestazioneRichiudibile("lavagna", "Disegno affiancato",
         el("p", { class: "tenue" }, "A sinistra il diagramma del database caricato, a destra una lavagna bianca. Clicca le tabelle a sinistra per " +
           "sceglierle e copiale nella lavagna con le loro colonne e i collegamenti; poi spostale, rinominale, aggiungi o togli attributi, " +

@@ -11,14 +11,14 @@ const STATO_DOCUMENTI = { origine: null, gravita: "tutte", cerca: "" };
 /** Da quale database: il disegno dell'editor (se c'è) o quello caricato. */
 function sceltaOrigine(pagina) {
   const entita = modelloEditor.entita.length;
-  if (!STATO_DOCUMENTI.origine || (STATO_DOCUMENTI.origine === "caricato" && !stato.caricato) || (STATO_DOCUMENTI.origine === "editor" && !entita && stato.caricato)) {
+  if (!STATO_DOCUMENTI.sceltaUtente || (STATO_DOCUMENTI.origine === "caricato" && !stato.caricato)) {
     STATO_DOCUMENTI.origine = entita ? "editor" : stato.caricato ? "caricato" : "editor";
   }
   const s = el("select", { "aria-label": "Quale database" },
     el("option", { value: "editor", selected: STATO_DOCUMENTI.origine === "editor" }, `il database che stai costruendo nell'editor (${entita} entità)`),
     stato.caricato ? el("option", { value: "caricato", selected: STATO_DOCUMENTI.origine === "caricato" },
       `il database caricato (${stato.tabelle_analizzate} tabelle)`) : null);
-  s.addEventListener("change", () => { STATO_DOCUMENTI.origine = s.value; mostra(pagina); });
+  s.addEventListener("change", () => { STATO_DOCUMENTI.origine = s.value; STATO_DOCUMENTI.sceltaUtente = true; mostra(pagina); });
   return s;
 }
 

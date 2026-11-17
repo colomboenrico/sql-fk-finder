@@ -524,7 +524,9 @@ def pascal(nome):
 
 def tipo_cpp(tipo_sql):
     t = (tipo_sql or "").upper()
-    if "INT" in t or "BOOL" in t:
+    if re.search(r"POINT|GEOM|GEOGRAPHY|POLYGON|LINESTRING", t):
+        return "std::string", "testo"            # le posizioni passano come testo (WKT: POINT(lon lat))
+    if re.match(r"\s*((TINY|SMALL|MEDIUM|BIG)?INT(EGER)?\b|BOOL|SERIAL|BIGSERIAL|SMALLSERIAL|BIT\b|NUMBER\(\d+\)$)", t):
         return "std::int64_t", "intero"
     if any(x in t for x in ("REAL", "FLOA", "DOUB", "DEC", "NUM", "MONEY")):
         return "double", "reale"

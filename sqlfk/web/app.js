@@ -529,6 +529,7 @@ document.querySelectorAll(".scheda-nastro").forEach(b => {
   b.addEventListener("dblclick", () => comprimiNastro(!nastroCompresso));      // doppio clic su una scheda, come in Word
 });
 $("#comprimi-nastro").addEventListener("click", () => comprimiNastro(!nastroCompresso));
+$("#nuova-finestra").addEventListener("click", () => apriInFinestra(vistaAttuale));
 $("#menu").addEventListener("click", e => { if (e.target.closest("button[data-vista]")) nastroAperto(false); });
 $("#menu").addEventListener("change", () => nastroAperto(false));            // file scelto con Carica
 document.addEventListener("click", e => { if (!e.target.closest(".testata")) nastroAperto(false); });
@@ -572,10 +573,66 @@ function aggiornaRiepilogo() {
   );
 }
 
-async function aggiornaTutto(prossima) {
+async function aggiornaTutto(prossima, { daAltraFinestra = false } = {}) {
   stato = await api("/api/stato");
   aggiornaRiepilogo();
+  if (!daAltraFinestra) avvisaFinestre({ tipo: "stato" });
   await mostra(prossima || vistaAttuale);
+}
+
+// ======================================================================= più finestre (più schermi)
+// Una pagina si apre in un'altra finestra con «Nuova finestra» o trascinando un tasto del nastro fuori dalla finestra.
+// Le finestre si parlano con un BroadcastChannel (stesso computer, niente rete): il disegno dell'editor e lo stato
+// del database caricato restano uguali in tutte.
+const ID_FINESTRA = Math.random().toString(36).slice(2);
+const canaleFinestre = "BroadcastChannel" in window ? new BroadcastChannel("sqlfk-finestre") : null;
+function avvisaFinestre(messaggio) {
+  try { canaleFinestre?.postMessage({ ...messaggio, mittente: ID_FINESTRA }); } catch { /* niente da avvisare */ }
+}
+let attesaEditorCondiviso = null;
+function condividiEditor() {
+  clearTimeout(attesaEditorCondiviso);
+  attesaEditorCondiviso = setTimeout(() => avvisaFinestre({ tipo: "editor", modello: modelloEditor, query: queryBackend }), 250);
+}
+const PAGINE_DEL_DISEGNO = new Set(["editor", "backend", "documentazione", "suggerimenti"]);
+let ridisegnoDaAltraFinestra = null;
+canaleFinestre?.addEventListener("message", ev => {
+  const m = ev.data || {};
+  if (m.mittente === ID_FINESTRA) return;
+  if (m.tipo === "editor" && m.modello) {
+    modelloEditor = m.modello;
+    if (Array.isArray(m.query)) queryBackend = m.query;
+    // si ridisegna solo se la pagina dipende dal disegno e non si sta scrivendo in un campo
+    if (PAGINE_DEL_DISEGNO.has(vistaAttuale) && !document.activeElement?.closest?.("input, textarea, select")) {
+      clearTimeout(ridisegnoDaAltraFinestra);
+      ridisegnoDaAltraFinestra = setTimeout(() => mostra(vistaAttuale), 400);
+    }
+  } else if (m.tipo === "stato") {
+    aggiornaTutto(PAGINE_DEL_DISEGNO.has(vistaAttuale) ? vistaAttuale : null, { daAltraFinestra: true }).catch(() => {});
+  }
+});
+
+/** Apre una pagina in un'altra finestra (nella posizione dello schermo indicata, se c'è). */
+function apriInFinestra(nome, x, y) {
+  const url = `${location.href.split("#")[0]}#vista=${encodeURIComponent(nome)}`;
+  const posto = isFinite(x) && isFinite(y) ? `,left=${Math.round(x)},top=${Math.round(y)}` : "";
+  const f = window.open(url, `sqlfk-${nome}-${Date.now()}`, `popup=yes,width=1250,height=850${posto}`);
+  if (!f) avviso("La finestra non si è aperta (il browser blocca le finestre nuove?).", true);
+  else setTimeout(() => avvisaFinestre({ tipo: "editor", modello: modelloEditor, query: queryBackend }), 1200);   // il disegno anche di là
+}
+
+/** Trascinare un tasto del nastro fuori dalla finestra apre quella pagina in una finestra nuova, dove lo si lascia. */
+function abilitaTrascinaFuori() {
+  document.querySelectorAll(".nastro button[data-vista]").forEach(b => {
+    b.draggable = true;
+    b.title = (b.title ? b.title + " · " : "") + "Trascinalo fuori dalla finestra per aprirlo in un'altra (per un altro schermo)";
+    b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", b.dataset.vista); e.dataTransfer.effectAllowed = "copyMove"; });
+    b.addEventListener("dragend", e => {
+      const fuori = e.screenX < window.screenX || e.screenX > window.screenX + window.outerWidth ||
+                    e.screenY < window.screenY || e.screenY > window.screenY + window.outerHeight;
+      if (fuori && (e.screenX || e.screenY)) apriInFinestra(b.dataset.vista, e.screenX - 120, e.screenY - 30);
+    });
+  });
 }
 
 /** Dopo aver tolto o rimesso tabelle: aggiorna il riepilogo e ridisegna la vista corrente. */
@@ -1147,6 +1204,7 @@ function creaEditor(S) {
     }
     avvisiBox.replaceChildren(...schema.avvisi.map(a => el("div", {}, `Avviso: ${a}`)));
     anteprima.textContent = Editor.sql(M(), regole(), dialetto());
+    if (M() === modelloEditor) condividiEditor();             // le altre finestre vedono il disegno nuovo
     disegnaPannello();
   }
 
@@ -1243,6 +1301,13 @@ function creaEditor(S) {
           }, ridisegna, (vecchio, nuovo) => Editor.rinominaAttributo(M(), e, vecchio, nuovo))))),
         el("div", { class: "riga-comandi", style: "margin-top: 8px" },
           el("button", { onclick: () => { e.attributi.push({ nome: `attributo${e.attributi.length + 1}`, tipo: "VARCHAR(50)", pk: false, nn: false, uq: false }); ridisegna(); } }, "Aggiungi attributo"),
+          el("button", { title: "Un campo POINT con latitudine e longitudine insieme (in MySQL e PostgreSQL POINT, in SQL Server geography)",
+            onclick: () => {
+              let nome = "posizione", k = 2;
+              while (e.attributi.some(x => x.nome === nome)) nome = `posizione${k++}`;
+              e.attributi.push({ nome, tipo: "POINT", pk: false, nn: false, uq: false });
+              ridisegna();
+            } }, "Aggiungi posizione (lat, lon)"),
           el("button", { class: "pericolo", onclick: () => { Editor.eliminaEntita(M(), e.id); S.selezione = null; ridisegna(); } }, "Elimina entità")),
         relazioni.length ? el("h3", {}, "Relazioni") : null,
         relazioni.map(x => el("div", { class: "riga-comandi" },
@@ -1871,7 +1936,7 @@ const VISTE = {
     const M = () => modelloEditor;
     setTimeout(E.ridisegna, 0);
     return [
-      el("datalist", { id: "tipi-sql" }, Editor.TIPI.map(t => el("option", { value: t }))),
+      el("datalist", { id: "tipi-sql" }, Editor.TIPI_SPIEGATI.map(([t, d]) => el("option", { value: t, label: d }, d))),
       intestazioneRichiudibile("editor", "Editor del database",
       el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
       el("div", { class: "riga-comandi" },
@@ -2778,4 +2843,18 @@ function contenutoGrafo(quale) {
 
 // ======================================================================= avvio
 
-aggiornaTutto("panoramica").catch(e => avviso(e.message, true));
+// l'avvio aspetta tutti i file: le pagine definite dopo app.js (backend.js, documenti.js...) devono esserci già
+function avvio() {
+  abilitaTrascinaFuori();
+  // aperta come finestra di una pagina (#vista=...): si apre su quella pagina, con il nome nel titolo
+  const daUrl = new URLSearchParams(location.hash.slice(1)).get("vista");
+  const pagina = daUrl && VISTE[daUrl] ? daUrl : "panoramica";
+  if (daUrl) {
+    const tasto = document.querySelector(`#menu button[data-vista="${daUrl}"]`);
+    document.title = `SQL FK Finder — ${tasto ? tasto.textContent.trim() : daUrl}`;
+    const scheda = tasto?.closest(".pannello-nastro")?.dataset.scheda;
+    if (scheda) mostraScheda(scheda);
+  }
+  aggiornaTutto(pagina, { daAltraFinestra: true }).catch(e => avviso(e.message, true));
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", avvio); else setTimeout(avvio, 0);

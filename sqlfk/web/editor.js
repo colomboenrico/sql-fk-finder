@@ -3,8 +3,24 @@
 // secondo le regole del passaggio dal modello E-R alle tabelle, e generazione delle CREATE TABLE.
 
 const Editor = (() => {
-  const TIPI = ["INT", "INT AUTO_INCREMENT", "BIGINT", "SMALLINT", "VARCHAR(50)", "VARCHAR(100)", "VARCHAR(255)",
-                "CHAR(10)", "TEXT", "DECIMAL(10,2)", "DATE", "DATETIME", "TIMESTAMP", "BOOLEAN"];
+  // i tipi proposti, con una spiegazione (si può scrivere anche un tipo qualsiasi)
+  const TIPI_SPIEGATI = [
+    ["INT", "numero intero"], ["INT AUTO_INCREMENT", "intero che il database numera da solo (chiave)"], ["BIGINT", "intero molto grande"],
+    ["SMALLINT", "intero piccolo"], ["TINYINT", "intero piccolissimo (0-255)"], ["FLOAT", "numero con la virgola (precisione semplice)"],
+    ["DOUBLE", "numero con la virgola (precisione doppia), misure"], ["DECIMAL(10,2)", "importo esatto in euro"],
+    ["DECIMAL(9,6)", "latitudine o longitudine da sola (6 decimali, circa 10 cm)"],
+    ["POINT", "posizione: latitudine e longitudine insieme in un campo"],
+    ["VARCHAR(50)", "testo breve"], ["VARCHAR(100)", "testo"], ["VARCHAR(255)", "testo lungo"], ["CHAR(10)", "codice a lunghezza fissa"],
+    ["CHAR(36)", "identificativo UUID"], ["TEXT", "testo libero"], ["DATE", "data"], ["TIME", "ora"], ["DATETIME", "data e ora"],
+    ["TIMESTAMP", "data e ora (fuso)"], ["BOOLEAN", "sì o no"], ["JSON", "dati JSON"], ["BLOB", "file o dati binari"]];
+  const TIPI = TIPI_SPIEGATI.map(([t]) => t);
+
+  /** Il tipo scritto nel dialetto: POINT diventa geography (SQL Server) o SDO_GEOMETRY (Oracle); BOOLEAN e simili restano. */
+  function tipoDialetto(tipo, dialetto) {
+    const t = String(tipo || "INT");
+    if (/^POINT$/i.test(t.trim())) return { tsql: "geography", oracle: "SDO_GEOMETRY" }[dialetto] || t;
+    return t;
+  }
 
   const nuovoModello = () => ({ entita: [], relazioni: [], prossimo: 1 });
   const id = M => `n${M.prossimo++}`;
@@ -171,7 +187,7 @@ const Editor = (() => {
     if (dialetto === "mysql") righe.push("SET FOREIGN_KEY_CHECKS = 0;", "");
     for (const nome of ordine) {
       const t = tabelle.find(x => x.nome === nome);
-      const parti = t.colonne.map(c => `  ${c.nome} ${c.tipo || "INT"}${c.not_null && !c.pk ? " NOT NULL" : ""}${c.pk ? " NOT NULL" : ""}${c.unique && !c.pk ? " UNIQUE" : ""}`
+      const parti = t.colonne.map(c => `  ${c.nome} ${tipoDialetto(c.tipo, dialetto)}${c.not_null && !c.pk ? " NOT NULL" : ""}${c.pk ? " NOT NULL" : ""}${c.unique && !c.pk ? " UNIQUE" : ""}`
         .replace(" AUTO_INCREMENT NOT NULL", " NOT NULL AUTO_INCREMENT"));
       const pk = t.colonne.filter(c => c.pk).map(c => c.nome);
       if (pk.length) parti.push(`  PRIMARY KEY (${pk.join(", ")})`);
@@ -334,6 +350,6 @@ const Editor = (() => {
     return { ids: Object.values(nuovoId), rinominate };
   }
 
-  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati,
+  return { TIPI, TIPI_SPIEGATI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati,
            copia, incolla, rinominaAttributo, relazioniDiAttributo };
 })();

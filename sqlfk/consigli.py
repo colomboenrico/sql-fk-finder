@@ -97,6 +97,16 @@ def controlli(R):
                 fuori.append(_consiglio("info", t, c, f"Riduci {t}.{c} o usa TEXT",
                                         f"VARCHAR({m.group(1)}) è molto lungo: se è un testo libero TEXT è più chiaro, se è un codice va più corto.",
                                         ""))
+        lat = [c for c in colonne if re.match(r"^(lat|latitudine|latitude)$", c, re.I)]
+        lon = [c for c in colonne if re.match(r"^(lon|lng|long|longitudine|longitude)$", c, re.I)]
+        if lat and lon:
+            tipi = {_base(_tipo(S, t, c)) for c in lat + lon}
+            fuori.append(_consiglio(
+                "info", t, "", f"Valuta un campo posizione (POINT) in {t}",
+                f"{t} tiene la posizione in due colonne ({lat[0]}, {lon[0]}): un campo POINT le tiene insieme, i database le indicizzano "
+                "(indice spaziale) e calcolano distanze e aree. Se restano separate, DECIMAL(9,6) è più preciso di FLOAT"
+                + (" (ora sono " + ", ".join(sorted(tipi)) + ")." if tipi else "."),
+                f"ALTER TABLE {t} ADD posizione POINT;   -- poi: UPDATE {t} SET posizione = POINT({lon[0]}, {lat[0]});"))
         if len(colonne) > 40:
             fuori.append(_consiglio("info", t, "", f"Dividi {t}: ha {len(colonne)} colonne",
                                     "Tabelle così larghe di solito mescolano più cose (anagrafica, indirizzi, impostazioni): dividerle in tabelle "

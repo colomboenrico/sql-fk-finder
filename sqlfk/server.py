@@ -1100,11 +1100,16 @@ class Sessione:
                 testo = QY.senza_commenti_iniziali(frase).strip()
                 if tipo != "istruzione" or not testo or re.match(r"SET\b", testo, re.I):
                     continue
+                # SQLite non ha i tipi spaziali: le posizioni (POINT...) diventano testo
+                testo = re.sub(r"\b(POINT|GEOMETRY|LINESTRING|POLYGON|MULTIPOINT|GEOGRAPHY|SDO_GEOMETRY)\b", "TEXT", testo, flags=re.I)
                 try:
                     import sqlglot
                     conn.execute(sqlglot.transpile(testo, read=dialetto, write="sqlite")[0])
                 except Exception:
-                    pass                  # la tabella si crea comunque sotto, con le sole colonne, se servono i dati
+                    try:
+                        conn.execute(testo)       # SQLite accetta molti CREATE TABLE anche senza traduzione
+                    except Exception:
+                        pass              # la tabella si crea comunque sotto, con le sole colonne, se servono i dati
             for voce in self.ordine_mappa(E["sql"], E["mappa"]):
                 colonne, blocchi = self.righe_editor(voce, E.get("limite"))
                 if not colonne:

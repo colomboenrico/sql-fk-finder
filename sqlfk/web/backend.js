@@ -25,12 +25,13 @@ function aggiungiQueryBackend(info) {
 Object.assign(VISTE, {
   async backend() {
     const entita = modelloEditor.entita.length;
-    if (!STATO_BACKEND.origine) STATO_BACKEND.origine = entita ? "editor" : stato.caricato ? "caricato" : "editor";
+    // finché non la sceglie l'utente, l'origine segue il disegno: l'editor se ha delle entità, se no il database caricato
+    if (!STATO_BACKEND.sceltaUtente) STATO_BACKEND.origine = entita ? "editor" : stato.caricato ? "caricato" : "editor";
     const origine = el("select", { "aria-label": "Da quale database" },
       el("option", { value: "editor", selected: STATO_BACKEND.origine === "editor" }, `dal disegno dell'editor (${entita} entità)`),
       stato.caricato ? el("option", { value: "caricato", selected: STATO_BACKEND.origine === "caricato" },
         `dal database caricato (${stato.tabelle_analizzate} tabelle)`) : null);
-    origine.addEventListener("change", () => { STATO_BACKEND.origine = origine.value; mostra("backend"); });
+    origine.addEventListener("change", () => { STATO_BACKEND.origine = origine.value; STATO_BACKEND.sceltaUtente = true; mostra("backend"); });
     const riepilogo = el("div");
     const sceltaFile = el("div", { class: "riga-comandi schede-file" });
     const codice = el("pre", { class: "codice-cpp codice-backend" });

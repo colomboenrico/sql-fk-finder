@@ -546,3 +546,4 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .consiglio-info { border-left-color: var(--grafico); }
 .riga-titolo-consiglio { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
 .consiglio pre.sql { margin: 6px 0; white-space: pre-wrap; }
+#nuova-finestra + #comprimi-nastro { margin-left: 2px; }
