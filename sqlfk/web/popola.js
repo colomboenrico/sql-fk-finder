@@ -4,7 +4,7 @@
 // rispettando tipi e chiavi, verifica che le chiavi esterne funzionino (orfani, rifiuto di un figlio senza padre,
 // cancellazione di un padre usato) e permette le query di prova. Tutto in locale (sqlfk/popola.py).
 
-const STATO_POPOLA = { scelte: null, righe: 20, conPadri: true, query: "" };
+const STATO_POPOLA = { scelte: null, righe: 20, conPadri: true, query: "", manuale: null };
 
 Object.assign(VISTE, {
   async popola() {
@@ -92,6 +92,99 @@ Object.assign(VISTE, {
       } catch (e) { metti(esitoVerifica, el("pre", { class: "errore" }, e.message)); }
     }
 
+    // ---- inserimento a mano: si scrivono i valori di una riga e si vede se il database li accetta
+    if (!nomi.includes(STATO_POPOLA.manuale)) STATO_POPOLA.manuale = nomi[0];
+    const pannelloManuale = el("div", { class: "pannello" });
+    async function disegnaManuale(messaggio = null, modifica = null) {
+      const t = S.tabelle.find(x => x.nome === STATO_POPOLA.manuale);
+      if (!t) return metti(pannelloManuale, el("p", { class: "tenue" }, "Nessuna tabella."));
+      const scelta = el("select", { "aria-label": "Tabella in cui inserire" }, nomi.map(n => el("option", { value: n, selected: n === t.nome }, n)));
+      scelta.addEventListener("change", () => { STATO_POPOLA.manuale = scelta.value; disegnaManuale(); });
+      // per ogni colonna con chiave esterna: i valori che esistono nella tabella padre (con una colonna che li descrive)
+      const fkDiColonna = {};
+      for (const f of t.fk) f.colonne_da.forEach((c, i) => { fkDiColonna[c] = { a: f.a, colonna: f.colonne_a[i] }; });
+      const suggeriti = {};
+      await Promise.all(Object.entries(fkDiColonna).map(async ([c, f]) => {
+        const padre = S.tabelle.find(x => x.nome === f.a);
+        const etichetta = padre?.colonne.find(x => x.nome !== f.colonna && /char|text/i.test(x.tipo))?.nome;
+        try {
+          const R = await api("/api/prova/query", { sql: `SELECT DISTINCT "${f.colonna}"${etichetta ? `, "${etichetta}"` : ""} FROM "${f.a}" ` +
+            `WHERE "${f.colonna}" IS NOT NULL LIMIT 300` });
+          suggeriti[c] = R.righe;
+        } catch { suggeriti[c] = []; }
+      }));
+      const campi = {};
+      const righeModulo = t.colonne.map(c => {
+        const f = fkDiColonna[c.nome];
+        const lista = f ? `valori-${t.nome}-${c.nome}`.replace(/\W/g, "_") : null;
+        const automatica = c.pk && t.chiave.length === 1 && /int/i.test(c.tipo);
+        const campo = el("input", { type: "text", list: lista,
+          placeholder: automatica ? "vuoto = numero automatico" : f ? `un valore di ${f.a}.${f.colonna}` : c.notnull ? "obbligatorio" : "vuoto = NULL",
+          "aria-label": c.nome });
+        if (modifica) campo.value = modifica.valori[c.nome] ?? "";
+        campi[c.nome] = campo;
+        return el("div", { class: "campo-manuale" },
+          el("label", {}, el("b", {}, c.nome), " ", el("small", { class: "tenue" }, [c.tipo || "", c.pk ? "PK" : "", c.notnull ? "NOT NULL" : ""].filter(Boolean).join(" "))),
+          campo,
+          f ? el("small", { class: "tenue" }, `→ ${f.a}.${f.colonna}` + (suggeriti[c.nome]?.length ? ` (${suggeriti[c.nome].length} valori, scegli dall'elenco)` : " (la tabella padre è vuota)")) : null,
+          f ? el("datalist", { id: lista }, (suggeriti[c.nome] || []).map(r => el("option", { value: r[0] }, r[1] != null ? String(r[1]) : null))) : null);
+      });
+      const valori = () => Object.fromEntries(Object.entries(campi).map(([k, c]) => [k, c.value]));
+      const esito = el("div");
+      const spiega = e => {
+        const m = e.message;
+        if (/FOREIGN KEY/i.test(m)) return `Rifiutata dalla chiave esterna: un valore non esiste nella tabella collegata (oppure, cancellando, la riga è usata da altre). ` +
+          `Le chiavi esterne funzionano. (${m})`;
+        if (/UNIQUE|PRIMARY KEY/i.test(m)) return `Rifiutata: il valore c'è già in una colonna che deve essere unica. (${m})`;
+        if (/NOT NULL/i.test(m)) return `Rifiutata: manca un valore obbligatorio. (${m})`;
+        if (/CHECK/i.test(m)) return `Rifiutata da un controllo (CHECK). (${m})`;
+        return m;
+      };
+      const fai = async (azione, chiave = null) => {
+        try {
+          const r = await api("/api/prova/riga", { azione, tabella: t.nome, valori: azione === "elimina" ? {} : valori(), chiave });
+          const tt = S.tabelle.find(x => x.nome === t.nome);
+          if (azione === "inserisci") tt.righe++;
+          if (azione === "elimina") tt.righe = Math.max(0, tt.righe - 1);
+          await disegnaManuale({ ok: true, testo: r.fatto + (azione === "inserisci" && r.rowid ? ` (riga ${r.rowid})` : "") });
+          verifica();
+        } catch (e) {
+          metti(esito, el("p", { class: "errore" }, spiega(e)));
+        }
+      };
+      // le ultime righe della tabella, con modifica ed elimina
+      let ultime = null;
+      try {
+        const tot = (await api(`/api/prova/righe?tabella=${encodeURIComponent(t.nome)}&quanti=1`)).totale;
+        ultime = await api(`/api/prova/righe?tabella=${encodeURIComponent(t.nome)}&da=${Math.max(0, tot - 10)}&quanti=10`);
+      } catch { /* tabella appena cambiata */ }
+      const chiaveDi = riga => {
+        const usa = t.chiave.length ? t.chiave : ultime.colonne;
+        return Object.fromEntries(usa.map(c => [c, riga[ultime.colonne.indexOf(c)]]));
+      };
+      metti(pannelloManuale,
+        el("h3", {}, "Inserisci a mano"),
+        el("p", { class: "tenue" }, "Scrivi i valori di una riga e prova se il database li accetta: per le chiavi esterne scegli un valore che esiste, " +
+          "oppure scrivine uno che non c'è per vedere il rifiuto. Vuoto vuol dire NULL."),
+        el("div", { class: "riga-comandi" }, el("label", {}, "Tabella ", scelta),
+          el("span", { class: "tenue" }, `${t.righe} righe` + (t.fk.length ? ` · punta a ${[...new Set(t.fk.map(f => f.a))].join(", ")}` : ""))),
+        el("div", { class: "modulo-manuale" }, righeModulo),
+        el("div", { class: "riga-comandi" },
+          modifica ? el("button", { class: "primario", onclick: () => fai("modifica", modifica.chiave) }, "Salva la modifica")
+            : el("button", { class: "primario", onclick: () => fai("inserisci") }, "Inserisci la riga"),
+          modifica ? el("button", { onclick: () => disegnaManuale() }, "Annulla") : el("button", { onclick: () => Object.values(campi).forEach(c => { c.value = ""; }) }, "Svuota i campi")),
+        messaggio ? el("p", { class: messaggio.ok ? "si" : "errore" }, messaggio.testo) : null,
+        esito,
+        ultime && ultime.righe.length ? [el("b", {}, `Ultime righe di ${t.nome}`), el("div", { class: "tabella-scorre" }, el("table", { class: "tabella-semplice" },
+          el("thead", {}, el("tr", {}, ultime.colonne.map(c => el("th", {}, c)), el("th", {}, ""))),
+          el("tbody", {}, ultime.righe.map(r => el("tr", {}, r.map(v => el("td", {}, v == null ? el("span", { class: "tenue" }, "NULL") : String(v))),
+            el("td", {},
+              el("button", { class: "piccolo", onclick: () => disegnaManuale(null, { chiave: chiaveDi(r), valori: Object.fromEntries(ultime.colonne.map((c, i) => [c, r[i]])) }) }, "Modifica"),
+              el("button", { class: "piccolo", onclick: () => confirm("Eliminare questa riga dal database di prova?") && fai("elimina", chiaveDi(r)) }, "Elimina")))))))]
+          : el("p", { class: "tenue" }, "La tabella è vuota."));
+    }
+    disegnaManuale();
+
     // ---- query di prova
     const testo = el("textarea", { class: "editor-sql", rows: 5, spellcheck: "false", "aria-label": "Query di prova" });
     testo.value = STATO_POPOLA.query || (S.tabelle[0] ? `SELECT * FROM ${S.tabelle[0].nome} LIMIT 20;` : "");
@@ -127,6 +220,7 @@ Object.assign(VISTE, {
           el("button", { onclick: svuota }, "Svuota le scelte"),
           el("button", { onclick: verifica }, "Verifica i collegamenti"))),
       esitoPopola,
+      pannelloManuale,
       esitoVerifica,
       el("div", { class: "pannello" }, el("h3", {}, "2. Query di prova"),
         el("p", { class: "tenue" }, "SQL (SQLite) sul database di prova: SELECT per guardare i dati, anche INSERT, UPDATE e DELETE per provare i vincoli " +
