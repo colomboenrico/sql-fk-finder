@@ -549,3 +549,13 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 #nuova-finestra + #comprimi-nastro { margin-left: 2px; }
 
 .consiglio-ok { border-left-color: var(--ok); }
+
+/* ---- Popola: inserimento a mano */
+.modulo-manuale { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; margin: 10px 0; }
+.campo-manuale { display: flex; flex-direction: column; gap: 3px; }
+.campo-manuale input { width: 100%; padding: 6px 8px; font: inherit; }
+.tabella-scorre { overflow-x: auto; margin-top: 6px; }
+.tabella-scorre td button { margin-right: 4px; }
+.tabella-semplice { border-collapse: collapse; font-size: 13px; }
+.tabella-semplice th, .tabella-semplice td { border-bottom: 1px solid var(--bordo); padding: 4px 8px; text-align: left; white-space: nowrap; }
+.tabella-semplice th { color: var(--tenue); font-weight: 600; }
