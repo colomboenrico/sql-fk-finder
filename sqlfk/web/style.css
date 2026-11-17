@@ -551,22 +551,36 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .consiglio-ok { border-left-color: var(--ok); }
 
 /* ---- Assistente */
-.assistente-griglia { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
-@media (max-width: 1000px) { .assistente-griglia { grid-template-columns: 1fr; } }
-.assistente-chat { display: flex; flex-direction: column; height: calc(100vh - 290px); min-height: 420px; padding: 0; margin: 0; }
-.chat-messaggi { flex: 1; overflow: auto; padding: 14px 16px; }
-.chat-scrivi { border-top: 1px solid var(--bordo); padding: 10px 12px; }
-.chat-scrivi textarea { width: 100%; resize: vertical; font: inherit; padding: 8px; }
-.messaggio-chat { margin: 0 0 14px; max-width: 92%; }
-.messaggio-chat.utente { margin-left: auto; background: var(--primario-chiaro); border-radius: 12px 12px 2px 12px; padding: 8px 12px; }
-.messaggio-chat.assistente { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius: 12px 12px 12px 2px; padding: 8px 12px; }
+.barra-assistente { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; }
+.barra-assistente h2 { margin: 0 8px 0 0; font-size: 20px; }
+.barra-assistente .spazio { flex: 1; }
+.barra-assistente button.attivo { border-color: var(--primario); }
+.assistente-corpo { position: relative; display: flex; gap: 14px; min-height: 380px; }
+.assistente-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--pannello); border: 1px solid var(--bordo); border-radius: 10px; }
+.chat-messaggi { flex: 1; overflow: auto; padding: 20px 16px 8px; }
+.chat-colonna { max-width: 920px; margin: 0 auto; }
+.chat-scrivi { padding: 8px 16px 12px; }
+.casella-chat { max-width: 920px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--bordo); border-radius: 14px;
+  padding: 8px 8px 8px 14px; background: var(--sfondo, var(--pannello)); box-shadow: 0 1px 4px rgba(0, 0, 0, .08); }
+.casella-chat:focus-within { border-color: var(--primario); }
+.casella-chat textarea { flex: 1; border: 0; outline: none; resize: none; background: transparent; font: inherit; line-height: 1.45; padding: 6px 0; max-height: 240px; color: inherit; }
+.comandi-chat { display: flex; gap: 6px; }
+.nota-chat { max-width: 920px; margin: 4px auto 0; text-align: center; }
+.messaggio-chat { margin: 0 0 18px; }
+.messaggio-chat.utente { margin-left: auto; max-width: 78%; width: fit-content; background: var(--primario-chiaro); border-radius: 14px 14px 4px 14px; padding: 8px 14px; }
+.messaggio-chat.assistente { padding: 2px 2px; line-height: 1.55; }
 .messaggio-chat .chi { font-size: 12px; font-weight: 700; color: var(--tenue); margin-bottom: 4px; }
-.messaggio-chat p { margin: 4px 0; }
+.messaggio-chat p { margin: 6px 0; }
+.assistente-lato { width: 380px; flex: none; overflow: auto; margin: 0; }
+@media (max-width: 1100px) {
+  .assistente-lato { position: absolute; right: 0; top: 0; bottom: 0; z-index: 5; box-shadow: -6px 0 18px rgba(0, 0, 0, .25); max-width: calc(100% - 24px); }
+}
 .passo-assistente { margin: 6px 0; font-size: 13px; }
 .passo-assistente summary { cursor: pointer; color: var(--tenue); }
 .passo-errore summary { color: var(--pericolo); }
 .testo-passo { white-space: pre-wrap; font-size: 12px; }
-.chat-vuota { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.chat-vuota { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; max-width: 640px; margin: 8vh auto 0; }
+.chat-vuota h3 { margin: 0; color: var(--testo, inherit); }
 .esempio-domanda { font-size: 13px; }
 .assistente-lato h3:first-child { margin-top: 0; }
 .assistente-lato .modelli { padding-left: 18px; font-size: 13px; }
@@ -595,3 +609,4 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .scelta-modo button:first-child { border-radius: 6px 0 0 6px; }
 .scelta-modo button:last-child { border-radius: 0 6px 6px 0; }
 .messaggio-chat h4 { margin: 8px 0 4px; }
+.comandi-chat [hidden], .assistente-lato[hidden] { display: none; }

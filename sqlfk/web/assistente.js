@@ -75,12 +75,18 @@ function passoAssistente(p) {
 Object.assign(VISTE, {
   async assistente() {
     const S = STATO_ASSISTENTE;
-    const chat = el("div", { class: "chat-messaggi" });
-    const domanda = el("textarea", { rows: 2, placeholder: "Chiedi qualcosa sul database o sul progetto (es. come collego il gestionale al sito? come arrivo da clienti a prodotti?)",
+    const chat = el("div", { class: "chat-colonna" });
+    const scorri = el("div", { class: "chat-messaggi" }, chat);
+    const domanda = el("textarea", { rows: 1, placeholder: S.modo === "programmazione" ? "Chiedi il codice che ti serve o incolla un errore (es. un programma Python che esporta i clienti in CSV)" :
+      "Chiedi qualcosa sul database o sul progetto (es. come collego il gestionale al sito? come arrivo da clienti a prodotti?)",
       "aria-label": "Domanda per l'assistente" });
     const invia = el("button", { class: "primario" }, "Invia");
     const ferma = el("button", { hidden: true }, "Ferma");
-    const lato = el("div", { class: "pannello assistente-lato" });
+    const lato = el("div", { class: "pannello assistente-lato", hidden: !S.latoAperto });
+    const statoModello = el("span", { class: "tenue" }, "…");
+    const apriLato = el("button", { class: S.latoAperto ? "attivo" : "", onclick: () => {
+      S.latoAperto = !S.latoAperto; lato.hidden = !S.latoAperto; apriLato.classList.toggle("attivo", S.latoAperto); } },
+      "Modello e progetto ", statoModello);
 
     function disegnaChat() {
       const messaggi = S.conversazioni[S.modo];
@@ -91,6 +97,11 @@ Object.assign(VISTE, {
         (m.passi || []).map(passoAssistente),
         m.errore ? el("p", { class: "errore" }, m.errore) : null))
         : el("div", { class: "tenue chat-vuota" },
+            el("h3", {}, S.modo === "programmazione" ? "Programmazione" : "Database e progetto"),
+            el("p", {}, S.modo === "programmazione"
+              ? "Scrive il codice che ti serve (Python, C++, SQL...) usando le tue tabelle, lo controlla e lo corregge da solo; sotto ogni blocco puoi copiarlo, salvarlo o eseguirlo."
+              : "Un esperto di database con cui parlare del database che costruisci nell'editor o di quello caricato: tabelle e collegamenti, " +
+                "query, cosa migliorare, prossimi passi del progetto, come collegarlo ad altri programmi."),
             el("p", {}, S.modo === "programmazione" ? "Chiedi il codice che ti serve, o incolla un errore. Per esempio:" :
               "Chiedi qualcosa sul database o sul progetto. Per esempio:"),
             (S.modo === "programmazione" ? ["Scrivi un programma Python che stampa le righe di una tabella con i dati collegati",
@@ -102,7 +113,8 @@ Object.assign(VISTE, {
               "Un programma di report deve solo leggere i dati: come lo collego?",
               "Quali sono le tabelle più importanti e perché?"]).map(e =>
               el("button", { class: "esempio-domanda", onclick: () => { domanda.value = e; manda(); } }, e))));
-      chat.scrollTop = chat.scrollHeight;
+      // in fondo solo se si era già in fondo: chi risale a rileggere non viene riportato giù a ogni pezzo di risposta
+      if (S.inFondo !== false) scorri.scrollTop = scorri.scrollHeight;
     }
 
     async function manda() {
@@ -118,6 +130,8 @@ Object.assign(VISTE, {
       messaggi.push({ ruolo: "utente", testo });
       const risposta = { ruolo: "assistente", testo: "", passi: [], finito: false };
       messaggi.push(risposta);
+      S.inFondo = true;
+      domanda.style.height = "auto";
       disegnaChat();
       try {
         const R = await api("/api/assistente/chiedi", { ...origine, modo: S.modo, domanda: testo, storia, senza_modello: S.senzaModello, progetto: S.progetto });
@@ -178,6 +192,8 @@ Object.assign(VISTE, {
       } else if (M.caricando) {
         attendi();                       // caricamento partito prima (per esempio prima di cambiare modo): si aspetta qui
       }
+      statoModello.textContent = M.caricato ? `· ${M.caricato.split(/[\\/]/).pop().replace(/\.gguf$/i, "").replace(/-instruct|-q\d.*$/gi, "")}` :
+        M.caricando ? "· caricamento..." : "· senza modello";
       const progettoTesto = el("textarea", { rows: 4, placeholder: "A cosa serve il database, chi lo usa, con quali programmi deve comunicare " +
         "(es. un gestionale ordini che manda gli ordini al sito e-commerce; i report li fa Power BI)", "aria-label": "Descrizione del progetto" });
       progettoTesto.value = S.progetto;
@@ -215,23 +231,36 @@ Object.assign(VISTE, {
           "così le risposte si basano sui dati veri e si vede sempre cosa ha fatto."));
     }
 
+    // la chat occupa tutto lo spazio fino al fondo della finestra; la casella per scrivere resta in basso
+    const corpo = el("div", { class: "assistente-corpo" },
+      el("div", { class: "assistente-chat" }, scorri,
+        el("div", { class: "chat-scrivi" },
+          el("div", { class: "casella-chat" }, domanda, el("div", { class: "comandi-chat" }, ferma, invia)),
+          el("div", { class: "tenue piccolo nota-chat" }, "Invio per mandare, Maiusc+Invio per andare a capo. Tutto gira su questo computer, senza internet."))),
+      lato);
+    scorri.addEventListener("scroll", () => { S.inFondo = scorri.scrollHeight - scorri.scrollTop - scorri.clientHeight < 60; });
+    const cresci = () => { domanda.style.height = "auto"; domanda.style.height = Math.min(domanda.scrollHeight, 240) + "px"; };
+    domanda.addEventListener("input", cresci);
+    const adatta = () => {
+      if (!document.body.contains(corpo)) return window.removeEventListener("resize", adatta);
+      corpo.style.height = Math.max(380, window.innerHeight - corpo.getBoundingClientRect().top - 10) + "px";
+    };
+    window.addEventListener("resize", adatta);
+    requestAnimationFrame(() => { adatta(); cresci(); domanda.focus(); S.inFondo = true; scorri.scrollTop = scorri.scrollHeight; });
+
     disegnaChat();
     disegnaLato();
     return [
-      intestazioneRichiudibile("assistente", "Assistente",
-        el("p", { class: "tenue" }, "Un esperto di database e di progettazione con cui parlare del database che costruisci nell'editor o di quello caricato: spiega tabelle e collegamenti, trova come arrivare da " +
-          "un dato a un altro, scrive ed esegue query, dice cosa migliorare. Gira tutto sul computer: il modello di linguaggio è un file locale " +
-          "e non c'è nessuna connessione. Nella risposta si vedono i passi: le query eseguite e le righe trovate."),
-        el("div", { class: "riga-comandi" },
-          el("div", { class: "scelta-modo", role: "tablist" }, [["database", "Database e progetto"], ["programmazione", "Programmazione"]].map(([m, n]) =>
-            el("button", { class: S.modo === m ? "primario" : "", role: "tab", "aria-selected": String(S.modo === m),
-              onclick: () => { if (S.inCorso) return; S.modo = m; mostra("assistente"); } }, n))),
-          el("b", {}, "Database"), sceltaOrigine("assistente"))),
-      el("div", { class: "assistente-griglia" },
-        el("div", { class: "pannello assistente-chat" }, chat,
-          el("div", { class: "chat-scrivi" }, domanda, el("div", { class: "riga-comandi" }, invia, ferma,
-            el("button", { onclick: () => { if (!S.inCorso) { S.conversazioni[S.modo] = []; disegnaChat(); } } }, "Nuova conversazione")))),
-        lato),
+      el("div", { class: "barra-assistente" },
+        el("h2", {}, "Assistente"),
+        el("div", { class: "scelta-modo", role: "tablist" }, [["database", "Database e progetto"], ["programmazione", "Programmazione"]].map(([m, n]) =>
+          el("button", { class: S.modo === m ? "primario" : "", role: "tab", "aria-selected": String(S.modo === m),
+            onclick: () => { if (S.inCorso) return; S.modo = m; mostra("assistente"); } }, n))),
+        el("label", { class: "tenue" }, "Database ", sceltaOrigine("assistente")),
+        el("span", { class: "spazio" }),
+        apriLato,
+        el("button", { onclick: () => { if (!S.inCorso) { S.conversazioni[S.modo] = []; disegnaChat(); } } }, "Nuova conversazione")),
+      corpo,
     ];
   },
 });
