@@ -476,6 +476,7 @@ const ICONE = {
   lavagna: "M3 4h8v16H3zM13 4h8v16h-8zM15 9h4M15 13h3",
   backend: "M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6",
   documentazione: "M6 3h9l4 4v14H6zM15 3v4h4M9 11h7M9 14h7M9 17h5",
+  assistente: "M4 5h16v11H9l-5 4zM8 9h8M8 12h5",
   popola: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3M15 17l2 2 4-4",
   suggerimenti: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z",
   er: "M3 5h6v4H3zM15 15h6v4h-6zM12 8l4 4-4 4-4-4zM9 7h3v1M12 16v1h3",

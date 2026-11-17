@@ -549,3 +549,27 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 #nuova-finestra + #comprimi-nastro { margin-left: 2px; }
 
 .consiglio-ok { border-left-color: var(--ok); }
+
+/* ---- Assistente */
+.assistente-griglia { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .assistente-griglia { grid-template-columns: 1fr; } }
+.assistente-chat { display: flex; flex-direction: column; height: calc(100vh - 290px); min-height: 420px; padding: 0; margin: 0; }
+.chat-messaggi { flex: 1; overflow: auto; padding: 14px 16px; }
+.chat-scrivi { border-top: 1px solid var(--bordo); padding: 10px 12px; }
+.chat-scrivi textarea { width: 100%; resize: vertical; font: inherit; padding: 8px; }
+.messaggio-chat { margin: 0 0 14px; max-width: 92%; }
+.messaggio-chat.utente { margin-left: auto; background: var(--primario-chiaro); border-radius: 12px 12px 2px 12px; padding: 8px 12px; }
+.messaggio-chat.assistente { background: var(--riga-alt); border: 1px solid var(--bordo); border-radius: 12px 12px 12px 2px; padding: 8px 12px; }
+.messaggio-chat .chi { font-size: 12px; font-weight: 700; color: var(--tenue); margin-bottom: 4px; }
+.messaggio-chat p { margin: 4px 0; }
+.passo-assistente { margin: 6px 0; font-size: 13px; }
+.passo-assistente summary { cursor: pointer; color: var(--tenue); }
+.passo-errore summary { color: var(--pericolo); }
+.testo-passo { white-space: pre-wrap; font-size: 12px; }
+.chat-vuota { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.esempio-domanda { font-size: 13px; }
+.assistente-lato h3:first-child { margin-top: 0; }
+.assistente-lato .modelli { padding-left: 18px; font-size: 13px; }
+.assistente-lato .modelli li { margin-bottom: 6px; }
+.assistente-lato input[type=text] { flex: 1; min-width: 120px; }
+.assistente-lato textarea { width: 100%; font: inherit; padding: 6px; resize: vertical; }

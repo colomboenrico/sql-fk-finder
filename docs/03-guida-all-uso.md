@@ -222,6 +222,22 @@ Nel pannello **Il database del programma** carica la cartella con tutti i file `
 
 Per ogni azione: le **query in ordine** con i valori (inserito, nuovo valore, cercato nel WHERE), le tabelle con le lettere **C R U D** (inserisce, legge, modifica, cancella), le **JOIN** e i **valori che passano da una tabella all'altra** (lo stesso codice in due tabelle, l'id appena creato da un INSERT usato nell'INSERT dopo). Ogni azione ha il suo **diagramma dei collegamenti**: le tabelle che usa (con le lettere CRUD accanto al nome, la chiave e le colonne usate) e una linea per ogni collegamento trovato nelle query: blu se è una chiave dichiarata, verde se viene da una JOIN, arancione tratteggiata se viene dai valori (stesso codice in due tabelle, id appena creato da un INSERT). Come negli Schemi grafici, il clic su una tabella o su una chiave mostra i suoi collegamenti; *Scarica PNG* salva l'immagine. Con più azioni c'è anche **Tutte le azioni insieme**: la mappa del database come la usa il programma. Sotto, la matrice **Azioni e tabelle** e i **Collegamenti usati dal programma**: se è caricato il dump dello stesso database si vede se ogni collegamento è una chiave *dichiarata*, *candidata* o *non trovata dall'analisi* (un collegamento nuovo da guardare). Si scaricano l'Excel (azioni e tabelle, query, valori, collegamenti) e la **specifica in Markdown**, un documento per ricreare il programma tasto per tasto. Le azioni si salvano nel progetto.
 
+### Assistente
+
+Una chat con un esperto di database e di progettazione. In alto si sceglie di cosa parla: il database che stai
+costruendo nell'**Editor del database** o quello caricato. Sa spiegare tabelle e collegamenti, trovare come si arriva da un
+dato a un altro, scrivere ed eseguire query (solo in lettura), dire cosa migliorare, indicare i prossimi passi del progetto
+e consigliare come far comunicare il database con un altro applicativo (API, eventi con tabella di uscita, viste in sola
+lettura, file con tabelle di appoggio), scrivendo tabelle, trigger, viste ed endpoint con le tue tabelle. Nel riquadro
+**Il progetto** puoi descrivere a cosa serve il database e con quali programmi lavora: i consigli diventano più precisi.
+
+Tutto gira sul computer, senza internet. Senza modello l'Assistente risponde alle domande frequenti con le regole. Con un
+modello di linguaggio locale (un file `.gguf`, per esempio Qwen2.5-Coder 7B Q4_K_M, circa 5 GB) capisce domande libere e
+ragiona sul progetto: il file si scarica una volta su un computer con internet, si copia in
+`Documenti/SQL FK Finder/modelli` e si carica dal pannello **Il modello**. Su un PC Windows con 32 GB di RAM il 7B risponde
+in pochi secondi anche senza scheda grafica; il 14B (circa 9 GB) ragiona meglio ma è più lento. Il modello non legge i file:
+l'app gli passa le tabelle che c'entrano con la domanda ed esegue lei le query, e nella risposta si vedono i passi fatti.
+
 ### Tabelle
 Ogni tabella con numero di colonne, chiave primaria (dichiarata o indovinata) e numero di colonne della chiave.
 

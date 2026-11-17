@@ -82,6 +82,36 @@ def installa_ruote(cartella_ruote, site_packages):
                     os.chmod(destinazione, permessi)
 
 
+# Il modello di linguaggio dell'Assistente: llama-cpp-python già compilato (CPU per Windows e Linux, Metal per Mac).
+# Gira dentro l'app, senza server e senza rete; il modello (.gguf) lo sceglie l'utente. Facoltativo: se non si trova
+# la ruota, l'app funziona lo stesso e l'Assistente risponde con le regole. SQLFK_SENZA_LLM=1 per non includerlo.
+INDICE_LLM = {"win-x64": "https://abetlen.github.io/llama-cpp-python/whl/cpu",
+              "linux-x64": "https://abetlen.github.io/llama-cpp-python/whl/cpu",
+              "mac-arm64": "https://abetlen.github.io/llama-cpp-python/whl/metal",
+              "mac-x64": "https://abetlen.github.io/llama-cpp-python/whl/cpu"}
+VERSIONE_LLM = os.environ.get("SQLFK_LLAMA_VERSIONE", "")      # vuoto = l'ultima pubblicata per questo Python
+DIPENDENZE_LLM = ["jinja2", "MarkupSafe", "diskcache", "typing-extensions"]
+
+
+def aggiungi_llm(sistema, comando_base, ruote, site_packages):
+    if os.environ.get("SQLFK_SENZA_LLM") or sistema not in INDICE_LLM:
+        return
+    cartella = CACHE / f"wheels-llm-{sistema}"
+    cartella.mkdir(parents=True, exist_ok=True)
+    piattaforme = [x for i, x in enumerate(comando_base) if i and comando_base[i - 1] == "--platform"]
+    base = [sys.executable, "-m", "pip", "download", "--quiet", "--only-binary=:all:", "--python-version", VERSIONE,
+            "--implementation", "cp", "-d", str(cartella)] + [x for p in piattaforme for x in ("--platform", p)]
+    pacchetto = "llama-cpp-python" + (f"=={VERSIONE_LLM}" if VERSIONE_LLM else "")
+    print(f"  assistente: {pacchetto} da {INDICE_LLM[sistema]}")
+    try:
+        subprocess.run(base + ["--no-deps", "--extra-index-url", INDICE_LLM[sistema], pacchetto], check=True)
+        subprocess.run(base + DIPENDENZE_LLM, check=True)
+    except subprocess.CalledProcessError:
+        print("  assistente: llama-cpp-python non disponibile per questo sistema: l'Assistente userà le regole")
+        return
+    installa_ruote(cartella, site_packages)
+
+
 def prepara(sistema):
     s = SISTEMI[sistema]
     cartella = DESTINAZIONE / sistema
@@ -118,6 +148,7 @@ def prepara(sistema):
     print("  librerie:", " ".join(Path(REQUISITI).read_text().split()), *s["extra"])
     subprocess.run(comando, check=True)
     installa_ruote(ruote, site_packages)
+    aggiungi_llm(sistema, comando, ruote, site_packages)
     for schema in TOGLIERE:                        # i test delle librerie non servono e pesano
         for d in site_packages.glob(schema):
             shutil.rmtree(d, ignore_errors=True)
@@ -149,6 +180,9 @@ def prepara(sistema):
         print("  prova:", (r.stdout or r.stderr).strip()[-300:])
         if r.returncode:
             raise SystemExit(1)
+        r = subprocess.run([str(eseguibile), "-c", "import llama_cpp; print('assistente: llama-cpp-python', llama_cpp.__version__)"],
+                           capture_output=True, text=True)
+        print("  prova:", (r.stdout or "assistente senza modello di linguaggio (solo regole)").strip()[-200:])
 
 
 if __name__ == "__main__":

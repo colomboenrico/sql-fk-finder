@@ -11,6 +11,7 @@ Accetta connessioni solo dal computer stesso (127.0.0.1).
 import argparse
 from collections import Counter
 import shutil
+import sqlite3
 import time
 import io
 import json
@@ -35,6 +36,7 @@ from . import controllo as CTRL
 from . import descrizione as DESCR
 from . import ascolto as AS
 from . import consigli as CONS
+from . import assistente as ASS
 from . import prova as PR
 from . import popola as POP
 from . import esplora as ESP
@@ -109,6 +111,8 @@ class Sessione:
         self.verifica = None              # l'ultima verifica con i dati (chiavi, collegamenti dai valori, profilo)
         self.crud = None                  # (R, analisi CRUD di viste e procedure)
         self.ascolto = AS.Ascolto()       # le query del programma lette dal general log di MySQL, divise per azione
+        self.modello_llm = ASS.Modello()  # il modello di linguaggio locale dell'assistente (se c'è)
+        self.conversazioni = {}
         self.porta = None
 
     # ------------------------------------------------------------ lavori in background
@@ -1171,6 +1175,215 @@ class Sessione:
                 relazioni += d.get("relazioni") or []
         return {"posizioni": posizioni, "relazioni": relazioni}
 
+    # ------------------------------------------------------------ assistente (sqlfk.assistente): modello locale o regole
+    def fonte_assistente(self, dati):
+        """Di quale database parla l'assistente: quello che si sta costruendo nell'editor (con i dati del database di prova,
+        se c'è) o quello caricato (con i dati del database delle query). Tutto in locale."""
+        if dati.get("origine") == "caricato":
+            self.richiedi_dati()
+            return {"R": self.R, "gruppo_di": self.gruppo_di, "origine": "caricato", "nome": f"il database caricato ({self.origine})",
+                    "collegamenti": self.struttura_collegamenti()["collegamenti"], "dialetto": self.imp.dialetto, "relazioni": []}
+        R, gruppo_di = self.analisi_separata(dati.get("sql"), dati.get("dialetto"))
+        return {"R": R, "gruppo_di": gruppo_di, "origine": "editor", "nome": "il database che l'utente sta costruendo nell'editor",
+                "collegamenti": MR.struttura(R, gruppo_di, "collegamenti")["collegamenti"], "dialetto": dati.get("dialetto") or "mysql",
+                "relazioni": [str(x) for x in (dati.get("relazioni") or []) if x][:80]}
+
+    def contesto_assistente(self, domanda, F, progetto=""):
+        """Il database detto al modello: riepilogo, le tabelle che c'entrano con la domanda (e le collegate) con colonne,
+        chiavi e descrizione, i collegamenti tra loro e, per l'editor, le relazioni disegnate. Con poche tabelle, tutte."""
+        R = F["R"]
+        S = R.S
+        collegamenti = F["collegamenti"]
+        nomi = sorted(S.col_per_tab)
+        parole = {w for w in re.findall(r"\w{3,}", domanda.lower())}
+
+        def punteggio(t):
+            testo = (t + " " + " ".join(S.col_per_tab[t])).lower()
+            return sum(3 if w in t.lower() or t.lower().rstrip("aeio") in w else 1 for w in parole if w in testo or w.rstrip("aeio") in testo)
+        if len(nomi) <= 40:
+            scelte = nomi
+        else:
+            prime = [t for t in sorted(nomi, key=punteggio, reverse=True)[:12] if punteggio(t) > 0]
+            vicine = {l["a"] for l in collegamenti if l["da"] in prime} | {l["da"] for l in collegamenti if l["a"] in prime}
+            scelte = list(dict.fromkeys(prime + sorted(vicine)))[:30] or nomi[:25]
+        try:
+            D = DESCR.descrivi(R, F["gruppo_di"])["tabelle"]
+        except Exception:
+            D = {}
+        dati_si = "i dati sono nel database delle query (SQLite)" if F["origine"] == "caricato" else (
+            "i dati di prova sono nel database di prova (SQLite, pagina Popola e verifica)" if PR.DATABASE.exists()
+            else "non ha ancora dati: si possono creare nella pagina Popola e verifica")
+        righe = [f"Si parla di {F['nome']}. {len(nomi)} tabelle, {len(R.fk_dichiarate)} chiavi esterne dichiarate, "
+                 f"{len(R.fk)} trovate dall'analisi. Dialetto: {F['dialetto']}; {dati_si}."]
+        if progetto:
+            righe += ["", "IL PROGETTO (descritto dall'utente)", str(progetto)[:1500]]
+        righe += ["" if len(scelte) == len(nomi) else f"Tabelle mostrate qui (le più vicine alla domanda): {len(scelte)} su {len(nomi)}. "
+                  f"Altre tabelle: {', '.join(t for t in nomi if t not in scelte)[:1500]}", "", "TABELLE"]
+        for t in scelte:
+            colonne = [f"{c} {S.tipi.get((t, c), '')}".strip() + (" PK" if c in S.pk.get(t, []) else "") for c in S.col_per_tab[t][:30]]
+            altro = f" ...e altre {len(S.col_per_tab[t]) - 30}" if len(S.col_per_tab[t]) > 30 else ""
+            descr = D.get(t, {}).get("sintesi") or ""
+            righe.append(f"- {t}({', '.join(colonne)}{altro})" + (f"  -- {descr}" if descr else ""))
+        righe += ["", "COLLEGAMENTI (figlia.colonne -> padre.colonne)"]
+        dentro = set(scelte)
+        for l in collegamenti:
+            if l["da"] in dentro and l["a"] in dentro:
+                righe.append(f"- {l['da']}.{','.join(l['colonne_da'])} -> {l['a']}.{','.join(l['colonne_a'])} "
+                             f"({'dichiarata' if l['tipo'] == 'dichiarata' else 'trovata'}, {l.get('relazione', '1:N')})")
+        if F["relazioni"]:
+            righe += ["", "RELAZIONI DISEGNATE NELL'EDITOR (modello E-R)"] + [f"- {x}" for x in F["relazioni"][:40]]
+        testo = "\n".join(righe)
+        return testo[:ASS.CONTESTO_CARATTERI]
+
+    def strumenti_assistente(self, F):
+        """Gli strumenti che l'assistente può usare, tutti in sola lettura: sul database caricato o su quello di prova
+        dell'editor."""
+        R = F["R"]
+        S = R.S
+        coll = F["collegamenti"]
+        caricato = F["origine"] == "caricato"
+
+        def tabella_testo(colonne, righe, massimo=20):
+            corte = [[("" if v is None else str(v))[:40] for v in r] for r in righe[:massimo]]
+            return "\n".join([" | ".join(colonne)] + [" | ".join(r) for r in corte]) + (f"\n(... {len(righe)} righe in tutto)" if len(righe) > massimo else "")
+
+        def leggi(q):
+            """(colonne, righe) di una SELECT in sola lettura, al più 50 righe."""
+            if caricato:
+                db = self.database()
+                with self.lock_db:
+                    cur = db.conn.execute(f"SELECT * FROM ({q}) LIMIT 50")
+                    return [d[0] for d in cur.description], [list(r) for r in cur.fetchall()]
+            if not PR.DATABASE.exists():
+                raise ValueError("il database dell'editor non ha ancora dati: crealo e popolalo nella pagina Popola e verifica")
+            conn = sqlite3.connect(f"file:{PR.DATABASE}?mode=ro", uri=True)
+            try:
+                cur = conn.execute(f"SELECT * FROM ({q}) LIMIT 50")
+                return [d[0] for d in cur.description], [list(r) for r in cur.fetchall()]
+            finally:
+                conn.close()
+
+        def sql(query=""):
+            q = str(query).strip().rstrip(";")
+            if not re.match(r"^(select|with)\b", q, re.I) or ";" in q:
+                raise ValueError("solo una SELECT (sola lettura)")
+            colonne, righe = leggi(q)
+            return {"testo": f"{len(righe)} righe", "colonne": colonne, "righe": righe, "sql": q,
+                    "per_il_modello": tabella_testo(colonne, righe) or "nessuna riga"}
+
+        def tabella(nome=""):
+            vero = next((t for t in S.col_per_tab if t.lower() == str(nome).lower()), None)
+            if not vero:
+                raise ValueError(f"la tabella {nome} non c'è")
+            padri = [f"{l['da']}.{','.join(l['colonne_da'])} -> {l['a']}.{','.join(l['colonne_a'])}" for l in coll if l["da"] == vero]
+            figli = [f"{l['da']}.{','.join(l['colonne_da'])} -> {l['a']}.{','.join(l['colonne_a'])}" for l in coll if l["a"] == vero]
+            try:
+                d = DESCR.descrivi(R, F["gruppo_di"])["tabelle"].get(vero, {})
+            except Exception:
+                d = {}
+            righe_testo = [f"Tabella {vero}" + (f" ({d.get('categoria')}): {d.get('descrizione')}" if d else ""),
+                           "Colonne: " + ", ".join(f"{c} {S.tipi.get((vero, c), '')}".strip() + (" PK" if c in S.pk.get(vero, []) else "")
+                                                   for c in S.col_per_tab[vero]),
+                           "Punta a: " + ("; ".join(padri) or "nessuna tabella"), "La usano: " + ("; ".join(figli) or "nessuna tabella")]
+            esempi = None
+            try:
+                if caricato:
+                    E = self.esempi_tabella(vero, campione=200)
+                    righe_testo.append(f"Righe: {E['righe']}")
+                    esempi = {"colonne": list(E["schede"][0].keys()) if E["schede"] else [], "righe": [list(r.values()) for r in E["schede"]]}
+                else:
+                    presenti = {r[1] for r in leggi(f"SELECT * FROM pragma_table_info('{vero}')")[1]}
+                    if not set(S.col_per_tab[vero]) <= presenti:
+                        raise ValueError("il database di prova non corrisponde al disegno")
+                    colonne, righe = leggi(f'SELECT * FROM "{vero}" LIMIT 3')
+                    esempi = {"colonne": colonne, "righe": righe}
+                if esempi["righe"]:
+                    righe_testo.append("Esempi: " + " / ".join(", ".join(f"{k}={v}" for k, v in list(zip(esempi["colonne"], r))[:6])
+                                                                for r in esempi["righe"][:2]))
+            except Exception:
+                pass
+            testo = "\n".join(righe_testo)
+            return {"testo": testo, **(esempi or {}), "per_il_modello": testo}
+
+        def percorso(da="", a="", colonna=None, valore=None):
+            if colonna and valore is not None and str(valore) != "":
+                if caricato:
+                    P = self.percorso_caricato(da, colonna, valore, a)
+                else:
+                    with PR.connetti() as conn:
+                        P = PR.percorso_su(conn, [{**l, "tipo": "dichiarata" if l["tipo"] == "dichiarata" else "trovata"} for l in coll],
+                                           da, colonna, valore, a)
+                if not P["trovato"]:
+                    return {"testo": P["spiegazione"], "per_il_modello": P["spiegazione"]}
+                testo = P["spiegazione"] + "\n" + "\n".join(P.get("frasi", []))
+                return {"testo": testo, "sql": P["sql"], "colonne": P["colonne"], "righe": P["righe"][:50],
+                        "per_il_modello": testo + "\nSQL:\n" + P["sql"] + "\n" + tabella_testo(P["colonne"], P["righe"])}
+            archi = [{"da": l["da"], "a": l["a"], "colonne_da": l["colonne_da"], "colonne_a": l["colonne_a"],
+                      "tipo": "dichiarata" if l["tipo"] == "dichiarata" else "trovata"} for l in coll]
+            passi = PR.cerca_percorso(archi, da, a)
+            if passi is None:
+                testo = f"Da {da} non si arriva a {a}: nessuna catena di chiavi esterne."
+            else:
+                testo = f"Da {da} a {a} in {len(passi)} passi:\n" + "\n".join(
+                    f"{p['da']}.{','.join(p['colonne_da'])} {'punta a' if p['verso'] == '→' else 'è usata da'} {p['a']}.{','.join(p['colonne_a'])} ({p['tipo']})" for p in passi)
+            return {"testo": testo, "per_il_modello": testo}
+
+        def suggerimenti():
+            C = CONS.suggerimenti(R)
+            principali = [c for c in C["suggerimenti"] if c["gravità"] != "info"][:8] or C["suggerimenti"][:8]
+            testo = C["sintesi"] + "\n" + "\n".join(f"- {c['titolo']}: {c['perché']}" for c in principali)
+            return {"testo": testo, "per_il_modello": testo}
+
+        def integrazione(tabelle=None, descrizione=""):
+            testo = ASS.guida_integrazione(descrizione, [t for t in (tabelle or []) if t in S.col_per_tab] or ASS.tabelle_centrali(S.col_per_tab, coll),
+                                           S, F["dialetto"])
+            return {"testo": testo, "per_il_modello": testo}
+
+        return {"sql": sql, "tabella": tabella, "percorso": percorso, "suggerimenti": suggerimenti, "integrazione": integrazione}
+
+    def assistente(self, comando, dati):
+        M = self.modello_llm
+        if comando == "stato":
+            return {**M.stato(), "database": bool(self.df_schema is not None)}
+        if comando == "carica":
+            try:
+                return M.carica(dati.get("percorso"))
+            except (FileNotFoundError, RuntimeError) as e:
+                raise Errore(str(e))
+        if comando == "libera":
+            M.scarica_dalla_memoria()
+            return M.stato()
+        if comando == "ferma":
+            c = self.conversazioni.get(str(dati.get("id")))
+            if c:
+                c.fermato = True
+            return {"ok": True}
+        if comando == "chiedi":
+            domanda = str(dati.get("domanda") or "").strip()
+            if not domanda:
+                raise Errore("Scrivi una domanda.")
+            F = self.fonte_assistente(dati)
+            conv = ASS.Conversazione(domanda)
+            self.conversazioni = {k: v for k, v in self.conversazioni.items() if not v.finito or time.time() - v.inizio < 600}
+            self.conversazioni[conv.id] = conv
+            usa_modello = bool(M.llm) and not dati.get("senza_modello")
+            progetto = str(dati.get("progetto") or "").strip()
+
+            def lavoro():
+                try:
+                    strumenti = self.strumenti_assistente(F)
+                    if usa_modello:
+                        ASS.rispondi_con_modello(conv, M, self.contesto_assistente(domanda, F, progetto), dati.get("storia"), strumenti)
+                    else:
+                        ASS.rispondi_con_regole(conv, sorted(F["R"].S.col_per_tab), strumenti, F, progetto)
+                except Exception as e:
+                    conv.errore = f"{type(e).__name__}: {e}"
+                finally:
+                    conv.finito = True
+            threading.Thread(target=lavoro, daemon=True).start()
+            return {"id": conv.id, "modo": "modello" if usa_modello else "regole"}
+        raise Errore(f"Comando sconosciuto: {comando}")
+
     def analisi_separata(self, sql, dialetto=None):
         """L'analisi completa di uno schema (per esempio il disegno dell'editor) senza toccare il database caricato."""
         dialetto = dialetto or self.imp.dialetto
@@ -1602,6 +1815,15 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
                                                                  json.loads(voce("colonne_a", "[]"))), blocca=False)
             return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
+        if percorso in ("/api/assistente/stato", "/api/assistente/risposta"):
+            def assistente_get():
+                if percorso.endswith("stato"):
+                    return s.assistente("stato", {})
+                c = s.conversazioni.get(parse_qs(url.query).get("id", [""])[0])
+                if not c:
+                    raise Errore("Risposta non trovata.")
+                return c.dati()
+            return self.esegui(assistente_get, blocca=False)
         if percorso == "/api/scarica/backend":
             def scarica_backend():
                 try:
@@ -1847,6 +2069,8 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in ("/api/documentazione", "/api/suggerimenti"):
             return self.esegui(lambda: (s.documentazione if percorso.endswith("documentazione") else s.suggerimenti)(dati), blocca=False)
+        if percorso.startswith("/api/assistente/"):
+            return self.esegui(lambda: s.assistente(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/popola/"):
             def popola_():
                 comando = percorso.rsplit("/", 1)[1]
