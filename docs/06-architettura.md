@@ -109,6 +109,7 @@ Usate dall'interfaccia; nel browser si possono chiamare anche a mano.
 | query | `query/tabelle`, `query`, `query/csv`, `query/interrompi`, `query/costruisci`, `query/ricostruisci`, `query/svuota_cache` |
 | interfaccia | `finestre`, `finestre/leggi`, `finestre/leggi_tutto`, `finestre/registra`, `finestre/ferma`, `interfaccia`, `interfaccia/pagina`, `interfaccia/analisi`, `interfaccia/svuota` |
 | ascolto del database | `ascolto`, `ascolto/segui`, `ascolto/inizia`, `ascolto/fine`, `ascolto/annulla`, `ascolto/importa`, `ascolto/azione`, `ascolto/riepilogo`, `ascolto/rinomina`, `ascolto/elimina`, `ascolto/svuota`, `ascolto/dimentica_rumore` |
+| backend | `backend/genera`, `backend/compila`, `scarica/backend` |
 | editor e prova | `editor/esporta`, `scarica/editor_database`, `prova/crea`, `prova/struttura`, `prova/righe`, `prova/riga`, `prova/query`, `prova/percorso`, `prova/genera`, `prova/compila`, `prova/esegui`, `scarica/prova_cpp`, `scarica/prova_sqlite` |
 | clingo | `asp` |
 | controllo | `autoverifica` |

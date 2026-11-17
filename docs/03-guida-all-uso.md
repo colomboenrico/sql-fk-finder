@@ -21,7 +21,7 @@ In alto c'è una barra a schede come quella di Word: ogni scheda è una funziona
 | **Home** | *Carica*: Carica cartella, Carica file .sql, percorso + Apri · *Progetto*: Apri progetto, Salva progetto · *Inizia*: Panoramica, Problemi, Come si usa |
 | **Analisi** | *Chiavi*: Tabelle, PK composte, FK candidate, Scelta con clingo, Verificate sui dati · *Qualità*: Qualità schema, Regole, Altri risultati · *Struttura*: Aree e gruppi, Togli entità |
 | **Reverse engineering** | *Capire il database*: Reverse engineering, Viste e procedure · *Il programma*: Verifica con l'interfaccia, Ascolta il database · *La cartella*: File della cartella, File XML |
-| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato |
+| **Diagrammi** | *Schemi*: Schemi grafici, Modello relazionale, Collegamenti passo passo · *Disegno*: Editor del database, Disegno affiancato, Schema E-R, Backend |
 | **Dati** | *Tabelle*: Dati delle tabelle, Esempi dei dati, Peso delle tabelle · *SQL*: Query sui dati |
 | **Esporta** | *Genera*: Codice generato, Ontologia · *Salva*: Salva risultati |
 | **Guida** | *Aiuto*: Come si usa, Regole di progettazione · *App*: Impostazioni |
@@ -62,6 +62,15 @@ Per disegnare un database da zero o modificarne uno: aggiungi entità con attrib
 - **Query**: SQL (SQLite) sul database di prova, anche INSERT, UPDATE e DELETE (Ctrl+Invio).
 - **Da un dato a un altro**: parti da un dato (`clienti.nome = Mirco`) e scegli la tabella di arrivo (`prodotti`): l'app trova la catena più corta di chiavi esterne (e altre possibili), scrive la query con le JOIN e la esegue. Si può cercare **nel database caricato intero** (tutte le tabelle, con le chiavi dichiarate e quelle trovate dall'analisi, anche senza importarle nell'editor: funziona con database enormi, gli indici si creano da soli) o nel database di prova.
 - **Backend C++**: *Genera il codice* scrive una classe per tabella con **getter e setter** (`modelli.hpp`, `std::optional` per le colonne che possono essere NULL), un **repository** per tabella con `inserisci`, `aggiorna`, `elimina`, `trova`, `tutti` (SQLite, `repository.hpp`) e un programma di prova (`main.cpp`). *Compila* usa il compilatore del computer: sul Mac clang++ (Command Line Tools di Xcode), su Linux g++ con libsqlite3-dev, su **Windows** g++ o clang++ di MSYS2/MinGW oppure **Visual Studio** (anche solo gli *Strumenti di compilazione*, trovati da soli con vswhere). Su Windows non serve la libreria SQLite: il backend la carica all'avvio da `winsqlite3.dll`, che c'è già in Windows 10 e 11, o da `sqlite3.dll` accanto al programma. I valori passano al backend in UTF-8, quindi anche gli accenti arrivano giusti; nello zip c'è anche `compila.bat`. Poi scegli tabella e operazione, compili i campi ed *Esegui con il backend C++*: si vedono il comando, il risultato (le righe come le restituiscono i getter) e subito il contenuto della tabella. *Scarica il codice (.zip)* contiene i file, `compila.sh` e il database di prova.
+
+### Backend
+*Diagrammi → Backend*: il backend in C++ costruito dal database, **dal disegno dell'editor** o **dal database caricato** (tutte le tabelle). Si ricostruisce ogni volta che apri la pagina, quindi è sempre quello di adesso:
+- `modelli.hpp`: una classe per tabella con **getter e setter** (`std::optional` per le colonne che possono essere NULL);
+- `repository.hpp`: per ogni tabella `inserisci`, `aggiorna`, `elimina`, `trova`, `tutti` su SQLite;
+- `query.hpp`: **le query salvate** con *Chiedi un dato* (pulsante *Aggiungi al backend*), una funzione per query con la sua struttura del risultato;
+- `main.cpp`, `database.hpp`, `sqlite.hpp`, `compila.sh`, `compila.bat`.
+
+In alto il riepilogo (classi, repository, query, righe di codice), sotto l'elenco delle query salvate (*Togli* per toglierne una) e i file da leggere e copiare. *Compila* controlla che il backend si compili (Mac, Linux, Windows); *Scarica il backend (.zip)* scarica tutti i file. Le query salvate restano nel file di progetto.
 
 ### Disegno affiancato
 A sinistra il **diagramma del database caricato**, a destra una **lavagna bianca** (lo stesso editor della pagina *Editor del database*).

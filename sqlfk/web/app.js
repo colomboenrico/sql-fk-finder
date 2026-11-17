@@ -8,6 +8,7 @@ let stato = { caricato: false };
 let filtroRegola = "";
 // editor: il database disegnato (entità, attributi, relazioni), l'elemento selezionato e la vista della tela
 let modelloEditor = Editor.nuovoModello();
+let queryBackend = [];                  // le query salvate con "Chiedi un dato": diventano funzioni del backend (query.hpp)
 let selezioneEditor = null;
 let vistaEditor = null;
 // disposizione del diagramma: tabella -> [x, y], per le due viste; si salva nel file di progetto
@@ -399,6 +400,7 @@ $("#salva-progetto").addEventListener("click", () => conAttesa(async () => {
   const progetto = await api("/api/progetto");
   progetto.layout = layoutER;
   progetto.editor = modelloEditor;
+  progetto.backend = { query: queryBackend };
   progetto.lavagna = STATO_LAVAGNA.modello;
   scaricaBlob(new Blob([JSON.stringify(progetto, null, 1)], { type: "application/json" }), nomeProgetto());
   avviso("Progetto salvato: riaprilo con Apri progetto per continuare il lavoro.");
@@ -415,6 +417,7 @@ $("#in-progetto").addEventListener("change", async e => {
     const l = progetto.layout || {};
     layoutER = { ...l, iniziale: l.iniziale || {}, collegamenti: l.collegamenti || {} };
     modelloEditor = progetto.editor && progetto.editor.entita ? progetto.editor : Editor.nuovoModello();
+    queryBackend = Array.isArray(progetto.backend?.query) ? progetto.backend.query : [];
     selezioneEditor = null; vistaEditor = null;
     STATO_LAVAGNA.modello = progetto.lavagna ? leggiLavagna(JSON.stringify({ formato: FORMATO_LAVAGNA, modello: progetto.lavagna })) : Editor.nuovoModello();
     STATO_LAVAGNA.selezione = STATO_LAVAGNA.vista = null;
@@ -467,6 +470,7 @@ const ICONE = {
   modello: "M3 4h8v16H3zM13 4h8v7h-8zM13 13h8v7h-8zM5 8h4M15 8h4",
   editor: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   lavagna: "M3 4h8v16H3zM13 4h8v16h-8zM15 9h4M15 13h3",
+  backend: "M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6",
   er: "M3 5h6v4H3zM15 15h6v4h-6zM12 8l4 4-4 4-4-4zM9 7h3v1M12 16v1h3",
   dati: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
   peso: "M5 20V10M10 20V4M15 20v-7M20 20v-4M3 20h19",

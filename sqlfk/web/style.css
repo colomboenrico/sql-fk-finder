@@ -525,3 +525,11 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
                            border-radius: 10px; padding: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); align-items: stretch; }
 .editor-griglia.er-intero > .er-cornice { height: 100% !important; min-height: 0 !important; }
 .editor-griglia.er-intero > .editor-pannello { max-height: 100% !important; height: 100%; }
+
+/* ---- pagina Backend */
+.riquadri-backend { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.riquadro-numero { margin: 0; padding: 10px 14px; }
+.riquadro-numero .valore { font-size: 24px; font-weight: 700; color: var(--primario); }
+.schede-file { margin: 8px 0 6px; }
+.codice-backend { max-height: 70vh; }
+.query-backend li { margin: 4px 0; }

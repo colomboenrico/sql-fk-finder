@@ -1149,6 +1149,34 @@ class Sessione:
             return PR.chiedi_su(db.conn, collegamenti, tipi_di, dati.get("cosa"), dati.get("colonne"), dati.get("da"),
                                 dati.get("colonna"), dati.get("operatore") or "=", dati.get("valore"), dati.get("ordina"), nome_db=db.tabella_di)
 
+    def backend(self, comando, dati):
+        """Il backend C++ costruito dal disegno dell'editor o dal database caricato, con le query salvate (sqlfk.prova)."""
+        cartella = PR.CARTELLA / "backend"
+        try:
+            if comando == "genera":
+                query = [q for q in (dati.get("query") or []) if isinstance(q, dict) and q.get("sql")]
+                if dati.get("origine") == "caricato":
+                    self.richiedi_dati()
+                    S = self.R.S
+                    tabelle = [{"nome": t, "colonne": [{"nome": c, "tipo": S.tipi.get((t, c), ""), "notnull": (t, c) in S.not_null,
+                                                       "pk": (S.pk.get(t, []).index(c) + 1) if c in S.pk.get(t, []) else 0}
+                                                      for c in colonne]}
+                                for t, colonne in sorted(S.col_per_tab.items())]
+                    origine = f"database caricato: {self.origine}"
+                else:
+                    tabelle = [{"nome": t.get("nome"), "colonne": [{"nome": c.get("nome"), "tipo": c.get("tipo") or "", "notnull": bool(c.get("notnull")),
+                                                                   "pk": int(c.get("pk") or 0)} for c in t.get("colonne", [])]}
+                               for t in (dati.get("tabelle") or []) if isinstance(t, dict) and t.get("nome")]
+                    origine = "disegno dell'editor"
+                return PR.genera_cpp(tabelle, cartella, query, origine)
+            if comando == "compila":
+                if not (cartella / "main.cpp").exists():
+                    raise Errore("Prima genera il backend.")
+                return PR.compila("main.cpp", "backend", cartella)
+        except PR.ErroreProva as e:
+            raise Errore(str(e))
+        raise Errore(f"Comando sconosciuto: {comando}")
+
     def prova(self, comando, dati):
         try:
             if comando == "crea":
@@ -1512,6 +1540,13 @@ class Gestore(BaseHTTPRequestHandler):
                 return self.esegui(lambda: s.esempi_collegamento(voce("da"), json.loads(voce("colonne_da", "[]")), voce("a"),
                                                                  json.loads(voce("colonne_a", "[]"))), blocca=False)
             return self.esegui(lambda: s.esempi_tabella(voce("tabella")), blocca=False)
+        if percorso == "/api/scarica/backend":
+            def scarica_backend():
+                try:
+                    return (PR.zip_cpp(PR.CARTELLA / "backend", "backend"), "application/zip", {"Content-Disposition": 'attachment; filename="backend.zip"'})
+                except PR.ErroreProva as e:
+                    raise Errore(str(e))
+            return self.esegui(scarica_backend, blocca=False)
         if percorso in ("/api/prova/struttura", "/api/prova/righe", "/api/scarica/prova_cpp", "/api/scarica/prova_sqlite"):
             q = parse_qs(url.query)
 
@@ -1748,6 +1783,8 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/file/radice": lambda: s.scegli_radice(dati.get("cartella")),
             "/api/verifica_dati": lambda: s.verifica_dati(bool(dati.get("medie", True))),
         }
+        if percorso.startswith("/api/backend/"):
+            return self.esegui(lambda: s.backend(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/prova/"):
             return self.esegui(lambda: s.prova(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/ascolto/"):

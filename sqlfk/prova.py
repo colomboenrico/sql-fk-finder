@@ -313,27 +313,56 @@ def chiedi_su(conn, collegamenti, tipi_di, cosa, colonne, da, colonna, operatore
             "tipo_valore": tipi_da[colonna], "operatore": operatore, "valore": str(valore), "sql": sql, "spiegazione": spiegazione}
     return {"trovato": True, "spiegazione": spiegazione, "frasi": [frase(p) for p in passi], "sql": sql,
             "sql_leggibile": sql.replace("?", letterale, 1), "parametro": parametro, "colonne": colonne, "righe": righe,
-            "limite": limite, "cpp": esempio_cpp(info), "python": esempio_python(info)}
+            "limite": limite, "cpp": esempio_cpp(info), "python": esempio_python(info), "info": info}
 
 
 def _nome_funzione(info):
     return "trova_" + identificatore(f"{info['cosa']}_da_{info['da']}_{info['colonna']}").lower()
 
 
-def esempio_cpp(info):
-    """Un esempio di backend C++ per la query: una struttura per la riga del risultato, la funzione che esegue la query con il
-    valore come parametro (niente SQL injection) e un main che la prova. Usa database.hpp e sqlite.hpp del backend generato."""
-    funzione = _nome_funzione(info)
-    campi = [(identificatore(c), tipo_cpp(t)) for c, t in zip(info["colonne"], info["tipi"])]
+def _parametro_cpp(info):
+    """Il tipo C++ del valore della condizione e come si ricava dal testo scritto."""
     testuale = info["operatore"] in ("contiene", "inizia")
     genere_valore = tipo_cpp(info["tipo_valore"])[1]
     tipo_par = ("std::int64_t" if genere_valore == "intero" and not testuale else
                 "double" if genere_valore == "reale" and not testuale else "const std::string&")
     leggi_par = ("std::stoll(testo)" if tipo_par == "std::int64_t" else "std::stod(testo)" if tipo_par == "double" else
                  '"%" + testo + "%"' if info["operatore"] == "contiene" else 'testo + "%"' if info["operatore"] == "inizia" else "testo")
+    return tipo_par, leggi_par
+
+
+def _query_cpp(info, struttura="Risultato", funzione=None, prefisso=""):
+    """La struttura della riga del risultato e la funzione che esegue la query (il valore è un parametro: niente SQL
+    injection). prefisso: per esempio "inline " nei file .hpp."""
+    funzione = funzione or _nome_funzione(info)
+    campi = [(identificatore(c), tipo_cpp(t)) for c, t in zip(info["colonne"], info["tipi"])]
+    tipo_par, _ = _parametro_cpp(info)
     righe_sql = info["sql"].split("\n")
     sql_cpp = [f'        "{_c(x)}' + ("\\n" if k < len(righe_sql) - 1 else "") + '"' for k, x in enumerate(righe_sql)]
     sql_cpp[-1] += ");"
+    r = [f"// Una riga del risultato: le colonne di {info['cosa']} che servono (vuote se NULL)",
+         f"struct {struttura} {{"]
+    r += [f"    std::optional<{base}> {nome};" for nome, (base, _) in campi]
+    r += ["};", "",
+          f"// {info['spiegazione']}",
+          f"// Le righe di {info['cosa']} con {info['da']}.{info['colonna']} {OPERATORI[info['operatore']][1]} «valore»",
+          f"{prefisso}std::vector<{struttura}> {funzione}(Database& db, {tipo_par} valore) {{",
+          "    Istruzione st(db,", *sql_cpp,
+          "    st.lega(1, valore);              // il valore è un parametro: niente SQL injection",
+          f"    std::vector<{struttura}> righe;",
+          "    while (st.passo()) {",
+          f"        {struttura} r;"]
+    r += [f"        if (!st.nullo({k})) r.{nome} = st.{genere}({k});" for k, (nome, (_, genere)) in enumerate(campi)]
+    r += ["        righe.push_back(r);", "    }", "    return righe;", "}"]
+    return r
+
+
+def esempio_cpp(info):
+    """Un esempio di backend C++ per la query: la struttura del risultato, la funzione con il valore come parametro e un
+    main che la prova. Usa database.hpp e sqlite.hpp del backend generato."""
+    funzione = _nome_funzione(info)
+    campi = [identificatore(c) for c in info["colonne"]]
+    _, leggi_par = _parametro_cpp(info)
     r = ["// Esempio di backend generato da SQL FK Finder.",
          f"// {info['spiegazione']}",
          "// Compilare nella cartella del backend generato (con database.hpp e sqlite.hpp):",
@@ -342,36 +371,21 @@ def esempio_cpp(info):
          "// Usare:        esempio_query prova.sqlite <valore>   (oppure il valore sullo standard input)",
          '#include "database.hpp"', "",
          "#include <iostream>", "#include <optional>", "#include <string>", "#include <vector>", "",
-         f"// Una riga del risultato: le colonne di {info['cosa']} che servono (vuote se NULL)",
-         "struct Risultato {"]
-    r += [f"    std::optional<{base}> {nome};" for nome, (base, _) in campi]
-    r += ["};", "",
-          f"// Le righe di {info['cosa']} con {info['da']}.{info['colonna']} {OPERATORI[info['operatore']][1]} «valore»",
-          f"std::vector<Risultato> {funzione}(Database& db, {tipo_par} valore) {{",
-          "    Istruzione st(db,", *sql_cpp,
-          "    st.lega(1, valore);              // il valore è un parametro: niente SQL injection",
-          "    std::vector<Risultato> righe;",
-          "    while (st.passo()) {",
-          "        Risultato r;"]
-    r += [f"        if (!st.nullo({k})) r.{nome} = st.{genere}({k});" for k, (nome, (_, genere)) in enumerate(campi)]
-    r += ["        righe.push_back(r);",
-          "    }",
-          "    return righe;",
-          "}",
-          "",
-          'template <typename T> static void stampa(const std::optional<T>& v) { if (v) std::cout << *v; else std::cout << "NULL"; }',
-          "",
-          "int main(int argc, char** argv) {",
-          "    try {",
-          '        Database db(argc > 1 ? argv[1] : "prova.sqlite");',
-          "        std::string testo;",
-          "        if (argc > 2) testo = argv[2];",
-          f'        else if (!std::getline(std::cin, testo)) testo = "{_c(info["valore"])}";',
-          "        if (!testo.empty() && testo.back() == '\\r') testo.pop_back();",
-          f"        const auto righe = {funzione}(db, {leggi_par});",
-          '        std::cout << "' + _c("\t".join(info["colonne"])).replace("\t", "\\t") + '\\n";',
-          "        for (const auto& r : righe) {"]
-    r += [("            std::cout << '\\t'; " if k else "            ") + f"stampa(r.{nome});" for k, (nome, _) in enumerate(campi)]
+         *_query_cpp(info, "Risultato", funzione),
+         "",
+         'template <typename T> static void stampa(const std::optional<T>& v) { if (v) std::cout << *v; else std::cout << "NULL"; }',
+         "",
+         "int main(int argc, char** argv) {",
+         "    try {",
+         '        Database db(argc > 1 ? argv[1] : "prova.sqlite");',
+         "        std::string testo;",
+         "        if (argc > 2) testo = argv[2];",
+         f'        else if (!std::getline(std::cin, testo)) testo = "{_c(info["valore"])}";',
+         "        if (!testo.empty() && testo.back() == '\\r') testo.pop_back();",
+         f"        const auto righe = {funzione}(db, {leggi_par});",
+         '        std::cout << "' + _c("\t".join(info["colonne"])).replace("\t", "\\t") + '\\n";',
+         "        for (const auto& r : righe) {"]
+    r += [("            std::cout << '\\t'; " if k else "            ") + f"stampa(r.{nome});" for k, nome in enumerate(campi)]
     r += ['            std::cout << "\\n";',
           "        }",
           '        std::cerr << righe.size() << " righe\\n";',
@@ -382,6 +396,22 @@ def esempio_cpp(info):
           "    return 0;",
           "}",
           ""]
+    return "\n".join(r)
+
+
+def _query_hpp(query):
+    """query.hpp: una funzione per ogni query salvata dalla pagina Chiedi un dato (nomi diversi anche per query simili)."""
+    r = ["// Generato da SQL FK Finder: le query salvate con «Chiedi un dato», una funzione per query.",
+         "// Ognuna restituisce le righe in una struttura con le colonne scelte; il valore è un parametro (niente SQL injection).",
+         "#pragma once", "", '#include "database.hpp"', "", "#include <optional>", "#include <string>", "#include <vector>", ""]
+    usati = set()
+    for info in query:
+        base = _nome_funzione(info)
+        nome, k = base, 2
+        while nome in usati:
+            nome, k = f"{base}_{k}", k + 1
+        usati.add(nome)
+        r += _query_cpp(info, "Riga" + pascal(nome), nome, "inline ") + [""]
     return "\n".join(r)
 
 
@@ -916,13 +946,24 @@ def json_chiave(nome):
     return json.dumps(str(nome))
 
 
-def genera_cpp():
-    """Scrive il codice C++ delle tabelle del database di prova; restituisce i file e i loro testi."""
-    S = struttura()
-    if not S["esiste"] or not S["tabelle"]:
-        raise ErroreProva("Prima crea il database di prova: il codice C++ si genera dalle sue tabelle.")
-    T = [_descrivi(t) for t in S["tabelle"]]
-    file = {"modelli.hpp": _modelli(T), "sqlite.hpp": SQLITE_HPP, "database.hpp": DATABASE_HPP, "repository.hpp": _repository(T), "main.cpp": _main(T),
+def genera_cpp(tabelle=None, cartella=None, query=None, origine="database di prova"):
+    """Scrive il codice C++ delle tabelle (di default quelle del database di prova) in una cartella (di default quella del
+    backend di prova); con le query salvate anche query.hpp. tabelle: [{nome, colonne: [{nome, tipo, notnull, pk}]}].
+    Restituisce i file e i loro testi."""
+    if tabelle is None:
+        S = struttura()
+        if not S["esiste"] or not S["tabelle"]:
+            raise ErroreProva("Prima crea il database di prova: il codice C++ si genera dalle sue tabelle.")
+        tabelle = S["tabelle"]
+    if not tabelle:
+        raise ErroreProva("Nessuna tabella: disegna o importa delle tabelle.")
+    cartella = Path(cartella or CARTELLA_CPP)
+    T = [_descrivi(t) for t in tabelle]
+    principale = _main(T)
+    if query:
+        principale = principale.replace('#include "repository.hpp"', '#include "repository.hpp"\n#include "query.hpp"', 1)
+    file = {"modelli.hpp": _modelli(T), "sqlite.hpp": SQLITE_HPP, "database.hpp": DATABASE_HPP, "repository.hpp": _repository(T),
+            **({"query.hpp": _query_hpp(query)} if query else {}), "main.cpp": principale,
             "compila.sh": "#!/bin/sh\n# compila il backend (serve un compilatore C++17 e la libreria sqlite3)\n"
                           "c++ -std=c++17 -O1 main.cpp -lsqlite3 -o backend\n",
             "compila.bat": "@echo off\r\nrem Compila il backend su Windows. SQLite non serve: si usa winsqlite3.dll di Windows 10 e 11.\r\n"
@@ -930,20 +971,22 @@ def genera_cpp():
                            "where g++ >nul 2>nul && (g++ -std=c++17 -O1 -static -s main.cpp -o backend.exe & goto fine)\r\n"
                            "rem Con Visual Studio: aprire il \"Developer Command Prompt\" e lanciare questo file\r\n"
                            "cl /nologo /std:c++17 /EHsc /O1 /utf-8 main.cpp /Fe:backend.exe\r\n:fine\r\n",
-            "LEGGIMI.txt": "Backend C++ generato da SQL FK Finder dal database di prova.\n\n"
+            "LEGGIMI.txt": f"Backend C++ generato da SQL FK Finder ({origine}).\n\n"
                            "modelli.hpp     una classe per tabella con getter e setter\n"
                            "repository.hpp  per ogni tabella: inserisci, aggiorna, elimina, trova, tutti (SQLite)\n"
+                           + ("query.hpp       le query salvate con Chiedi un dato, una funzione per query\n" if query else "") +
                            "database.hpp    collegamento a SQLite\n"
                            "main.cpp        programma di prova: ./backend prova.sqlite tutti clienti\n\n"
                            "Compilare: sh compila.sh  (Mac: Xcode Command Line Tools; Linux: g++ e libsqlite3-dev)\n"
                            "Windows: compila.bat (MSYS2/MinGW, oppure Visual Studio dal Developer Command Prompt):\n"
                            "SQLite si carica da winsqlite3.dll di Windows 10 e 11, o da sqlite3.dll accanto a backend.exe.\n"}
-    if CARTELLA_CPP.exists():
-        shutil.rmtree(CARTELLA_CPP)
-    CARTELLA_CPP.mkdir(parents=True)
+    if cartella.exists():
+        shutil.rmtree(cartella)
+    cartella.mkdir(parents=True)
     for nome, testo in file.items():
-        (CARTELLA_CPP / nome).write_text(testo, encoding="utf-8")
-    return {"file": file, "cartella": str(CARTELLA_CPP), "tabelle": len(T)}
+        (cartella / nome).write_text(testo, encoding="utf-8")
+    righe_codice = sum(t.count("\n") for n, t in file.items() if n.endswith((".hpp", ".cpp")))
+    return {"file": file, "cartella": str(cartella), "tabelle": len(T), "query": len(query or []), "righe_codice": righe_codice}
 
 
 def visual_studio():
@@ -976,8 +1019,9 @@ def compilatore():
     return None
 
 
-def compila(sorgente="main.cpp", nome="backend"):
-    if sorgente == "main.cpp":
+def compila(sorgente="main.cpp", nome="backend", cartella=None):
+    dove = Path(cartella or CARTELLA_CPP)
+    if sorgente == "main.cpp" and cartella is None:
         genera_cpp()                                     # sempre il codice delle tabelle di adesso
     trovato = compilatore()
     if not trovato:
@@ -986,11 +1030,11 @@ def compila(sorgente="main.cpp", nome="backend"):
                  "Sul Mac: xcode-select --install; su Linux: il pacchetto g++ e libsqlite3-dev.")
         return {"ok": False, "uscita": f"Nessun compilatore C++ trovato. {aiuto} Il codice si può comunque scaricare."}
     genere, cc = trovato
-    eseguibile = CARTELLA_CPP / (f"{nome}.exe" if os.name == "nt" else nome)
+    eseguibile = dove / (f"{nome}.exe" if os.name == "nt" else nome)
     eseguibile.unlink(missing_ok=True)
     if genere == "msvc":
         arch = {"AMD64": "x64", "ARM64": "arm64", "x86": "x86"}.get(os.environ.get("PROCESSOR_ARCHITECTURE", "AMD64"), "x64")
-        (CARTELLA_CPP / "compila_msvc.bat").write_text(
+        (dove / "compila_msvc.bat").write_text(
             f'@echo off\r\ncall "{cc}" {arch} >nul\r\ncl /nologo /std:c++17 /EHsc /O1 /utf-8 {sorgente} /Fe:{eseguibile.name}\r\n', encoding="utf-8")
         comando = ["cmd", "/c", "compila_msvc.bat"]
         mostrato = f"Visual Studio ({arch}): cl /std:c++17 /EHsc /O1 /utf-8 {sorgente} /Fe:{eseguibile.name}"
@@ -1001,7 +1045,7 @@ def compila(sorgente="main.cpp", nome="backend"):
         comando = [cc, "-std=c++17", "-O1", sorgente, "-lsqlite3", "-o", eseguibile.name]
         mostrato = " ".join(comando)
     try:
-        r = subprocess.run(comando, cwd=CARTELLA_CPP, capture_output=True, timeout=300)
+        r = subprocess.run(comando, cwd=dove, capture_output=True, timeout=300)
     except subprocess.TimeoutExpired:
         return {"ok": False, "uscita": "La compilazione ci mette troppo (più di 5 minuti)."}
     uscita = (r.stdout + r.stderr).decode("utf-8", errors="replace").strip()
@@ -1037,14 +1081,17 @@ def esegui(operazione, tabella, valori=None):
     return risposta
 
 
-def zip_cpp():
-    if not (CARTELLA_CPP / "main.cpp").exists():
+def zip_cpp(cartella=None, nome="backend_cpp"):
+    dove = Path(cartella or CARTELLA_CPP)
+    if not (dove / "main.cpp").exists():
+        if cartella is not None:
+            raise ErroreProva("Prima genera il backend.")
         genera_cpp()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-        for f in sorted(CARTELLA_CPP.iterdir()):
+        for f in sorted(dove.iterdir()):
             if f.suffix in (".hpp", ".cpp", ".sh", ".bat", ".txt") and f.name != "compila_msvc.bat":
-                z.write(f, f"backend_cpp/{f.name}")
+                z.write(f, f"{nome}/{f.name}")
         if DATABASE.exists():
-            z.write(DATABASE, "backend_cpp/prova.sqlite")
+            z.write(DATABASE, f"{nome}/prova.sqlite")
     return buffer.getvalue()

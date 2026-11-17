@@ -245,6 +245,9 @@ function sezioneProva(E) {
           el("pre", { class: "sql" }, R.sql_leggibile),
           el("div", { class: "riga-comandi" },
             el("button", { onclick: async () => { try { await navigator.clipboard.writeText(R.sql_leggibile); avviso("Query copiata."); } catch { avviso("Selezionala e copiala a mano.", true); } } }, "Copia la query"),
+            el("button", { class: "primario", title: "La query diventa una funzione del backend (Diagrammi → Backend, query.hpp)",
+              onclick: () => aggiungiQueryBackend(R.info) }, "Aggiungi al backend"),
+            el("button", { onclick: () => mostra("backend") }, "Vai al backend"),
             dove.value === "prova" ? el("button", { onclick: () => { STATO_PROVA.query = R.sql_leggibile + ";"; STATO_PROVA.scheda = "query"; disegna(); } }, "Apri nella scheda Query") : null),
           R.righe.length ? griglia({ colonne: R.colonne, righe: R.righe }) : el("p", { class: "tenue" }, "Il collegamento c'è, ma con questa condizione non ci sono righe."),
           esempio(R));
