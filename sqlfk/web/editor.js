@@ -258,5 +258,60 @@ const Editor = (() => {
     return mappa.filter(m => m.colonne.length);
   }
 
-  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati };
+  // ======================================================================= copia e incolla
+
+  /** Gli appunti con alcune entità (per id) e le relazioni tra loro (anche N:M), da incollare in questo o in un altro disegno. */
+  function copia(M, ids) {
+    const scelti = new Set(ids);
+    const entita = M.entita.filter(e => scelti.has(e.id));
+    const relazioni = M.relazioni.filter(r => scelti.has(r.da) && scelti.has(r.a));
+    return JSON.parse(JSON.stringify({ formato: "sqlfk-tabelle", versione: 1, entita, relazioni }));
+  }
+
+  /**
+   * Incolla gli appunti nel modello: entità con id nuovi (le relazioni seguono), nomi già presenti con _copia, posizioni
+   * spostate un po' se si incolla nello stesso disegno (o a destra del disegno se viene da un altro). Restituisce
+   * {ids, rinominate: [[vecchio, nuovo]]}.
+   */
+  function incolla(M, appunti) {
+    if (!appunti || appunti.formato !== "sqlfk-tabelle" || !Array.isArray(appunti.entita)) throw new Error("Negli appunti non ci sono tabelle dell'editor.");
+    const usati = new Set([...M.entita.map(e => e.nome.toLowerCase()), ...M.relazioni.filter(r => r.tipo === "N:M").map(r => r.nome.toLowerCase())]);
+    const libero = nome => {
+      let n = nome, k = 1;
+      while (usati.has(n.toLowerCase())) n = k++ === 1 ? `${nome}_copia` : `${nome}_copia${k - 1}`;
+      usati.add(n.toLowerCase());
+      return n;
+    };
+    const stessoDisegno = appunti.entita.some(e => M.entita.some(x => x.nome.toLowerCase() === e.nome.toLowerCase()));
+    const xs = M.entita.filter(e => isFinite(e.x)).map(e => e.x), ys = M.entita.filter(e => isFinite(e.y)).map(e => e.y);
+    const ox = appunti.entita.filter(e => isFinite(e.x)).map(e => e.x), oy = appunti.entita.filter(e => isFinite(e.y)).map(e => e.y);
+    const [dx, dy] = stessoDisegno || !xs.length || !ox.length ? [60, 60]
+      : [Math.max(...xs) + 420 - Math.min(...ox), Math.min(...ys) - Math.min(...oy)];
+    const nuovoId = {}, rinominate = [];
+    for (const e of appunti.entita) {
+      const copiaE = JSON.parse(JSON.stringify(e));
+      copiaE.id = id(M);
+      copiaE.nome = libero(e.nome);
+      if (copiaE.nome !== e.nome) rinominate.push([e.nome, copiaE.nome]);
+      if (isFinite(e.x)) { copiaE.x = e.x + dx; copiaE.y = e.y + dy; }
+      nuovoId[e.id] = copiaE.id;
+      M.entita.push(copiaE);
+    }
+    for (const r of appunti.relazioni || []) {
+      if (!nuovoId[r.da] || !nuovoId[r.a]) continue;
+      const copiaR = JSON.parse(JSON.stringify(r));
+      copiaR.id = id(M);
+      copiaR.da = nuovoId[r.da];
+      copiaR.a = nuovoId[r.a];
+      if (copiaR.tipo === "N:M") {
+        copiaR.nome = libero(r.nome);
+        if (isFinite(r.x)) { copiaR.x = r.x + dx; copiaR.y = r.y + dy; }
+      }
+      M.relazioni.push(copiaR);
+    }
+    return { ids: Object.values(nuovoId), rinominate };
+  }
+
+  return { TIPI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati,
+           copia, incolla };
 })();

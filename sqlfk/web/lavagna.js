@@ -102,7 +102,7 @@ async function disegnaSinistra(box, E) {
   const dati = await api("/api/diagramma?tipo=collegamenti");
   const esistenti = new Set(dati.tabelle.map(t => t.nome));
   [...sceltePerLavagna].forEach(t => { if (!esistenti.has(t)) sceltePerLavagna.delete(t); });
-  const cornice = el("div", { class: "er-cornice" });
+  const cornice = el("div", { class: "er-cornice", "data-grande": "si" });
   const cercaE = el("input", { type: "search", value: ricercaLavagna.entita, placeholder: "tabella / entità", "aria-label": "Cerca una tabella" });
   const cercaA = el("input", { type: "search", value: ricercaLavagna.attributo, placeholder: "attributo", "aria-label": "Cerca un attributo" });
   const collegate = el("input", { type: "checkbox", checked: ricercaLavagna.collegate });

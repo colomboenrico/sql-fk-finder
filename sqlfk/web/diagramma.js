@@ -175,6 +175,7 @@ const DiagrammaER = (() => {
   function crea(contenitore, dati, opzioni = {}) {
     const conTipi = opzioni.tipi !== false;
     const tabelle = dati.tabelle.map(t => ({ ...t, colonne: t.colonne }));
+    const selezionate = new Set(opzioni.selezionate || []);       // più tabelle scelte (bordo arancione, si spostano insieme)
     tabelle.forEach(t => misura(t, conTipi));
     const perNome = Object.fromEntries(tabelle.map(t => [t.nome, t]));
     const collegamenti = dati.collegamenti.filter(l => perNome[l.da] && perNome[l.a]);
@@ -198,28 +199,35 @@ const DiagrammaER = (() => {
     mondo.append(strCornici, strLinee, strTabelle, strEtichette);
     svg.append(mondo);
     contenitore.replaceChildren(svg);
-    // schermo intero: il diagramma riempie la finestra (Esc per uscire)
+    // schermo intero: il diagramma riempie la finestra (Esc per uscire). opzioni.interoSu: l'elemento da allargare (nell'editor
+    // il disegno con il suo pannello, per continuare a modificare); resta allargato anche quando il disegno si ricrea
     if (!opzioni.senzaSchermoIntero) {
+      const bersaglio = opzioni.interoSu || contenitore;
       const intero = document.createElement("button");
       intero.type = "button";
       intero.className = "er-intero-pulsante";
       const aggiornaIntero = () => {
-        const attivo = contenitore.classList.contains("er-intero");
+        const attivo = bersaglio.classList.contains("er-intero");
         intero.textContent = attivo ? "Esci (Esc)" : "Schermo intero";
         intero.title = attivo ? "Torna alla pagina" : "Il diagramma riempie la finestra";
       };
-      const esci = e => { if (e.key === "Escape" && contenitore.classList.contains("er-intero")) alterna(); };
+      const ascolta = attivo => {
+        if (bersaglio.__sqlfkEsci) document.removeEventListener("keydown", bersaglio.__sqlfkEsci);
+        bersaglio.__sqlfkEsci = attivo ? (e => { if (e.key === "Escape" && bersaglio.classList.contains("er-intero") && !e.target.closest("input, textarea, select")) alterna(); }) : null;
+        if (attivo) document.addEventListener("keydown", bersaglio.__sqlfkEsci);
+      };
       const alterna = () => {
         const prima = contenitore.getBoundingClientRect();
-        const attivo = contenitore.classList.toggle("er-intero");
+        const attivo = bersaglio.classList.toggle("er-intero");
         // il punto al centro resta al centro anche con la nuova grandezza
         const dopo = contenitore.getBoundingClientRect();
         vista.x += (dopo.width - prima.width) / 2;
         vista.y += (dopo.height - prima.height) / 2;
         applica();
-        if (attivo) document.addEventListener("keydown", esci); else document.removeEventListener("keydown", esci);
+        ascolta(attivo);
         aggiornaIntero();
       };
+      if (bersaglio.classList.contains("er-intero")) ascolta(true);
       intero.addEventListener("click", alterna);
       aggiornaIntero();
       contenitore.append(intero);
@@ -232,7 +240,7 @@ const DiagrammaER = (() => {
     for (const t of tabelle) {
       const colore = coloreGruppo(t[opzioni.coloraPer || "gruppo"] || t.gruppo);
       const g = svgEl("g", { class: "er-tabella" + (opzioni.attenuate && opzioni.attenuate.has(t.nome) ? " er-attenuata" : ""), "data-nome": t.nome });
-      const scelta = opzioni.selezionata === t.nome;
+      const scelta = opzioni.selezionata === t.nome || selezionate.has(t.nome);
       g.append(svgEl("rect", { x: 0, y: 0, width: t.larghezza, height: t.altezza, rx: 5, fill: "#ffffff",
                                stroke: scelta ? "#ef6c00" : "#b8c0cc", "stroke-width": scelta ? 3 : 1 }));
       g.append(svgEl("path", { d: `M0 5 Q0 0 5 0 H${t.larghezza - 5} Q${t.larghezza} 0 ${t.larghezza} 5 V${TESTA} H0 Z`, fill: colore }));
@@ -436,9 +444,19 @@ const DiagrammaER = (() => {
         const t = perNome[nodo.dataset.nome];
         const p = puntoMondo(e);
         const riga = e.target.closest("[data-colonna]");
+        // una tabella di una selezione di più tabelle: si spostano tutte insieme
+        const gruppo = selezionate.has(t.nome) && selezionate.size > 1 ? [...selezionate].map(n => perNome[n]).filter(Boolean) : [t];
         trascina = { tipo: "tabella", t, dx: p.x - t.x, dy: p.y - t.y, x0: e.clientX, y0: e.clientY,
-                     colonna: riga ? riga.getAttribute("data-colonna") : null };
+                     colonna: riga ? riga.getAttribute("data-colonna") : null,
+                     gruppo: gruppo.map(x => ({ t: x, dx: p.x - x.x, dy: p.y - x.y })) };
         strTabelle.append(nodo);                       // in primo piano
+      } else if (e.shiftKey && opzioni.onRettangolo) {
+        // Maiusc + trascinare sul vuoto: il riquadro per scegliere più tabelle
+        const p = puntoMondo(e);
+        const rett = svgEl("rect", { fill: "#ef6c00", "fill-opacity": 0.08, stroke: "#ef6c00", "stroke-width": 1.5 / vista.s,
+                                     "stroke-dasharray": "6 4", "pointer-events": "none" });
+        strEtichette.append(rett);
+        trascina = { tipo: "rettangolo", inizio: p, rett, x0: e.clientX, y0: e.clientY };
       } else {
         trascina = { tipo: "vista", x: e.clientX - vista.x, y: e.clientY - vista.y, x0: e.clientX, y0: e.clientY };
       }
@@ -458,12 +476,19 @@ const DiagrammaER = (() => {
         tabelle.forEach(t => t.nodo.classList.toggle("er-bersaglio", t === sotto && t !== trascina.t));
         return;
       }
-      if (trascina.tipo === "tabella") {
+      if (trascina.tipo === "rettangolo") {
+        const p = puntoMondo(e), a = trascina.inizio;
+        trascina.fine = p;
+        trascina.rett.setAttribute("x", Math.min(a.x, p.x)); trascina.rett.setAttribute("y", Math.min(a.y, p.y));
+        trascina.rett.setAttribute("width", Math.abs(p.x - a.x)); trascina.rett.setAttribute("height", Math.abs(p.y - a.y));
+      } else if (trascina.tipo === "tabella") {
         const p = puntoMondo(e);
-        trascina.t.x = p.x - trascina.dx; trascina.t.y = p.y - trascina.dy;
-        posiziona(trascina.t);
-        aggiornaLinee(trascina.t.nome);
-        if (chiaveGruppo) aggiornaCornice(chiaveGruppo(trascina.t) || SENZA_GRUPPO);
+        for (const g of trascina.gruppo) {
+          g.t.x = p.x - g.dx; g.t.y = p.y - g.dy;
+          posiziona(g.t);
+          aggiornaLinee(g.t.nome);
+          if (chiaveGruppo) aggiornaCornice(chiaveGruppo(g.t) || SENZA_GRUPPO);
+        }
       } else {
         vista.x = e.clientX - trascina.x; vista.y = e.clientY - trascina.y;
         applica();
@@ -479,14 +504,25 @@ const DiagrammaER = (() => {
         if (arrivo) opzioni.onCollega(da, arrivo.nome);
         return;
       }
+      if (trascina && trascina.tipo === "rettangolo") {
+        trascina.rett.remove();
+        const a = trascina.inizio, b = trascina.fine || a;
+        const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+        const dentro = tabelle.filter(t => t.x < x1 && t.x + t.larghezza > x0 && t.y < y1 && t.y + t.altezza > y0).map(t => t.nome);
+        trascina = null;
+        opzioni.onRettangolo(dentro);
+        return;
+      }
       const fermo = trascina && e && Math.hypot(e.clientX - trascina.x0, e.clientY - trascina.y0) < 4;
       if (trascina && trascina.tipo === "rombo") {
         if (fermo && opzioni.onClicRelazione) opzioni.onClicRelazione(trascina.id);
       } else if (trascina && fermo && opzioni.onClic) {
         // clic senza trascinare: la tabella e, se il clic è su una riga, la colonna
-        opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null, trascina.tipo === "tabella" ? trascina.colonna : null);
+        // con Maiusc, Cmd o Ctrl il clic aggiunge o toglie la tabella dalla selezione di più tabelle
+        opzioni.onClic(trascina.tipo === "tabella" ? trascina.t.nome : null, trascina.tipo === "tabella" ? trascina.colonna : null,
+                       { aggiungi: !!(e.shiftKey || e.metaKey || e.ctrlKey) });
       } else if (trascina && trascina.tipo === "tabella" && opzioni.onSposta) {
-        opzioni.onSposta(trascina.t.nome, Math.round(trascina.t.x), Math.round(trascina.t.y));
+        trascina.gruppo.forEach(g => opzioni.onSposta(g.t.nome, Math.round(g.t.x), Math.round(g.t.y)));
       }
       if (trascina && trascina.tipo === "vista" && opzioni.onVista) opzioni.onVista({ ...vista });
       trascina = null;

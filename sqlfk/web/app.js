@@ -580,16 +580,20 @@ async function dopoModifica(messaggio) {
 function adattaCornici() {
   const cornici = [...vista.querySelectorAll(".er-cornice")].filter(c => {
     if (!c.dataset.adatta) c.dataset.adatta = c.style.height ? "no" : "si";
-    return c.dataset.adatta === "si" && c.offsetParent && !c.classList.contains("er-intero");
+    return c.dataset.adatta === "si" && c.offsetParent && !c.closest(".er-intero");
   });
-  if (!cornici.length) return;
-  cornici.forEach(c => { c.style.height = ""; c.style.minHeight = "0"; }); // si riparte dall'altezza del foglio di stile
-  const troppo = vista.scrollHeight - vista.clientHeight;
-  const minimo = 320;
+  const minimo = 360;
+  const cima = vista.getBoundingClientRect().top - vista.scrollTop;
   cornici.forEach(c => {
-    const h = c.getBoundingClientRect().height;
-    c.style.height = `${Math.max(minimo, Math.floor(h - troppo))}px`;
+    // il disegno arriva fino in fondo alla finestra da dove comincia (sotto i comandi); quello che c'è sotto si vede scorrendo
+    const alto = c.getBoundingClientRect().top - cima;
+    // per i disegni dove si lavora (editor, con altro sotto) almeno l'80% della finestra: la pagina scorre un po', ma il disegno resta grande
+    const grande = c.dataset.grande === "si" ? Math.floor(vista.clientHeight * 0.8) : 0;
+    const h = Math.max(minimo, grande, Math.floor(vista.clientHeight - alto - 20));
+    c.style.height = `${h}px`;
     c.style.minHeight = `${minimo}px`;
+    const pannello = c.parentElement?.querySelector(":scope > .editor-pannello");
+    if (pannello) pannello.style.maxHeight = `${h}px`;             // il pannello dell'editor accanto, alto uguale
   });
 }
 let adattaInAttesa = false;
@@ -903,9 +907,38 @@ function schedaReverse(R, t, apri, { altezza = 380 } = {}) {
 
 /** L'editor del database (tela, pannello dell'entità scelta, avvisi, SQL) su uno stato {modello, selezione, vista}:
     lo usano la pagina Editor del database e la lavagna della pagina Disegno affiancato. */
+// copia e incolla tra gli editor (pagina Editor e lavagna del Disegno affiancato): un solo ascoltatore per la tastiera
+let appuntiEditor = null;
+const editoriAperti = new Set();
+let editoreAttivo = null;
+function editorSottoMano() {
+  for (const e of [...editoriAperti]) if (!document.body.contains(e.cornice)) editoriAperti.delete(e);
+  return editoreAttivo && document.body.contains(editoreAttivo.cornice) ? editoreAttivo : [...editoriAperti].pop() || null;
+}
+const scriveInUnCampo = ev => ev.target.closest && ev.target.closest("input, textarea, select, [contenteditable]");
+document.addEventListener("keydown", ev => {
+  if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || scriveInUnCampo(ev)) return;
+  const E = editorSottoMano();
+  if (!E) return;
+  const tasto = ev.key.toLowerCase();
+  if (tasto === "c") { ev.preventDefault(); E.comandiSelezione.copia(); }
+  else if (tasto === "a") { ev.preventDefault(); E.comandiSelezione.tutte(); }
+  else if (tasto === "d") { ev.preventDefault(); E.comandiSelezione.duplica(); }
+});
+document.addEventListener("paste", ev => {
+  if (scriveInUnCampo(ev)) return;
+  const E = editorSottoMano();
+  if (!E) return;
+  let appunti = null;
+  try { appunti = JSON.parse(ev.clipboardData?.getData("text/plain") || ""); } catch { /* non sono tabelle */ }
+  if (!(appunti && appunti.formato === "sqlfk-tabelle") && !appuntiEditor) return;
+  ev.preventDefault();
+  E.comandiSelezione.incollaAppunti(appunti && appunti.formato === "sqlfk-tabelle" ? appunti : appuntiEditor);
+});
+
 function creaEditor(S) {
   const M = () => S.modello;
-  const cornice = el("div", { class: "er-cornice" });
+  const cornice = el("div", { class: "er-cornice", "data-grande": "si" });
   const pannello = el("div", { class: "pannello editor-pannello" });
   const avvisiBox = el("div", { class: "editor-avvisi" });
   const anteprima = el("pre", { style: "max-height: 320px" });
@@ -938,7 +971,8 @@ function creaEditor(S) {
   function aggiornaCollega() {
     pulsanteCollega.classList.toggle("primario", !!collega);
     pulsanteCollega.textContent = collega ? "Annulla il collegamento" : "Collega due tabelle";
-    statoCollega.textContent = !collega ? "Per collegare due entità trascina il + di una sull'altra." : collega.primo
+    statoCollega.textContent = !collega ? "Collega: trascina il + di un'entità sull'altra. Più tabelle: Maiusc+clic o Maiusc+trascina sul vuoto; " +
+      "Ctrl+C / Ctrl+V (Cmd sul Mac) le copia e incolla, anche in un altro disegno." : collega.primo
       ? `${Editor.entitaDi(M(), collega.primo)?.nome}: ora clicca la seconda tabella.`
       : "Clicca la prima delle due tabelle da collegare.";
   }
@@ -1019,6 +1053,52 @@ function creaEditor(S) {
     verbo.focus();
   }
 
+  // ---- più tabelle scelte (Maiusc/Cmd/Ctrl + clic, Maiusc + riquadro), copia e incolla
+  const multipla = () => new Set((S.multipla || []).filter(x => Editor.entitaDi(M(), x)));
+  const scelte = () => { const m = multipla(); if (!m.size && S.selezione && Editor.entitaDi(M(), S.selezione)) m.add(S.selezione); return [...m]; };
+  function scegliMolte(ids) {
+    S.multipla = [...new Set(ids)];
+    S.selezione = S.multipla.length === 1 ? S.multipla[0] : null;
+    ridisegna();
+  }
+  function copiaScelte() {
+    const ids = scelte();
+    if (!ids.length) return avviso("Scegli le tabelle da copiare (clic, Maiusc+clic o Maiusc+trascina un riquadro).", true);
+    appuntiEditor = Editor.copia(M(), ids);
+    try { navigator.clipboard.writeText(JSON.stringify(appuntiEditor)).catch(() => {}); } catch { /* restano gli appunti dell'app */ }
+    avviso(`Copiate ${ids.length} tabelle: incollale qui o in un altro disegno con Ctrl+V (Cmd+V).`);
+  }
+  function incollaAppunti(appunti) {
+    try {
+      if (diagramma) salvaPosizioni(diagramma.posizioni());
+      const esito = Editor.incolla(M(), appunti || appuntiEditor);
+      S.vista = null; diagramma = null;
+      scegliMolte(esito.ids);
+      avviso(`Incollate ${esito.ids.length} tabelle` + (esito.rinominate.length ? ` (rinominate: ${esito.rinominate.map(([a, b]) => `${a} → ${b}`).join(", ")})` : "") + ".");
+    } catch (e) { avviso(e.message, true); }
+  }
+  async function incollaDaPulsante() {
+    let testo = "";
+    try { testo = await navigator.clipboard.readText(); } catch { /* senza permesso: gli appunti dell'app */ }
+    let appunti = null;
+    try { appunti = JSON.parse(testo); } catch { /* non sono tabelle */ }
+    incollaAppunti(appunti && appunti.formato === "sqlfk-tabelle" ? appunti : appuntiEditor);
+  }
+  function eliminaScelte() {
+    const ids = scelte();
+    if (!ids.length) return;
+    if (!confirm(`Eliminare ${ids.length} tabelle dal disegno (con le loro relazioni)?`)) return;
+    ids.forEach(x => Editor.eliminaEntita(M(), x));
+    S.multipla = []; S.selezione = null;
+    ridisegna();
+  }
+  const comandiSelezione = {
+    copia: copiaScelte, incolla: incollaDaPulsante, incollaAppunti, elimina: eliminaScelte,
+    duplica: () => { const ids = scelte(); if (!ids.length) return avviso("Scegli le tabelle da duplicare.", true); incollaAppunti(Editor.copia(M(), ids)); },
+    tutte: () => scegliMolte(M().entita.map(e => e.id)),
+    nessuna: () => scegliMolte([]),
+  };
+
   function ridisegna() {
     if (diagramma) { S.vista = diagramma.vista(); salvaPosizioni(diagramma.posizioni()); }
     const schema = Editor.schemaLogico(M(), { concettuale: !!S.concettuale });
@@ -1026,14 +1106,24 @@ function creaEditor(S) {
     if (schema.tabelle.length) {
       diagramma = DiagrammaER.crea(cornice, schema, {
         tipi: true, posizioni: posizioniModello(), vista: S.vista, selezionata: scelto,
+        interoSu: cornice.parentElement?.classList.contains("editor-griglia") ? cornice.parentElement : null,
         rombi: true, relazioneScelta: S.selezione,
         collegabile: t => !!t.entita, onCollega: (da, a) => {
           const A = M().entita.find(x => x.nome === da), B = M().entita.find(x => x.nome === a);
           if (A && B) chiediRelazione(A.id, B.id); else avviso("Si collegano due entità (non le tabelle ponte).", true);
         },
         onSposta: (nome, x, y) => { const el_ = elementoDaNome(nome); if (el_) { el_.x = x; el_.y = y; } },
-        onClic: nome => {
+        selezionate: [...multipla()].map(x => Editor.entitaDi(M(), x)?.nome).filter(Boolean),
+        onRettangolo: nomi => scegliMolte([...multipla(), ...nomi.map(n => M().entita.find(e => e.nome === n)?.id).filter(Boolean)]),
+        onClic: (nome, colonna, mod = {}) => {
           if (collega) return cliccaPerCollegare(nome);
+          const eid = nome ? M().entita.find(e => e.nome === nome)?.id : null;
+          if (mod.aggiungi && eid) {                     // Maiusc/Cmd/Ctrl + clic: aggiunge o toglie dalla selezione
+            const m = new Set(scelte());
+            if (m.has(eid)) m.delete(eid); else m.add(eid);
+            return scegliMolte([...m]);
+          }
+          S.multipla = [];
           S.selezione = nome ? elementoDaNome(nome)?.id || null : null;
           ridisegna();
         },
@@ -1100,6 +1190,21 @@ function creaEditor(S) {
   }
 
   function disegnaPannello() {
+    const molte = [...multipla()];
+    if (molte.length > 1) {
+      pannello.replaceChildren(
+        el("h3", {}, `${molte.length} tabelle scelte`),
+        el("p", { class: "tenue" }, molte.map(x => Editor.entitaDi(M(), x).nome).join(", ")),
+        el("p", { class: "tenue" }, "Trascinane una per spostarle tutte. Maiusc+clic (o Cmd/Ctrl+clic) aggiunge o toglie una tabella; " +
+          "Maiusc+trascinare sul vuoto disegna il riquadro."),
+        el("div", { class: "riga-comandi" },
+          el("button", { class: "primario", onclick: copiaScelte }, "Copia (Ctrl+C)"),
+          el("button", { onclick: comandiSelezione.duplica }, "Duplica"),
+          el("button", { class: "pericolo", onclick: eliminaScelte }, "Elimina le scelte"),
+          el("button", { onclick: comandiSelezione.nessuna }, "Togli la selezione")),
+        M().entita.length ? formRelazione() : null);
+      return;
+    }
     const e = S.selezione && Editor.entitaDi(M(), S.selezione);
     const r = !e && S.selezione && M().relazioni.find(x => x.id === S.selezione);
     const contenuto = [];
@@ -1242,7 +1347,12 @@ function creaEditor(S) {
     S.selezione = null; S.vista = null; diagramma = null;
     ridisegna();
   }
+  const me = { comandiSelezione, cornice };
+  editoriAperti.add(me);
+  cornice.addEventListener("pointerdown", () => { editoreAttivo = me; });
+  editoreAttivo = me;
   return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, importaScelte, analizza, regole, dialetto,
+           comandiSelezione,
            pulsanteCollega, statoCollega,
            azzera, ricarica, posizioniModello, get diagramma() { return diagramma; } };
 }
@@ -1745,6 +1855,9 @@ const VISTE = {
       el("p", { class: "tenue" }, "Disegna le entità con i loro attributi e collegale con relazioni 1:N, 1:1 o N:M: l'editor applica le regole del passaggio al modello logico (chiave esterna dal lato N, UNIQUE per 1:1, tabella ponte per N:M) e scrive le CREATE TABLE. Con Analizza questo schema tutte le altre pagine (Problemi, Regole, Ontologia, Modello relazionale, esportazioni) lavorano sul database disegnato. Tutto si salva nel file di progetto."),
       el("div", { class: "riga-comandi" },
         E.nomeNuova, el("button", { class: "primario", onclick: E.nuovaEntita }, "Nuova entità"), E.pulsanteCollega,
+        el("button", { onclick: E.comandiSelezione.copia, title: "Copia le tabelle scelte (Ctrl+C / Cmd+C)" }, "Copia"),
+        el("button", { onclick: E.comandiSelezione.incolla, title: "Incolla le tabelle copiate (Ctrl+V / Cmd+V), anche da un altro disegno" }, "Incolla"),
+        el("button", { onclick: E.comandiSelezione.tutte, title: "Sceglie tutte le tabelle (Ctrl+A / Cmd+A)" }, "Seleziona tutte"),
         el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) E.azzera(); } }, "Nuovo database"),
         stato.caricato ? [el("button", { onclick: () => conAttesa(E.importa) }, "Importa il database caricato"), E.tipoImport] : null,
         el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta alla finestra"),

@@ -519,3 +519,9 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 
 .sezione-prova .domanda { margin: 8px 0 12px; }
 .esempio-backend { margin-top: 14px; border-top: 1px solid var(--bordo); padding-top: 10px; }
+
+/* ---- editor a schermo intero: il disegno e il pannello per modificare */
+.editor-griglia.er-intero { position: fixed; inset: 10px; z-index: 60; background: var(--sfondo); border: 1px solid var(--bordo);
+                           border-radius: 10px; padding: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, .35); align-items: stretch; }
+.editor-griglia.er-intero > .er-cornice { height: 100% !important; min-height: 0 !important; }
+.editor-griglia.er-intero > .editor-pannello { max-height: 100% !important; height: 100%; }
