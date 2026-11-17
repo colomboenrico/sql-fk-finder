@@ -582,3 +582,16 @@ td.cella-crud { font-weight: 600; letter-spacing: 1px; }
 .tabella-semplice { border-collapse: collapse; font-size: 13px; }
 .tabella-semplice th, .tabella-semplice td { border-bottom: 1px solid var(--bordo); padding: 4px 8px; text-align: left; white-space: nowrap; }
 .tabella-semplice th { color: var(--tenue); font-weight: 600; }
+.blocco-codice { margin: 8px 0; border: 1px solid var(--bordo); border-radius: 8px; overflow: hidden; background: var(--pannello); }
+.blocco-codice pre.sql { margin: 0; border: 0; border-radius: 0; max-height: 420px; overflow: auto; }
+.barra-codice { display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--bordo); }
+.barra-codice > span { margin-right: auto; }
+.ingresso-programma { width: 100%; font: 12px ui-monospace, Menlo, Consolas, monospace; border: 0; border-top: 1px solid var(--bordo); padding: 6px 8px; }
+.uscita-programma { border-top: 1px solid var(--bordo); padding: 6px 8px; }
+.uscita-programma pre { margin: 4px 0 0; white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow: auto; }
+.uscita-errore pre { color: var(--pericolo); }
+.scelta-modo { display: inline-flex; gap: 0; margin-right: 12px; }
+.scelta-modo button { border-radius: 0; }
+.scelta-modo button:first-child { border-radius: 6px 0 0 6px; }
+.scelta-modo button:last-child { border-radius: 0 6px 6px 0; }
+.messaggio-chat h4 { margin: 8px 0 4px; }

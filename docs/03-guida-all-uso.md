@@ -240,6 +240,16 @@ L'app lo trova lì, o in `Documenti/SQL FK Finder/modelli`, e lo carica da sola 
 in pochi secondi anche senza scheda grafica; il 14B (circa 9 GB) ragiona meglio ma è più lento. Il modello non legge i file:
 l'app gli passa le tabelle che c'entrano con la domanda ed esegue lei le query, e nella risposta si vedono i passi fatti.
 
+In alto si sceglie anche il modo: **Database e progetto** (quello descritto sopra) o **Programmazione**. In Programmazione
+l'Assistente scrive il codice che chiedi (Python, C++, SQL e altri linguaggi) usando le tabelle vere e, in C++, il backend
+generato (classi con getter e setter e repository); se incolli un errore trova la causa e riscrive il codice corretto.
+Il codice che scrive si controlla da solo: se non si compila, gli errori tornano al modello che lo corregge (al più due
+volte). Sotto ogni blocco di codice ci sono **Copia**, **Salva** ed **Esegui**: Esegui compila ed esegue il programma
+(Python o C++) in una cartella a parte, con accanto il database di prova (`prova.sqlite`) e il backend, e mostra quello che
+stampa; se finisce con un errore, **Chiedi di correggerlo** lo manda all'Assistente. Il programma si ferma dopo 20 secondi.
+Senza modello, Programmazione prepara il codice di accesso pronto per una tabella (per esempio «codice python per clienti»
+o «classe C++ per ordini»). Non serve un database per chiedere codice generico.
+
 ### Tabelle
 Ogni tabella con numero di colonne, chiave primaria (dichiarata o indovinata) e numero di colonne della chiave.
 

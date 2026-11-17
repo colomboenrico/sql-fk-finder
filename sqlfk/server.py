@@ -37,6 +37,7 @@ from . import descrizione as DESCR
 from . import ascolto as AS
 from . import consigli as CONS
 from . import assistente as ASS
+from . import programmazione as PROG
 from . import prova as PR
 from . import popola as POP
 from . import esplora as ESP
@@ -1359,7 +1360,44 @@ class Sessione:
                                            S, F["dialetto"])
             return {"testo": testo, "per_il_modello": testo}
 
-        return {"sql": sql, "tabella": tabella, "percorso": percorso, "suggerimenti": suggerimenti, "integrazione": integrazione}
+        tabelle_info = self.tabelle_per_codice(F)
+
+        def controlla(codice="", linguaggio="python"):
+            C = PROG.controlla(linguaggio, str(codice), tabelle_info)
+            return {**C, "per_il_modello": C["testo"]}
+
+        def backend(tabella="", linguaggio="python"):
+            t = next((x for x in tabelle_info if x["nome"].lower() == str(tabella).lower()), None)
+            if not t:
+                raise ValueError(f"la tabella {tabella} non c'è")
+            if PROG.linguaggio(linguaggio) == "cpp":
+                testo = f"```cpp\n{PROG.esempio_cpp_tabella(t)}\n```\n\nIl backend: " + PROG.api_backend([t])
+            else:
+                testo = f"```python\n{PROG.crud_python(t)}\n```"
+            return {"testo": testo, "per_il_modello": testo}
+
+        return {"sql": sql, "tabella": tabella, "percorso": percorso, "suggerimenti": suggerimenti, "integrazione": integrazione,
+                "controlla": controlla, "backend": backend}
+
+    @staticmethod
+    def tabelle_per_codice(F):
+        """Le tabelle nel formato del generatore di codice: [{nome, colonne: [{nome, tipo, notnull, pk}]}]."""
+        S = F["R"].S
+        return [{"nome": t, "colonne": [{"nome": c, "tipo": S.tipi.get((t, c), ""), "notnull": (t, c) in S.not_null,
+                                         "pk": (S.pk.get(t, []).index(c) + 1) if c in S.pk.get(t, []) else 0} for c in S.col_per_tab[t]]}
+                for t in S.col_per_tab]
+
+    def programmazione(self, comando, dati):
+        """Controllo ed esecuzione del codice delle risposte (pulsanti Controlla ed Esegui), in locale."""
+        try:
+            tabelle = self.tabelle_per_codice(self.fonte_assistente(dati)) if (dati.get("sql") or dati.get("origine") == "caricato") else None
+        except Exception:
+            tabelle = None
+        if comando == "esegui":
+            return PROG.esegui(dati.get("linguaggio"), str(dati.get("codice") or ""), str(dati.get("ingresso") or ""), tabelle)
+        if comando == "controlla":
+            return PROG.controlla(dati.get("linguaggio"), str(dati.get("codice") or ""), tabelle)
+        raise Errore(f"Comando sconosciuto: {comando}")
 
     def assistente(self, comando, dati):
         M = self.modello_llm
@@ -1382,17 +1420,48 @@ class Sessione:
             domanda = str(dati.get("domanda") or "").strip()
             if not domanda:
                 raise Errore("Scrivi una domanda.")
-            F = self.fonte_assistente(dati)
+            programmazione = dati.get("modo") == "programmazione"
+            try:
+                F = self.fonte_assistente(dati)
+            except Errore:
+                if not programmazione:
+                    raise
+                F = None                     # per programmare il database non serve
             conv = ASS.Conversazione(domanda)
             self.conversazioni = {k: v for k, v in self.conversazioni.items() if not v.finito or time.time() - v.inizio < 600}
             self.conversazioni[conv.id] = conv
             usa_modello = bool(M.llm) and not dati.get("senza_modello")
             progetto = str(dati.get("progetto") or "").strip()
 
+
             def lavoro():
                 try:
-                    strumenti = self.strumenti_assistente(F)
-                    if usa_modello:
+                    if F is None:
+                        strumenti = {"controlla": lambda codice="", linguaggio="python": {**(C := PROG.controlla(linguaggio, str(codice))),
+                                                                                            "per_il_modello": C["testo"]}}
+                    else:
+                        strumenti = self.strumenti_assistente(F)
+                    nomi = sorted(F["R"].S.col_per_tab) if F else []
+                    if programmazione:
+                        if usa_modello:
+                            contesto = ("Nessun database: l'utente non ha ancora disegnato o caricato tabelle." + (f"\n\nIL PROGETTO\n{progetto}" if progetto else "")
+                                        if F is None else (self.contesto_assistente(domanda, F, progetto) + "\n\n" +
+                                        PROG.api_backend(self.tabelle_per_codice(F)))[:ASS.CONTESTO_CARATTERI + 2500])
+
+                            def autocontrollo(testo):
+                                errori = []
+                                for lg, codice in PROG.blocchi_di_codice(testo)[-3:]:
+                                    if lg in ("python", "cpp"):
+                                        C = strumenti["controlla"](codice, lg)
+                                        if not C["ok"]:
+                                            errori.append(C["testo"])
+                                return "\n\n".join(errori)
+                            ASS.rispondi_con_modello(conv, M, contesto, dati.get("storia"), strumenti,
+                                                     lambda: ASS.rispondi_programmazione_con_regole(conv, nomi, strumenti),
+                                                     sistema=ASS.SISTEMA_PROGRAMMAZIONE, autocontrollo=autocontrollo)
+                        else:
+                            ASS.rispondi_programmazione_con_regole(conv, nomi, strumenti)
+                    elif usa_modello:
                         contesto = self.contesto_assistente(domanda, F, progetto)
                         if re.search(ASS.RE_CONSIGLI, domanda.lower()):
                             # i controlli veri prima del modello: i consigli partono da lì, non da regole generiche
@@ -2097,6 +2166,8 @@ class Gestore(BaseHTTPRequestHandler):
         }
         if percorso in ("/api/documentazione", "/api/suggerimenti"):
             return self.esegui(lambda: (s.documentazione if percorso.endswith("documentazione") else s.suggerimenti)(dati), blocca=False)
+        if percorso.startswith("/api/programmazione/"):
+            return self.esegui(lambda: s.programmazione(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/assistente/"):
             return self.esegui(lambda: s.assistente(percorso.rsplit("/", 1)[1], dati), blocca=False)
         if percorso.startswith("/api/popola/"):

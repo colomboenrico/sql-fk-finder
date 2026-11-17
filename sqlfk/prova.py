@@ -548,7 +548,12 @@ def _descrivi(t):
 
 def _modelli(T):
     righe = ["// Generato da SQL FK Finder: una classe per tabella del database, con getter e setter.",
-             "#pragma once", "", "#include <cstdint>", "#include <optional>", "#include <string>", ""]
+             "#pragma once", "", "#include <cstdint>", "#include <optional>", "#include <ostream>", "#include <string>", "",
+             "// i valori che possono essere NULL (std::optional) si stampano con << : NULL se mancano",
+             "template <typename T>",
+             "inline std::ostream& operator<<(std::ostream& os, const std::optional<T>& v) {",
+             '    return v ? (os << *v) : (os << "NULL");',
+             "}", ""]
     for t in T:
         righe += [f"// Tabella {t['nome']}" + (f" (chiave: {', '.join(c['nome'] for c in t['chiave'])})" if t["chiave"] else " (senza chiave primaria)"),
                   f"class {t['classe']} {{", "public:"]

@@ -148,7 +148,7 @@ class Modello:
                 raise RuntimeError("Nessun modello caricato.")
             testo = ""
             for parte in self.llm.create_chat_completion(messages=messaggi, max_tokens=max_token, temperature=0.2, top_p=0.9,
-                                                         stream=True, stop=["\nRISULTATO:", "<|im_end|>"]):
+                                                         repeat_penalty=1.1, stream=True, stop=["\nRISULTATO:", "<|im_end|>"]):
                 delta = parte["choices"][0].get("delta", {}).get("content") or ""
                 testo += delta
                 al_pezzo(testo)
@@ -187,6 +187,19 @@ Dopo l'azione riceverai RISULTATO: con i dati veri; poi continua. Quando hai la 
 Metti SQL in blocchi ```sql e il codice in blocchi con il linguaggio. Non inventare dati: usa i risultati degli strumenti."""
 
 
+SISTEMA_PROGRAMMAZIONE = """Sei l'assistente di programmazione di SQL FK Finder: un programmatore esperto (Python, C++, SQL e
+altri linguaggi) che aiuta l'utente a scrivere il codice del suo progetto. Rispondi in italiano, breve e concreto.
+
+Rispondi così: UN blocco di codice completo e funzionante (```python, ```cpp o ```sql) e poi 2-4 righe che spiegano cosa
+fa e come usarlo. Niente istruzioni di installazione, niente esempi ripetuti.
+Se il codice usa il database: il file è prova.sqlite (SQLite, già pieno di dati, nella cartella del programma) e devi usare
+SOLO le tabelle e le colonne descritte sotto. In Python usa sqlite3 della libreria standard. In C++ usa il backend
+generato descritto sotto (#include "repository.hpp", Database db("prova.sqlite");).
+Se l'utente ti dà codice con un errore: spiega in una riga la causa e scrivi il codice corretto completo.
+Tutto gira su un computer senza internet: niente servizi in rete.
+Il codice che scrivi viene controllato in automatico: se ci sono errori te li rimando e tu lo correggi."""
+
+
 # ====================================================================== la conversazione
 
 class Conversazione:
@@ -220,12 +233,13 @@ def leggi_azione(testo):
         return {"strumento": "?", "errore": "JSON non valido"}
 
 
-def rispondi_con_modello(conv, modello, contesto, storia, strumenti, di_riserva=None, gia_fatte=()):
+def rispondi_con_modello(conv, modello, contesto, storia, strumenti, di_riserva=None, gia_fatte=(), sistema=None, autocontrollo=None):
     """Il ciclo: il modello scrive; se chiede uno strumento lo si esegue e gli si dà il risultato (al più PASSI_MASSIMI).
     Un'azione ripetuta uguale non si riesegue: si chiede la risposta. Se il modello non scrive nulla, rispondono le regole
     (di_riserva)."""
     conv.modo = "modello"
-    messaggi = [{"role": "system", "content": SISTEMA + "\n\nIL DATABASE\n" + contesto}]
+    messaggi = [{"role": "system", "content": (sistema or SISTEMA) + "\n\nIL DATABASE\n" + contesto}]
+    correzioni = 0
     for m in (storia or [])[-6:]:                       # le ultime domande e risposte, per il filo del discorso
         if m.get("ruolo") in ("utente", "assistente") and m.get("testo"):
             messaggi.append({"role": "user" if m["ruolo"] == "utente" else "assistant", "content": str(m["testo"])[:2000]})
@@ -256,7 +270,26 @@ def rispondi_con_modello(conv, modello, contesto, storia, strumenti, di_riserva=
                     conv.modo = "regole (il modello non ha risposto)"
                     return
             conv.testo = fatto + finale
+            if autocontrollo and not conv.fermato:
+                errori = autocontrollo(fatto + finale)      # il codice scritto si compila? se no, lo si fa correggere
+                if errori and correzioni >= 2:
+                    conv.passi.append({"strumento": "controlla", "ok": False, "richiesta": {"automatico": "sì"}, "testo": errori})
+                    conv.testo += ("\n\n**Attenzione**: il codice ha ancora errori dopo due correzioni (vedi il passo «controlla»). "
+                                   "Incollami l'errore o chiedimi di riscriverlo in un altro modo.")
+                    return
+                if errori:
+                    correzioni += 1
+                    conv.passi.append({"strumento": "controlla", "ok": False, "richiesta": {"automatico": "sì"}, "testo": errori})
+                    messaggi.append({"role": "assistant", "content": testo.strip()})
+                    messaggi.append({"role": "user", "content": "RISULTATO del controllo del tuo codice:\n" + errori[:3000] +
+                                     "\n\nCorreggi gli errori e riscrivi il codice COMPLETO corretto, senza AZIONE."})
+                    fatto = ""
+                    continue
             return
+        if azione.get("strumento") == "controlla" and not azione.get("codice"):
+            ultimo_blocco = blocchi_codice_testo(fatto + testo)
+            if ultimo_blocco:
+                azione = {**azione, "linguaggio": ultimo_blocco[0], "codice": ultimo_blocco[1]}
         fatte.append(azione)
         risultato = esegui_strumento(azione, strumenti)
         conv.passi.append(risultato)
@@ -267,6 +300,13 @@ def rispondi_con_modello(conv, modello, contesto, storia, strumenti, di_riserva=
                           "oppure usa un ALTRO strumento se ti manca qualcosa." if risultato.get("ok") else
                           "\n\nCorreggi usando solo tabelle e colonne che esistono, oppure rispondi senza AZIONE.")})
         conv.testo = fatto
+
+
+def blocchi_codice_testo(testo):
+    """(linguaggio, codice) dell'ultimo blocco ``` del testo, o None."""
+    from .programmazione import blocchi_di_codice
+    b = blocchi_di_codice(testo)
+    return b[-1] if b else None
 
 
 def senza_eco(testo, risultato):
@@ -527,3 +567,23 @@ def rispondi_con_regole(conv, nomi, strumenti, F=None, progetto=""):
                   "- «parlami della tabella ordini», «quante righe ha fatture?»\n"
                   "- «cosa non va nel database?», una query che comincia con SELECT\n\n"
                   "Con il modello locale (pannello qui accanto) capisco domande libere, ragiono sul progetto e scrivo il codice.")
+
+
+def rispondi_programmazione_con_regole(conv, nomi, strumenti):
+    """Senza modello: il codice di accesso pronto per una tabella (Python o C++), e cosa sa fare con il modello."""
+    conv.modo = "regole"
+    d = conv.domanda.strip()
+    basso = d.lower()
+    tabelle = trova_tabelle(d, nomi)
+    cpp = bool(re.search(r"(c\+\+|cpp|getter|setter|classe|repository)", basso))
+    if tabelle:
+        p = esegui_strumento({"strumento": "backend", "tabella": tabelle[0], "linguaggio": "cpp" if cpp else "python"}, strumenti)
+        conv.passi.append(p)
+        conv.testo = (f"Il codice per lavorare con la tabella **{tabelle[0]}** ({'C++, dal backend generato' if cpp else 'Python con sqlite3'}). "
+                      "Si può eseguire subito con il pulsante Esegui: accanto c'è il database di prova.\n\n" + p.get("testo", ""))
+        return
+    conv.testo = ("Senza il modello di linguaggio preparo il codice di accesso ai dati: scrivi il nome di una tabella, per esempio\n"
+                  "- «codice python per clienti» (inserisci, aggiorna, elimina, trova, tutti con sqlite3)\n"
+                  "- «classe C++ con getter e setter per ordini» (dal backend generato)\n\n"
+                  "Con il modello locale scrivo il programma che chiedi (in Python, C++, SQL...), lo controllo e correggo gli errori, "
+                  "e spiego gli errori che incolli qui. Sotto ogni blocco di codice ci sono Copia, Salva ed Esegui.")
