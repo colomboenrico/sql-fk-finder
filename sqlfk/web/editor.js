@@ -198,6 +198,12 @@ const Editor = (() => {
       righe.push(`CREATE TABLE ${nome} (`, parti.join(",\n"), ");", "");
     }
     if (dialetto === "mysql") righe.push("SET FOREIGN_KEY_CHECKS = 1;");
+    const meta = metadati(M);
+    if (Object.keys(meta.posizioni).length || meta.relazioni.length) {
+      righe.push("", "-- Il disegno per l'editor di SQL FK Finder (posizioni delle tabelle, nomi e cardinalità delle relazioni):",
+                 "-- è un commento, non cambia il database; reimportando il file nell'editor il disegno torna com'era.",
+                 `-- sqlfk-editor: ${JSON.stringify(meta)}`);
+    }
     return righe.join("\n") + "\n";
   }
 
@@ -296,6 +302,47 @@ const Editor = (() => {
     return mappa.filter(m => m.colonne.length);
   }
 
+  // ======================================================================= il disegno salvato con l'SQL
+
+  /** Quello che l'SQL non dice: posizioni delle tabelle, nomi (verbi) e cardinalità delle relazioni. */
+  function metadati(M) {
+    const posizioni = {}, relazioni = [];
+    for (const e of M.entita) if (isFinite(e.x) && isFinite(e.y)) posizioni[e.nome] = [Math.round(e.x), Math.round(e.y)];
+    for (const r of M.relazioni) {
+      const A = entitaDi(M, r.da), B = entitaDi(M, r.a);
+      if (!A || !B) continue;
+      if (r.tipo === "N:M") {
+        if (isFinite(r.x) && isFinite(r.y)) posizioni[r.nome] = [Math.round(r.x), Math.round(r.y)];
+        relazioni.push({ ponte: r.nome, da: A.nome, a: B.nome, tipo: "N:M", verbo: r.verbo || "" });
+      } else {
+        relazioni.push({ da: A.nome, a: B.nome, colonne: r.colonne_da, tipo: r.tipo, obbligatoria: !!r.obbligatoria, verbo: r.verbo || "" });
+      }
+    }
+    return { versione: 1, posizioni, relazioni };
+  }
+
+  /** Rimette nel modello i nomi e le cardinalità delle relazioni salvati con l'SQL (dopo un'importazione). */
+  function applicaMetadati(M, meta) {
+    if (!meta || !Array.isArray(meta.relazioni)) return 0;
+    const perNome = new Map(M.entita.map(e => [e.nome.toLowerCase(), e]));
+    let fatte = 0;
+    for (const m of meta.relazioni) {
+      const A = perNome.get(String(m.da).toLowerCase()), B = perNome.get(String(m.a).toLowerCase());
+      if (!A || !B) continue;
+      const r = m.tipo === "N:M"
+        ? M.relazioni.find(x => x.tipo === "N:M" && x.nome.toLowerCase() === String(m.ponte).toLowerCase())
+        : M.relazioni.find(x => x.da === A.id && x.a === B.id && String(x.colonne_da) === String(m.colonne));
+      if (!r) continue;
+      r.verbo = m.verbo || r.verbo || "";
+      if (m.tipo !== "N:M") {
+        r.tipo = m.tipo === "1:1" ? "1:1" : "1:N";
+        r.obbligatoria = !!m.obbligatoria;
+      }
+      fatte++;
+    }
+    return fatte;
+  }
+
   // ======================================================================= copia e incolla
 
   /** Gli appunti con alcune entità (per id) e le relazioni tra loro (anche N:M), da incollare in questo o in un altro disegno. */
@@ -351,5 +398,5 @@ const Editor = (() => {
   }
 
   return { TIPI, TIPI_SPIEGATI, nuovoModello, pulisciNome, aggiungiEntita, aggiungiRelazione, eliminaEntita, schemaLogico, sql, daDiagramma, copiaTabelle, entitaDi, mappaDati,
-           copia, incolla, rinominaAttributo, relazioniDiAttributo };
+           copia, incolla, rinominaAttributo, relazioniDiAttributo, metadati, applicaMetadati };
 })();

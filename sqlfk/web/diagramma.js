@@ -677,5 +677,15 @@ const DiagrammaER = (() => {
              numeri: { tabelle: tabelle.length, collegamenti: collegamenti.length, gruppi: cornici.size } };
   }
 
-  return { crea, coloreGruppo };
+  /** Posizioni automatiche (dagre: le tabelle collegate vicine, i gruppi scollegati affiancati, niente sovrapposizioni) per
+      {tabelle, collegamenti}: {nome: [x, y]}. proporzione: larghezza/altezza dello spazio da riempire. */
+  function posizioniAutomatiche(dati, { proporzione = 1.6, tipi = true } = {}) {
+    const tabelle = dati.tabelle.map(t => ({ ...t, colonne: t.colonne }));
+    tabelle.forEach(t => misura(t, tipi));
+    const nomi = new Set(tabelle.map(t => t.nome));
+    disponi(tabelle, dati.collegamenti.filter(l => nomi.has(l.da) && nomi.has(l.a)), proporzione);
+    return Object.fromEntries(tabelle.map(t => [t.nome, [Math.round(t.x), Math.round(t.y), Math.round(t.larghezza), Math.round(t.altezza)]]));
+  }
+
+  return { crea, coloreGruppo, posizioniAutomatiche };
 })();

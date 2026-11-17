@@ -1273,6 +1273,7 @@ function creaEditor(S) {
         el("div", { class: "riga-comandi" },
           el("button", { class: "primario", onclick: copiaScelte }, "Copia (Ctrl+C)"),
           el("button", { onclick: comandiSelezione.duplica }, "Duplica"),
+          el("button", { onclick: () => riordina(molte), title: "Dispone in ordine solo le tabelle scelte, dove sono adesso" }, "Riordina le scelte"),
           el("button", { class: "pericolo", onclick: eliminaScelte }, "Elimina le scelte"),
           el("button", { onclick: comandiSelezione.nessuna }, "Togli la selezione")),
         M().entita.length ? formRelazione() : null);
@@ -1385,13 +1386,54 @@ function creaEditor(S) {
   }
   nomeNuova.addEventListener("keydown", ev => { if (ev.key === "Enter") nuovaEntita(); });
 
+  /**
+   * Riordina il disegno (ids: solo quelle entità): le tabelle collegate vicine, i gruppi scollegati affiancati, niente
+   * sovrapposizioni. aDestra: le entità vanno a destra di quelle che restano ferme (dopo un'importazione).
+   */
+  function riordina(ids = null, { aDestra = false } = {}) {
+    if (diagramma) salvaPosizioni(diagramma.posizioni());
+    const schema = Editor.schemaLogico(M());
+    const scelte = ids ? new Set(ids) : null;
+    const ponteDi = new Map(M().relazioni.filter(r => r.tipo === "N:M").map(r => [r.id, r]));
+    const dentro = t => !scelte || scelte.has(t.id) || (ponteDi.has(t.id) && scelte.has(ponteDi.get(t.id).da) && scelte.has(ponteDi.get(t.id).a));
+    const tabelle = schema.tabelle.filter(dentro);
+    if (!tabelle.length) return;
+    const r = cornice.getBoundingClientRect();
+    const pos = DiagrammaER.posizioniAutomatiche({ tabelle, collegamenti: schema.collegamenti },
+      { proporzione: r.width > 0 && r.height > 0 ? r.width / r.height : 1.6 });
+    const elemento = t => Editor.entitaDi(M(), t.id) || ponteDi.get(t.id);
+    // dove metterle: da capo (tutto), accanto alle altre (importate) o dove erano (riordina le scelte)
+    let ox = 40, oy = 40;
+    if (scelte) {
+      const ferme = schema.tabelle.filter(t => !dentro(t)).map(elemento).filter(x => x && isFinite(x.x));
+      const mosse = tabelle.map(elemento).filter(x => x && isFinite(x.x));
+      if (aDestra && ferme.length) { ox = Math.max(...ferme.map(x => x.x)) + 420; oy = Math.min(...ferme.map(x => x.y)); }
+      else if (mosse.length) { ox = Math.min(...mosse.map(x => x.x)); oy = Math.min(...mosse.map(x => x.y)); }
+    }
+    for (const t of tabelle) {
+      const x = elemento(t), p = pos[t.nome];
+      if (x && p) { x.x = ox + p[0]; x.y = oy + p[1]; }
+    }
+    S.vista = null; diagramma = null;
+    ridisegna();
+  }
+
+  /** Le posizioni salvate con l'SQL (o quelle degli Schemi grafici) valgono solo se coprono quasi tutte le entità. */
+  const copronoTutto = (posizioni, nomi) => nomi.length && nomi.filter(n => posizioni[n]).length >= nomi.length * 0.9;
+
   async function importa() {
     if (M().entita.length && !confirm("L'editor contiene già un database: sostituirlo con quello caricato?")) return;
-    const dati = await api(`/api/diagramma?tipo=${tipoImport.value}`);
-    S.modello = Editor.daDiagramma(dati, layoutER[tipoImport.value] || {});
-    S.selezione = null; S.vista = null; diagramma = null;
-    ridisegna();
-    avviso(`Importate ${S.modello.entita.length} entità e ${S.modello.relazioni.length} relazioni.`);
+    const [dati, salvato] = await Promise.all([api(`/api/diagramma?tipo=${tipoImport.value}`), api("/api/editor/disegno").catch(() => ({}))]);
+    const nomi = dati.tabelle.map(t => t.nome);
+    const posizioni = copronoTutto(salvato.posizioni || {}, nomi) ? salvato.posizioni
+      : copronoTutto(layoutER[tipoImport.value] || {}, nomi) ? layoutER[tipoImport.value] : {};
+    S.modello = Editor.daDiagramma(dati, posizioni);
+    const relazioni = Editor.applicaMetadati(S.modello, salvato);
+    S.selezione = null; S.multipla = []; S.vista = null; diagramma = null;
+    if (Object.keys(posizioni).length) ridisegna(); else riordina();
+    avviso(`Importate ${S.modello.entita.length} entità e ${S.modello.relazioni.length} relazioni` +
+      (posizioni === salvato.posizioni ? ": il disegno salvato con l'SQL è tornato com'era" : ", disposte in ordine") +
+      (relazioni ? ` (${relazioni} relazioni con nome e cardinalità salvati)` : "") + ".");
   }
 
   /** Aggiunge al disegno alcune tabelle del database caricato (con le collegate, se richiesto), senza togliere niente. */
@@ -1404,10 +1446,15 @@ function creaEditor(S) {
       if (nomi.includes(l.da)) scelte.add(l.a);
       if (nomi.includes(l.a)) scelte.add(l.da);
     });
-    const esito = Editor.copiaTabelle(M(), dati, [...scelte], layoutER[tipoImport.value] || {});
+    const salvato = await api("/api/editor/disegno").catch(() => ({}));
+    const posizioni = copronoTutto(salvato.posizioni || {}, [...scelte]) ? salvato.posizioni : {};
+    const esito = Editor.copiaTabelle(M(), dati, [...scelte], posizioni);
+    Editor.applicaMetadati(M(), salvato);
     S.vista = null; diagramma = null;
-    if (esito.copiate.length) S.selezione = M().entita.find(x => x.nome === esito.copiate[0])?.id || null;
-    ridisegna();
+    const nuove = esito.copiate.map(n => M().entita.find(x => x.nome === n)?.id).filter(Boolean);
+    if (esito.copiate.length) S.selezione = nuove[0] || null;
+    if (nuove.length && !Object.keys(posizioni).length) riordina(nuove, { aDestra: true });   // in ordine, accanto al disegno
+    else ridisegna();
     avviso(`Importate ${esito.copiate.length} tabelle e ${esito.relazioni} relazioni` +
       (esito.saltate.length ? `; già nel disegno: ${esito.saltate.join(", ")}` : "") + ".");
   }
@@ -1437,7 +1484,7 @@ function creaEditor(S) {
   editoriAperti.add(me);
   cornice.addEventListener("pointerdown", () => { editoreAttivo = me; });
   editoreAttivo = me;
-  return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, nuovaEntita, importa, importaScelte, analizza, regole, dialetto,
+  return { cornice, pannello, avvisiBox, anteprima, nomeNuova, tipoImport, ridisegna, riordina, nuovaEntita, importa, importaScelte, analizza, regole, dialetto,
            comandiSelezione,
            pulsanteCollega, statoCollega,
            azzera, ricarica, posizioniModello, get diagramma() { return diagramma; } };
@@ -1944,6 +1991,8 @@ const VISTE = {
         el("button", { onclick: E.comandiSelezione.copia, title: "Copia le tabelle scelte (Ctrl+C / Cmd+C)" }, "Copia"),
         el("button", { onclick: E.comandiSelezione.incolla, title: "Incolla le tabelle copiate (Ctrl+V / Cmd+V), anche da un altro disegno" }, "Incolla"),
         el("button", { onclick: E.comandiSelezione.tutte, title: "Sceglie tutte le tabelle (Ctrl+A / Cmd+A)" }, "Seleziona tutte"),
+        el("button", { onclick: () => { if (!modelloEditor.entita.length || confirm("Riordinare tutto il disegno? Le posizioni spostate a mano si perdono.")) E.riordina(); },
+          title: "Dispone le tabelle in ordine: le collegate vicine, i gruppi separati affiancati, niente sovrapposizioni" }, "Riordina"),
         el("button", { onclick: () => { if (!M().entita.length || confirm("Cancellare il database dell'editor e ripartire da zero?")) E.azzera(); } }, "Nuovo database"),
         stato.caricato ? [el("button", { onclick: () => conAttesa(E.importa) }, "Importa il database caricato"), E.tipoImport] : null,
         el("button", { onclick: () => E.diagramma && E.diagramma.adatta() }, "Adatta alla finestra"),

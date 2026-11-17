@@ -1155,6 +1155,21 @@ class Sessione:
             return PR.chiedi_su(db.conn, collegamenti, tipi_di, dati.get("cosa"), dati.get("colonne"), dati.get("da"),
                                 dati.get("colonna"), dati.get("operatore") or "=", dati.get("valore"), dati.get("ordina"), nome_db=db.tabella_di)
 
+    RE_DISEGNO = re.compile(r"^--\s*sqlfk-editor:\s*(\{.*\})\s*$", re.M)
+
+    def disegno_salvato(self):
+        """Il disegno dell'editor salvato come commento nei file .sql (posizioni, nomi e cardinalità delle relazioni)."""
+        posizioni, relazioni = {}, []
+        for _, testo in self.file_sql:
+            for m in self.RE_DISEGNO.finditer(str(testo)):
+                try:
+                    d = json.loads(m.group(1))
+                except ValueError:
+                    continue
+                posizioni.update(d.get("posizioni") or {})
+                relazioni += d.get("relazioni") or []
+        return {"posizioni": posizioni, "relazioni": relazioni}
+
     def analisi_separata(self, sql, dialetto=None):
         """L'analisi completa di uno schema (per esempio il disegno dell'editor) senza toccare il database caricato."""
         dialetto = dialetto or self.imp.dialetto
@@ -1466,6 +1481,7 @@ class Gestore(BaseHTTPRequestHandler):
             "/api/verifica_dati": s.risultato_verifica,
             "/api/peso_tabelle": s.peso_tabelle,
             "/api/cartella_senza_tolte": s.proposta_cartella_senza_tolte,
+            "/api/editor/disegno": s.disegno_salvato,
             "/api/ascolto": s.ascolto_stato,
             "/api/ascolto/riepilogo": s.ascolto_riepilogo,
             "/api/scarica/ascolto_md": lambda: (AS.specifica_markdown(s.ascolto.azioni, s.origine).encode("utf-8"), "text/markdown; charset=utf-8",
