@@ -90,6 +90,8 @@ INDICE_LLM = {"win-x64": "https://abetlen.github.io/llama-cpp-python/whl/cpu",
               "mac-arm64": "https://abetlen.github.io/llama-cpp-python/whl/metal",
               "mac-x64": "https://abetlen.github.io/llama-cpp-python/whl/cpu"}
 VERSIONE_LLM = os.environ.get("SQLFK_LLAMA_VERSIONE", "")      # vuoto = l'ultima pubblicata per questo Python
+# versioni provate: per Mac la 0.3.36 pubblicata ha un file rovinato (CRC), la 0.3.19 si installa e gira
+VERSIONE_LLM_SISTEMA = {"mac-arm64": "0.3.19", "mac-x64": "0.3.19"}
 DIPENDENZE_LLM = ["jinja2", "MarkupSafe", "diskcache", "typing-extensions"]
 
 
@@ -101,7 +103,8 @@ def aggiungi_llm(sistema, comando_base, ruote, site_packages):
     piattaforme = [x for i, x in enumerate(comando_base) if i and comando_base[i - 1] == "--platform"]
     base = [sys.executable, "-m", "pip", "download", "--quiet", "--only-binary=:all:", "--python-version", VERSIONE,
             "--implementation", "cp", "-d", str(cartella)] + [x for p in piattaforme for x in ("--platform", p)]
-    pacchetto = "llama-cpp-python" + (f"=={VERSIONE_LLM}" if VERSIONE_LLM else "")
+    versione = VERSIONE_LLM or VERSIONE_LLM_SISTEMA.get(sistema, "")
+    pacchetto = "llama-cpp-python" + (f"=={versione}" if versione else "")
     print(f"  assistente: {pacchetto} da {INDICE_LLM[sistema]}")
     try:
         subprocess.run(base + ["--no-deps", "--extra-index-url", INDICE_LLM[sistema], pacchetto], check=True)

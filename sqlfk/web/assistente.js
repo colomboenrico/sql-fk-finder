@@ -38,7 +38,7 @@ Object.assign(VISTE, {
 
     function disegnaChat() {
       metti(chat, S.messaggi.length ? S.messaggi.map(m => el("div", { class: `messaggio-chat ${m.ruolo}` },
-        el("div", { class: "chi" }, m.ruolo === "utente" ? "Tu" : `Assistente${m.modo === "regole" ? " (senza modello)" : ""}`,
+        el("div", { class: "chi" }, m.ruolo === "utente" ? "Tu" : `Assistente${m.modo === "regole" ? " (senza modello)" : m.modo?.startsWith("regole") ? " (risposta con le regole)" : ""}`,
           m.secondi ? el("span", { class: "tenue" }, ` · ${m.secondi} s`) : null),
         m.ruolo === "utente" ? el("p", {}, m.testo) : testoRisposta(m.testo || (m.finito ? "" : "…")),
         (m.passi || []).map(passoAssistente),

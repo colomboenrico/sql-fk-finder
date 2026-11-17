@@ -1186,7 +1186,7 @@ class Sessione:
         R, gruppo_di = self.analisi_separata(dati.get("sql"), dati.get("dialetto"))
         return {"R": R, "gruppo_di": gruppo_di, "origine": "editor", "nome": "il database che l'utente sta costruendo nell'editor",
                 "collegamenti": MR.struttura(R, gruppo_di, "collegamenti")["collegamenti"], "dialetto": dati.get("dialetto") or "mysql",
-                "relazioni": [str(x) for x in (dati.get("relazioni") or []) if x][:80]}
+                "relazioni": [str(x) for x in (dati.get("relazioni") or []) if x][:80], "sql": str(dati.get("sql") or "")}
 
     def contesto_assistente(self, domanda, F, progetto=""):
         """Il database detto al modello: riepilogo, le tabelle che c'entrano con la domanda (e le collegate) con colonne,
@@ -1247,6 +1247,28 @@ class Sessione:
             corte = [[("" if v is None else str(v))[:40] for v in r] for r in righe[:massimo]]
             return "\n".join([" | ".join(colonne)] + [" | ".join(r) for r in corte]) + (f"\n(... {len(righe)} righe in tutto)" if len(righe) > massimo else "")
 
+        editor = {}
+
+        def connessione_editor():
+            """Per il disegno dell'editor: il database di prova se corrisponde al disegno (ha i dati), altrimenti uno vuoto
+            in memoria con lo schema del disegno (le query si controllano lo stesso: colonne, JOIN, sintassi)."""
+            if "conn" not in editor:
+                editor["dati"] = False
+                if PR.DATABASE.exists():
+                    conn = sqlite3.connect(f"file:{PR.DATABASE}?mode=ro", uri=True, check_same_thread=False)
+                    presenti = {}
+                    for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+                        presenti[t.lower()] = {r[1].lower() for r in conn.execute(f"PRAGMA table_info({QY.q(t)})")}
+                    if all({c.lower() for c in S.col_per_tab[t]} <= presenti.get(t.lower(), set()) for t in S.col_per_tab):
+                        editor["conn"], editor["dati"] = conn, True
+                    else:
+                        conn.close()
+                if "conn" not in editor:
+                    conn = sqlite3.connect(":memory:", check_same_thread=False)
+                    conn.deserialize(self.editor_sqlite({"sql": F.get("sql", ""), "mappa": [], "dialetto": F["dialetto"], "limite": None}))
+                    editor["conn"] = conn
+            return editor["conn"]
+
         def leggi(q):
             """(colonne, righe) di una SELECT in sola lettura, al più 50 righe."""
             if caricato:
@@ -1254,20 +1276,21 @@ class Sessione:
                 with self.lock_db:
                     cur = db.conn.execute(f"SELECT * FROM ({q}) LIMIT 50")
                     return [d[0] for d in cur.description], [list(r) for r in cur.fetchall()]
-            if not PR.DATABASE.exists():
-                raise ValueError("il database dell'editor non ha ancora dati: crealo e popolalo nella pagina Popola e verifica")
-            conn = sqlite3.connect(f"file:{PR.DATABASE}?mode=ro", uri=True)
             try:
-                cur = conn.execute(f"SELECT * FROM ({q}) LIMIT 50")
-                return [d[0] for d in cur.description], [list(r) for r in cur.fetchall()]
-            finally:
-                conn.close()
+                cur = connessione_editor().execute(f"SELECT * FROM ({q}) LIMIT 50")
+            except sqlite3.Error as e:
+                raise ValueError(f"SQLite: {e}. Colonne vere: " + "; ".join(f"{t}({', '.join(c)})" for t, c in list(S.col_per_tab.items())[:20]))
+            return [d[0] for d in cur.description], [list(r) for r in cur.fetchall()]
 
         def sql(query=""):
             q = str(query).strip().rstrip(";")
             if not re.match(r"^(select|with)\b", q, re.I) or ";" in q:
                 raise ValueError("solo una SELECT (sola lettura)")
             colonne, righe = leggi(q)
+            if not caricato and not editor.get("dati"):
+                nota = ("La query è corretta per lo schema del disegno. Il disegno non ha ancora dati (0 righe): "
+                        "si riempie nella pagina Popola e verifica.")
+                return {"testo": nota, "sql": q, "per_il_modello": nota}
             return {"testo": f"{len(righe)} righe", "colonne": colonne, "righe": righe, "sql": q,
                     "per_il_modello": tabella_testo(colonne, righe) or "nessuna riga"}
 
@@ -1292,9 +1315,6 @@ class Sessione:
                     righe_testo.append(f"Righe: {E['righe']}")
                     esempi = {"colonne": list(E["schede"][0].keys()) if E["schede"] else [], "righe": [list(r.values()) for r in E["schede"]]}
                 else:
-                    presenti = {r[1] for r in leggi(f"SELECT * FROM pragma_table_info('{vero}')")[1]}
-                    if not set(S.col_per_tab[vero]) <= presenti:
-                        raise ValueError("il database di prova non corrisponde al disegno")
                     colonne, righe = leggi(f'SELECT * FROM "{vero}" LIMIT 3')
                     esempi = {"colonne": colonne, "righe": righe}
                 if esempi["righe"]:
@@ -1373,7 +1393,15 @@ class Sessione:
                 try:
                     strumenti = self.strumenti_assistente(F)
                     if usa_modello:
-                        ASS.rispondi_con_modello(conv, M, self.contesto_assistente(domanda, F, progetto), dati.get("storia"), strumenti)
+                        contesto = self.contesto_assistente(domanda, F, progetto)
+                        if re.search(ASS.RE_CONSIGLI, domanda.lower()):
+                            # i controlli veri prima del modello: i consigli partono da lì, non da regole generiche
+                            p = ASS.esegui_strumento({"strumento": "suggerimenti"}, strumenti)
+                            conv.passi.append(p)
+                            contesto += "\n\nCONTROLLI AUTOMATICI DELLO SCHEMA (veri: parti da questi)\n" + p["per_il_modello"]
+                        ASS.rispondi_con_modello(conv, M, contesto, dati.get("storia"), strumenti,
+                                                 lambda: ASS.rispondi_con_regole(conv, sorted(F["R"].S.col_per_tab), strumenti, F, progetto),
+                                                 [{"strumento": "suggerimenti"}] if conv.passi else ())
                     else:
                         ASS.rispondi_con_regole(conv, sorted(F["R"].S.col_per_tab), strumenti, F, progetto)
                 except Exception as e:

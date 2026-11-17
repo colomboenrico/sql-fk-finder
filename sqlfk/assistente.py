@@ -144,12 +144,15 @@ class Modello:
                 raise RuntimeError("Nessun modello caricato.")
             testo = ""
             for parte in self.llm.create_chat_completion(messages=messaggi, max_tokens=max_token, temperature=0.2, top_p=0.9,
-                                                         stream=True, stop=["RISULTATO:", "<|im_end|>"]):
+                                                         stream=True, stop=["\nRISULTATO:", "<|im_end|>"]):
                 delta = parte["choices"][0].get("delta", {}).get("content") or ""
                 testo += delta
                 al_pezzo(testo)
                 if fermo() or re.search(r"^AZIONE:\s*\{.*\}\s*$", testo, re.M):
                     break                        # un'azione completa: la si esegue subito
+            if os.environ.get("SQLFK_LLM_LOG"):
+                with open(os.environ["SQLFK_LLM_LOG"], "a", encoding="utf-8") as f:
+                    f.write(f"\n===== {len(messaggi)} messaggi\n{testo}\n")
             return testo
 
 
@@ -164,6 +167,7 @@ Se chiede come far comunicare il database con un altro applicativo, scegli il mo
 in poche righe e scrivi il necessario (tabelle, trigger, viste, endpoint, codice del backend) usando le sue tabelle vere.
 Regole da rispettare: ogni dato ha un solo proprietario, niente due programmi che scrivono nelle stesse tabelle, chiavi
 stabili per lo scambio, operazioni ripetibili senza danni, versione del formato.
+Se ci sono CONTROLLI AUTOMATICI parti da quelli e non inventare problemi. Le chiavi esterne non sono uniche (molti figli per un padre).
 Usa SOLO tabelle e colonne che esistono davvero: se ne proponi di nuove dillo chiaramente. Se non sai, dillo.
 Tutto gira su un computer senza internet: non proporre servizi cloud se l'utente non li chiede.
 
@@ -198,7 +202,8 @@ class Conversazione:
 
 def pulisci(testo):
     """Il testo da mostrare: senza le righe AZIONE (i passi si vedono a parte)."""
-    return re.sub(r"^AZIONE:.*$", "", testo or "", flags=re.M).strip()
+    testo = re.sub(r"^AZIONE:.*$", "", testo or "", flags=re.M).strip()
+    return re.sub(r"^RISULTATO:\s*", "", testo, flags=re.M)     # i modelli piccoli a volte ripetono il risultato così
 
 
 def leggi_azione(testo):
@@ -211,30 +216,68 @@ def leggi_azione(testo):
         return {"strumento": "?", "errore": "JSON non valido"}
 
 
-def rispondi_con_modello(conv, modello, contesto, storia, strumenti):
-    """Il ciclo: il modello scrive; se chiede uno strumento lo si esegue e gli si dà il risultato (al più PASSI_MASSIMI)."""
+def rispondi_con_modello(conv, modello, contesto, storia, strumenti, di_riserva=None, gia_fatte=()):
+    """Il ciclo: il modello scrive; se chiede uno strumento lo si esegue e gli si dà il risultato (al più PASSI_MASSIMI).
+    Un'azione ripetuta uguale non si riesegue: si chiede la risposta. Se il modello non scrive nulla, rispondono le regole
+    (di_riserva)."""
     conv.modo = "modello"
     messaggi = [{"role": "system", "content": SISTEMA + "\n\nIL DATABASE\n" + contesto}]
     for m in (storia or [])[-6:]:                       # le ultime domande e risposte, per il filo del discorso
         if m.get("ruolo") in ("utente", "assistente") and m.get("testo"):
             messaggi.append({"role": "user" if m["ruolo"] == "utente" else "assistant", "content": str(m["testo"])[:2000]})
     messaggi.append({"role": "user", "content": conv.domanda})
-    fatto = ""
-    for passo in range(PASSI_MASSIMI + 1):
-        testo = modello.genera(messaggi, lambda t: setattr(conv, "testo", fatto + t), lambda: conv.fermato)
+    fatto, fatte = "", list(gia_fatte)
+    for passo in range(PASSI_MASSIMI + 2):
+        eco = messaggi[-1]["content"] if messaggi[-1]["content"].startswith("RISULTATO:") else ""
+        testo = modello.genera(messaggi, lambda t: setattr(conv, "testo", fatto + pulisci(senza_eco(t, eco))), lambda: conv.fermato)
+        testo = senza_eco(testo, eco)
         azione = leggi_azione(testo)
         if conv.fermato:
-            conv.testo = fatto + testo + "\n\n(interrotto)"
+            conv.testo = fatto + pulisci(testo) + "\n\n(interrotto)"
             return
-        if not azione or passo == PASSI_MASSIMI:
-            conv.testo = fatto + testo
+        ultimo = passo >= PASSI_MASSIMI
+        if not azione or ultimo or azione in fatte:
+            finale = pulisci(testo)
+            if azione and not finale and not ultimo:
+                # ha ripetuto un'azione già fatta: gli si chiede di rispondere con quello che ha
+                messaggi.append({"role": "assistant", "content": testo.strip()})
+                messaggi.append({"role": "user", "content": "Hai già questo risultato. Ora rispondi all'utente senza AZIONE."})
+                fatte.append(None)
+                continue
+            if not (fatto + finale).strip() and conv.passi and conv.passi[-1].get("ok"):
+                finale = conv.passi[-1].get("testo", "")      # il modello non ha aggiunto nulla: si mostra il risultato
+            if not (fatto + finale).strip():
+                if di_riserva:
+                    di_riserva()
+                    conv.modo = "regole (il modello non ha risposto)"
+                    return
+            conv.testo = fatto + finale
             return
+        fatte.append(azione)
         risultato = esegui_strumento(azione, strumenti)
         conv.passi.append(risultato)
         fatto = pulisci(fatto + testo) + ("\n\n" if pulisci(fatto + testo) else "")
         messaggi.append({"role": "assistant", "content": testo.strip()})
-        messaggi.append({"role": "user", "content": "RISULTATO: " + risultato["per_il_modello"]})
+        messaggi.append({"role": "user", "content": "RISULTATO: " + risultato["per_il_modello"] +
+                         ("\n\nOra rispondi all'utente usando questo risultato (adattalo al suo caso, con il codice se serve), "
+                          "oppure usa un ALTRO strumento se ti manca qualcosa." if risultato.get("ok") else
+                          "\n\nCorreggi usando solo tabelle e colonne che esistono, oppure rispondi senza AZIONE.")})
         conv.testo = fatto
+
+
+def senza_eco(testo, risultato):
+    """Toglie dall'inizio della risposta i paragrafi copiati dal messaggio RISULTATO (succede con i modelli piccoli)."""
+    if not risultato:
+        return testo
+    base = re.sub(r"\s+", " ", risultato.removeprefix("RISULTATO:"))
+    parti = re.split(r"(\n\s*\n)", re.sub(r"^\s*RISULTATO:\s*", "", testo))
+    tolti = 0
+    while tolti < len(parti):
+        p = re.sub(r"\s+", " ", parti[tolti]).strip()
+        if p and p[:60] not in base:
+            break
+        tolti += 1
+    return "".join(parti[tolti:]).lstrip() if tolti else testo
 
 
 def esegui_strumento(azione, strumenti):
@@ -278,6 +321,9 @@ RE_INTEGRAZIONE = r"(comunic|integr|applicativ|sincronizz|altr[oa] (programma|si
                   r"interfacci|gestionale|erp|crm|e-?commerce|sito|programma|software|report|power ?bi|dashboard|esterno)"
 RE_PROGETTO = r"(progett|come (faccio|fare|devo|posso|lo faccio|procedo)|struttur|organizz|da dove (parto|comincio|inizio)|" \
               r"prossimi passi|cosa (devo|dovrei) fare|roadmap|consigli sul|architettur|è fatto bene|va bene così)"
+
+
+RE_CONSIGLI = r"(fatto bene|va bene|cosa non va|problem|miglior|suggeriment|errori|sbagli|consigl|sistemar|controll|progett|prossimi passi)"
 
 
 def tabelle_centrali(col_per_tab, collegamenti, quante=4):
