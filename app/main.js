@@ -70,7 +70,9 @@ class Ponte {
     this.processo = spawn(python, [...argomenti, "-m", "sqlfk.ponte"], {
       cwd: RADICE, stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1", PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8",
-             SQLFK_PID_APP: String(process.pid) },
+             SQLFK_PID_APP: String(process.pid),
+             // dove cercare la cartella "modelli" dell'Assistente: accanto al .exe portatile o all'app installata
+             SQLFK_CARTELLA_APP: process.env.PORTABLE_EXECUTABLE_DIR || (app.isPackaged ? path.dirname(app.getPath("exe")) : RADICE) },
     });
     this.errori = "";
     let resto = "";

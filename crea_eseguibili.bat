@@ -47,10 +47,17 @@ copy /y "dist\*.exe" "%DEST%\" >nul
   echo.
   echo L'app contiene gia' Python e le librerie: sul computer dove la usi non serve installare niente.
   echo Non usa mai la rete: niente internet e nessuna porta aperta.
+  echo.
+  echo Assistente: il modello di linguaggio e' nella cartella "modelli" qui accanto e l'app lo carica da sola.
+  echo Se sposti l'app su un altro computer, copia anche la cartella "modelli" accanto al .exe portatile
+  echo oppure in Documenti\SQL FK Finder\modelli.
   echo Per controllarla avviala con SQLFK_AUTOVERIFICA=1: scrive sqlfk_autoverifica.txt nella cartella temporanea.
 ) > "%DEST%\LEGGIMI.txt"
 
 echo [ OK ] copiati sul Desktop
+
+echo == Assistente: il modello di linguaggio ^(la prima volta chiede se scaricarlo; poi resta nella cache^)
+call %PY% prepara_assistente.py --modello "%DEST%\modelli" --cache "%~dp0app\.cache-modelli"
 echo.
 echo ============================================================
 echo   OK - FINE INSTALLAZIONE: PROGRAMMA PRONTO ALL'AVVIO

@@ -112,6 +112,14 @@ Object.assign(VISTE, {
       const senza = el("input", { type: "checkbox", checked: S.senzaModello });
       senza.addEventListener("change", () => { S.senzaModello = senza.checked; });
       const ram = M.ram_gb;
+      // un modello sul computer e nessuno caricato: lo si carica da solo (una volta per sessione), il più grande che ci sta
+      if (!S.autoCaricato && M.libreria && !M.caricato && !M.caricando && !M.errore && M.modelli.length) {
+        S.autoCaricato = true;
+        const adatti = M.modelli.filter(m => !ram || m.gb * 1.5 <= ram * 0.7).sort((a, b) => b.gb - a.gb);
+        const scelto = adatti[0] || M.modelli.slice().sort((a, b) => a.gb - b.gb)[0];
+        carica(scelto.percorso);
+        M.caricando = true;              // il pannello dice "Caricamento in corso" finché il modello non è pronto
+      }
       const progettoTesto = el("textarea", { rows: 4, placeholder: "A cosa serve il database, chi lo usa, con quali programmi deve comunicare " +
         "(es. un gestionale ordini che manda gli ordini al sito e-commerce; i report li fa Power BI)", "aria-label": "Descrizione del progetto" });
       progettoTesto.value = S.progetto;

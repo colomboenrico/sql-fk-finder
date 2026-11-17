@@ -39,3 +39,8 @@ scelta_fk.lp
 demo/gestionale_ordini/.mysql/
 demo/gestionale_ordini/query.log
 demo/gestionale_ordini/database/
+
+# Assistente: modelli di linguaggio (file .gguf di qualche GB) e la loro cache
+modelli/
+*.gguf
+app/.cache-modelli/

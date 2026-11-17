@@ -17,4 +17,9 @@ if [ ! -d node_modules ]; then
   npm install --no-audit --no-fund || { read -r -p "Installazione non riuscita. Premi Invio per chiudere..."; exit 1; }
 fi
 
+# Assistente: la libreria del modello di linguaggio e il modello (la prima volta chiede se scaricarlo)
+for PY in python3 python; do
+  if command -v "$PY" >/dev/null 2>&1; then "$PY" prepara_assistente.py --libreria --modello ../modelli; break; fi
+done
+
 npm start

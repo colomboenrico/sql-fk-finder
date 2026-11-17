@@ -43,8 +43,12 @@ def cartelle_modelli():
     cartelle = []
     if os.environ.get("SQLFK_MODELLI"):
         cartelle.append(Path(os.environ["SQLFK_MODELLI"]).expanduser())
+    if os.environ.get("SQLFK_CARTELLA_APP"):         # la cartella "modelli" accanto all'app (eseguibili, versione portatile)
+        cartelle.append(Path(os.environ["SQLFK_CARTELLA_APP"]) / "modelli")
+    cartelle.append(Path(__file__).resolve().parents[1] / "modelli")      # dai sorgenti: la cartella del progetto
     cartelle += [Path.home() / "Documents" / "SQL FK Finder" / "modelli", Path.home() / "Documenti" / "SQL FK Finder" / "modelli",
-                 Path.home() / ".sqlfk" / "modelli"]
+                 Path.home() / ".sqlfk" / "modelli",
+                 Path.home() / "Desktop" / "SQL FK Finder - eseguibili" / "modelli"]    # dove li mette crea_eseguibili
     return cartelle
 
 

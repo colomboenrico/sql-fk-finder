@@ -214,7 +214,19 @@ Non usa mai la rete: niente internet e nessuna porta aperta (Electron e Python s
 Per controllarla: avviala con la variabile SQLFK_AUTOVERIFICA=1, scrive il risultato in sqlfk_autoverifica.txt
 nella cartella temporanea del sistema.
 TESTO
+cat >> "$DEST/LEGGIMI.txt" <<'TESTO'
+
+Assistente
+  Il modello di linguaggio (.gguf) è nella cartella "modelli" qui accanto e l'app lo carica da sola.
+  Se sposti l'app su un altro computer, copia anche la cartella "modelli" accanto al .exe portatile
+  oppure in Documenti\SQL FK Finder\modelli (Windows) / Documents/SQL FK Finder/modelli (Mac).
+TESTO
 ok "scritto LEGGIMI.txt"
+# il modello è scelto per il computer dove girerà l'app: per Windows 32 GB (SQLFK_RAM per cambiarlo)
+RAM_DEST="${SQLFK_RAM:-}"
+if [ -z "$RAM_DEST" ] && [[ " $DA_FARE " == *" win "* ]]; then RAM_DEST=32; fi
+echo "  Assistente: il modello di linguaggio (la prima volta chiede se scaricarlo; poi resta nella cache):"
+"$PY" prepara_assistente.py --modello "$DEST/modelli" --cache .cache-modelli ${RAM_DEST:+--ram "$RAM_DEST"}
 fine_passo "eseguibili sul Desktop"
 
 # ---------------------------------------------------------------- fine

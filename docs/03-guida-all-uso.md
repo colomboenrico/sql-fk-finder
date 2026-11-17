@@ -233,8 +233,10 @@ lettura, file con tabelle di appoggio), scrivendo tabelle, trigger, viste ed end
 
 Tutto gira sul computer, senza internet. Senza modello l'Assistente risponde alle domande frequenti con le regole. Con un
 modello di linguaggio locale (un file `.gguf`, per esempio Qwen2.5-Coder 7B Q4_K_M, circa 5 GB) capisce domande libere e
-ragiona sul progetto: il file si scarica una volta su un computer con internet, si copia in
-`Documenti/SQL FK Finder/modelli` e si carica dal pannello **Il modello**. Su un PC Windows con 32 GB di RAM il 7B risponde
+ragiona sul progetto. Non serve fare niente a mano: `avvia_app` (.bat o .command) installa la libreria e
+`crea_eseguibili` la mette dentro l'eseguibile; tutti e due la prima volta chiedono se scaricare il modello adatto alla RAM
+(il 7B con 16 GB o più, il 3B con meno) e lo mettono nella cartella `modelli` (accanto al progetto o agli eseguibili).
+L'app lo trova lì, o in `Documenti/SQL FK Finder/modelli`, e lo carica da sola quando si apre l'Assistente. Su un PC Windows con 32 GB di RAM il 7B risponde
 in pochi secondi anche senza scheda grafica; il 14B (circa 9 GB) ragiona meglio ma è più lento. Il modello non legge i file:
 l'app gli passa le tabelle che c'entrano con la domanda ed esegue lei le query, e nella risposta si vedono i passi fatti.
 

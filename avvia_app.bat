@@ -19,4 +19,9 @@ if not exist node_modules (
   )
 )
 
+rem Assistente: la libreria del modello di linguaggio e il modello (la prima volta chiede se scaricarlo)
+set "PY=python"
+where python >nul 2>nul || set "PY=py -3"
+call %PY% prepara_assistente.py --libreria --modello "%~dp0modelli"
+
 call npm start
